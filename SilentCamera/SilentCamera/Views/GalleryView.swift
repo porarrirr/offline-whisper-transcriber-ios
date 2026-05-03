@@ -2,6 +2,10 @@ import AVKit
 import Photos
 import SwiftUI
 
+extension PHAsset: @retroactive Identifiable {
+    public var id: String { localIdentifier }
+}
+
 enum MediaTypeFilter: String, CaseIterable, Identifiable {
     case all
     case photo
