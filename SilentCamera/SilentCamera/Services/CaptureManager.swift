@@ -88,7 +88,7 @@ final class CaptureManager: NSObject, CaptureManagerProtocol {
         let framesToCapture: Int
 
         switch mode {
-        case .stack:
+        case .stack, .additive:
             framesToCapture = frameCount
         case .hdr:
             framesToCapture = 3
