@@ -5,6 +5,7 @@ import UIKit
 enum ProcessingMode: String, CaseIterable, Identifiable {
     case none
     case stack
+    case additive
     case hdr
     case denoise
     case enhance
@@ -15,6 +16,7 @@ enum ProcessingMode: String, CaseIterable, Identifiable {
         switch self {
         case .none: return "なし"
         case .stack: return "スタック合成"
+        case .additive: return "加算合成"
         case .hdr: return "HDR"
         case .denoise: return "ノイズ除去"
         case .enhance: return "自動補正"
@@ -25,6 +27,7 @@ enum ProcessingMode: String, CaseIterable, Identifiable {
         switch self {
         case .none: return "photo"
         case .stack: return "rectangle.stack"
+        case .additive: return "plus.rectangle.on.rectangle"
         case .hdr: return "circle.lefthalf.filled"
         case .denoise: return "wand.and.stars"
         case .enhance: return "slider.horizontal.3"
@@ -35,6 +38,7 @@ enum ProcessingMode: String, CaseIterable, Identifiable {
         switch self {
         case .none: return "画像処理なし"
         case .stack: return "複数フレームを合成してノイズを低減"
+        case .additive: return "複数フレームを加算合成して明るさを向上"
         case .hdr: return "複数露光を合成してダイナミックレンジを拡大"
         case .denoise: return "高度なノイズ除去"
         case .enhance: return "明るさ・コントラスト・彩度を自動調整"
@@ -88,6 +92,8 @@ final class ImageProcessor: ImageProcessorProtocol {
             result = frames.first.flatMap { pixelBufferToUIImage($0) }
         case .stack:
             result = await stackFrames(frames, method: .average, intensity: intensity)
+        case .additive:
+            result = await additiveStack(frames, intensity: intensity)
         case .hdr:
             result = await processHDR(frames, intensity: intensity)
         case .denoise:
@@ -139,6 +145,88 @@ final class ImageProcessor: ImageProcessorProtocol {
         let denoised = applyDenoise(to: sharpened, intensity: 0.2 * intensity)
 
         return ciImageToUIImage(denoised)
+    }
+
+    func additiveStack(
+        _ frames: [CVPixelBuffer],
+        intensity: Float
+    ) async -> UIImage? {
+        guard frames.count >= 2 else {
+            return frames.first.flatMap { pixelBufferToUIImage($0) }
+        }
+
+        let ciImages = frames.compactMap { CIImage(cvPixelBuffer: $0) }
+        guard ciImages.count >= 2 else { return nil }
+
+        await MainActor.run { processingProgress = 0.1 }
+
+        let alignedImages = await alignImages(ciImages)
+
+        await MainActor.run { processingProgress = 0.4 }
+
+        let extent = alignedImages[0].extent
+        let width = Int(extent.width)
+        let height = Int(extent.height)
+        let bytesPerRow = width * 4
+
+        var resultPixels: [Float]?
+
+        for (index, image) in alignedImages.enumerated() {
+            guard let cgImage = context.createCGImage(image, from: extent) else { continue }
+
+            var pixelData = [UInt8](repeating: 0, count: width * height * 4)
+            guard let cgContext = CGContext(
+                data: &pixelData,
+                width: width,
+                height: height,
+                bitsPerComponent: 8,
+                bytesPerRow: bytesPerRow,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { continue }
+
+            cgContext.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+
+            if resultPixels == nil {
+                resultPixels = [Float](repeating: 0, count: width * height * 4)
+            }
+
+            for i in 0..<(width * height * 4) {
+                resultPixels![i] += Float(pixelData[i])
+            }
+
+            let progress = 0.4 + 0.4 * Float(index + 1) / Float(alignedImages.count)
+            await MainActor.run { processingProgress = progress }
+        }
+
+        guard let finalPixels = resultPixels else { return nil }
+
+        var outputPixels = [UInt8](repeating: 0, count: width * height * 4)
+        for i in 0..<outputPixels.count {
+            outputPixels[i] = UInt8(max(0, min(255, finalPixels[i])))
+        }
+
+        guard let outputContext = CGContext(
+            data: &outputPixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ),
+              let outputCGImage = outputContext.makeImage() else {
+            return nil
+        }
+
+        let stacked = CIImage(cgImage: outputCGImage)
+
+        await MainActor.run { processingProgress = 0.9 }
+
+        let blendFactor = intensity
+        let blended = applyBlend(original: alignedImages[0], processed: stacked, factor: blendFactor)
+
+        return ciImageToUIImage(blended)
     }
 
     func processHDR(

@@ -78,7 +78,7 @@ struct SettingsView: View {
                 } header: {
                     Text("画像処理")
                 } footer: {
-                    Text("スタック合成: 複数フレームを重ね合わせてノイズを低減し、画質を向上させます")
+                    Text("スタック合成: 複数フレームを重ね合わせてノイズを低減し、画質を向上させます。加算合成: 複数フレームを加算して明るさを向上させます")
                 }
 
                 if viewModel.settings.processingMode != .none {
@@ -97,7 +97,7 @@ struct SettingsView: View {
                         }
                         .padding(.vertical, 4)
 
-                        if viewModel.settings.processingMode == .stack || viewModel.settings.processingMode == .denoise {
+                        if viewModel.settings.processingMode == .stack || viewModel.settings.processingMode == .additive || viewModel.settings.processingMode == .denoise {
                             VStack(alignment: .leading, spacing: 8) {
                                 HStack {
                                     Text("フレーム数")
