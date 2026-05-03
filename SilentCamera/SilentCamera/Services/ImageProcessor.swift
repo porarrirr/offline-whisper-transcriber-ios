@@ -496,7 +496,7 @@ final class ImageProcessor: ImageProcessorProtocol {
             } else {
                 let filter = CIFilter.exposureAdjust()
                 filter.inputImage = image
-                filter.exposure = exposure
+                filter.EV = exposure
                 if let output = filter.outputImage {
                     result.append(output)
                 }
@@ -594,10 +594,11 @@ final class ImageProcessor: ImageProcessorProtocol {
     }
 
     private func applyToneMapping(to image: CIImage, intensity: Float) -> CIImage {
-        let filter = CIFilter.toneMap()
-        filter.inputImage = image
+        let exposureFilter = CIFilter.exposureAdjust()
+        exposureFilter.inputImage = image
+        exposureFilter.EV = -0.5 * intensity
 
-        guard let output = filter.outputImage else { return image }
+        guard let output = exposureFilter.outputImage else { return image }
 
         return applyBlend(original: image, processed: output, factor: intensity)
     }
@@ -605,7 +606,7 @@ final class ImageProcessor: ImageProcessorProtocol {
     private func temporalDenoise(_ images: [CIImage], intensity: Float) async -> CIImage? {
         guard images.count >= 3 else { return images.first }
 
-        return await averageStack(images, method: .average, intensity: intensity * 0.7)
+        return await averageStack(images, intensity: intensity * 0.7)
     }
 
     private func applyDenoise(to image: CIImage, intensity: Float) -> CIImage {

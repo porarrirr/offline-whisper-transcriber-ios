@@ -7,7 +7,7 @@ import UIKit
 @Observable
 final class CameraViewModel: NSObject {
 
-    let settings = CameraSettings()
+    var settings = CameraSettings()
     let imageProcessor = ImageProcessor()
 
     var session: AVCaptureSession { sessionManager.session }
@@ -15,7 +15,7 @@ final class CameraViewModel: NSObject {
     var currentPosition: AVCaptureDevice.Position { sessionManager.currentPosition }
     var zoomFactor: CGFloat { sessionManager.zoomFactor }
     var isCapturing: Bool { captureManager.isCapturing }
-    var lastCaptureImage: UIImage? { captureManager.lastCaptureImage }
+    var lastCaptureImage: UIImage?
     var authorizationStatus: AVAuthorizationStatus = .notDetermined
     var showError = false
     var errorMessage = ""
@@ -53,10 +53,10 @@ final class CameraViewModel: NSObject {
     }
 
     func setupSession() async {
-        await withCheckedContinuation { (continuation: @Sendable () -> Void) in
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self else {
-                    continuation()
+                    continuation.resume()
                     return
                 }
                 do {
@@ -65,7 +65,7 @@ final class CameraViewModel: NSObject {
                 } catch {
                     Task { @MainActor in self.presentError(error) }
                 }
-                continuation()
+                continuation.resume()
             }
         }
     }
