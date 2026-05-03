@@ -49,26 +49,7 @@ struct GalleryView: View {
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 2) {
                             ForEach(assets, id: \.localIdentifier) { asset in
-                                GalleryThumbnailView(asset: asset)
-                                    .aspectRatio(1, contentMode: .fill)
-                                    .clipped()
-                                    .overlay {
-                                        if asset.mediaType == .video {
-                                            videoBadge(duration: asset.duration)
-                                        }
-                                    }
-                                    .overlay {
-                                        if isEditMode {
-                                            overlayCheckmark(for: asset)
-                                        }
-                                    }
-                                    .onTapGesture {
-                                        if isEditMode {
-                                            toggleSelection(asset)
-                                        } else {
-                                            selectedAsset = asset
-                                        }
-                                    }
+                                galleryCell(for: asset)
                             }
                         }
                     }
@@ -167,6 +148,29 @@ struct GalleryView: View {
         case .video:
             assets = PhotoLibraryService.shared.fetchRecentVideos(limit: 200)
         }
+    }
+
+    private func galleryCell(for asset: PHAsset) -> some View {
+        GalleryThumbnailView(asset: asset)
+            .aspectRatio(1, contentMode: .fill)
+            .clipped()
+            .overlay {
+                if asset.mediaType == .video {
+                    videoBadge(duration: asset.duration)
+                }
+            }
+            .overlay {
+                if isEditMode {
+                    overlayCheckmark(for: asset)
+                }
+            }
+            .onTapGesture {
+                if isEditMode {
+                    toggleSelection(asset)
+                } else {
+                    selectedAsset = asset
+                }
+            }
     }
 
     private func toggleSelection(_ asset: PHAsset) {

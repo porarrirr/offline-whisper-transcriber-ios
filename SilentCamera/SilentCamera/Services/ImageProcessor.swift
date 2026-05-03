@@ -496,7 +496,7 @@ final class ImageProcessor: ImageProcessorProtocol {
             } else {
                 let filter = CIFilter.exposureAdjust()
                 filter.inputImage = image
-                filter.EV = exposure
+                filter.ev = exposure
                 if let output = filter.outputImage {
                     result.append(output)
                 }
@@ -596,7 +596,7 @@ final class ImageProcessor: ImageProcessorProtocol {
     private func applyToneMapping(to image: CIImage, intensity: Float) -> CIImage {
         let exposureFilter = CIFilter.exposureAdjust()
         exposureFilter.inputImage = image
-        exposureFilter.EV = -0.5 * intensity
+        exposureFilter.ev = -0.5 * intensity
 
         guard let output = exposureFilter.outputImage else { return image }
 
