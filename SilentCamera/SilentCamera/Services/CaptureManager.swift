@@ -106,7 +106,7 @@ final class CaptureManager: NSObject, CaptureManagerProtocol {
         frameBuffer.removeAll()
         frameBufferLock.unlock()
 
-        try await Task.sleep(nanoseconds: UInt64(framesToCapture * Constants.Timing.frameCaptureDelay))
+        try await Task.sleep(nanoseconds: UInt64(framesToCapture) * Constants.Timing.frameCaptureDelay)
 
         frameBufferLock.lock()
         let capturedFrames = Array(frameBuffer.prefix(framesToCapture))
