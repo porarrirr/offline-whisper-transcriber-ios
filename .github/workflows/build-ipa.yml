@@ -1,0 +1,87 @@
+name: Build Unsigned IPA
+
+on:
+  push:
+    branches: [master]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate Xcode project
+        run: |
+          chmod +x SilentCamera/generate_project.sh
+          ./SilentCamera/generate_project.sh
+        working-directory: SilentCamera/..
+        env:
+          SCRIPT_DIR: ${{ github.workspace }}/SilentCamera
+
+      - name: Build Archive
+        run: |
+          xcodebuild \
+            -project SilentCamera.xcodeproj \
+            -scheme SilentCamera \
+            -sdk iphoneos \
+            -configuration Release \
+            -archivePath build/SilentCamera.xcarchive \
+            archive \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            ENABLE_BITCODE=NO
+        working-directory: SilentCamera
+
+      - name: Create ExportOptions.plist
+        run: |
+          cat > build/ExportOptions.plist << 'EOF'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>development</string>
+              <key>signingStyle</key>
+              <string>manual</string>
+              <key>compileBitcode</key>
+              <false/>
+          </dict>
+          </plist>
+          EOF
+        working-directory: SilentCamera
+
+      - name: Export IPA
+        run: |
+          mkdir -p build/ipa
+          xcodebuild \
+            -exportArchive \
+            -archivePath build/SilentCamera.xcarchive \
+            -exportOptionsPlist build/ExportOptions.plist \
+            -exportPath build/ipa \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO
+        working-directory: SilentCamera
+
+      - name: Rename IPA
+        run: |
+          mv build/ipa/SilentCamera.ipa build/ipa/SilentCamera-unsigned.ipa
+        working-directory: SilentCamera
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SilentCamera-unsigned
+          path: SilentCamera/build/ipa/SilentCamera-unsigned.ipa
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: SilentCamera/build/ipa/SilentCamera-unsigned.ipa
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
