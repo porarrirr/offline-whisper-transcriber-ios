@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>カメラを使用して写真・動画を撮影します</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>マイクを使用して動画の音声を録音します</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>撮影した写真・動画を保存・閲覧します</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>撮影した写真・動画をライブラリに保存します</string>
+</dict>
+</plist>
