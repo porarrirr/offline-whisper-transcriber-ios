@@ -17,52 +17,25 @@ jobs:
           chmod +x SilentCamera/generate_project.sh
           cd SilentCamera && ./generate_project.sh
 
-      - name: Build Archive
+      - name: Build App
         run: |
           xcodebuild \
             -project SilentCamera/SilentCamera.xcodeproj \
             -scheme SilentCamera \
             -sdk iphoneos \
             -configuration Release \
-            -archivePath build/SilentCamera.xcarchive \
-            archive \
+            -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             ENABLE_BITCODE=NO
 
-      - name: Create ExportOptions.plist
+      - name: Create IPA
         run: |
-          cat > build/ExportOptions.plist << 'EOF'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>development</string>
-              <key>signingStyle</key>
-              <string>manual</string>
-              <key>compileBitcode</key>
-              <false/>
-          </dict>
-          </plist>
-          EOF
-
-      - name: Export IPA
-        run: |
-          mkdir -p build/ipa
-          xcodebuild \
-            -exportArchive \
-            -archivePath build/SilentCamera.xcarchive \
-            -exportOptionsPlist build/ExportOptions.plist \
-            -exportPath build/ipa \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGN_IDENTITY="-" \
-            CODE_SIGNING_REQUIRED=NO
-
-      - name: Rename IPA
-        run: |
-          mv build/ipa/SilentCamera.ipa build/ipa/SilentCamera-unsigned.ipa
+          mkdir -p build/ipa/Payload
+          cp -R build/DerivedData/Build/Products/Release-iphoneos/SilentCamera.app build/ipa/Payload/
+          cd build/ipa
+          zip -r SilentCamera-unsigned.ipa Payload
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
