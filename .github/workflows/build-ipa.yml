@@ -15,15 +15,12 @@ jobs:
       - name: Generate Xcode project
         run: |
           chmod +x SilentCamera/generate_project.sh
-          ./SilentCamera/generate_project.sh
-        working-directory: SilentCamera/..
-        env:
-          SCRIPT_DIR: ${{ github.workspace }}/SilentCamera
+          cd SilentCamera && ./generate_project.sh
 
       - name: Build Archive
         run: |
           xcodebuild \
-            -project SilentCamera.xcodeproj \
+            -project SilentCamera/SilentCamera.xcodeproj \
             -scheme SilentCamera \
             -sdk iphoneos \
             -configuration Release \
@@ -33,7 +30,6 @@ jobs:
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO \
             ENABLE_BITCODE=NO
-        working-directory: SilentCamera
 
       - name: Create ExportOptions.plist
         run: |
@@ -51,7 +47,6 @@ jobs:
           </dict>
           </plist>
           EOF
-        working-directory: SilentCamera
 
       - name: Export IPA
         run: |
@@ -64,24 +59,22 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGN_IDENTITY="-" \
             CODE_SIGNING_REQUIRED=NO
-        working-directory: SilentCamera
 
       - name: Rename IPA
         run: |
           mv build/ipa/SilentCamera.ipa build/ipa/SilentCamera-unsigned.ipa
-        working-directory: SilentCamera
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
           name: SilentCamera-unsigned
-          path: SilentCamera/build/ipa/SilentCamera-unsigned.ipa
+          path: build/ipa/SilentCamera-unsigned.ipa
 
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: SilentCamera/build/ipa/SilentCamera-unsigned.ipa
+          files: build/ipa/SilentCamera-unsigned.ipa
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

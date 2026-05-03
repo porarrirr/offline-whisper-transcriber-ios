@@ -22,7 +22,7 @@ fi
 PROJECT_DIR="$SCRIPT_DIR"
 SOURCES_DIR="$PROJECT_DIR/$PROJECT_NAME"
 
-export PROJECT_DIR PROJECT_NAME BUNDLE_ID
+export PROJECT_DIR PROJECT_NAME BUNDLE_ID SOURCES_DIR
 
 ruby << 'RUBY_SCRIPT'
 require 'xcodeproj'
@@ -64,10 +64,11 @@ end
 swift_files = Dir.glob(File.join(project_dir, project_name, "**", "*.swift"))
 swift_files.each do |file_path|
     relative = file_path.sub("#{project_dir}/", "")
-    group_path = File.dirname(relative)
+    parts = relative.split("/")
     
     group = project.main_group
-    group_path.split("/").each do |dir|
+    # Create groups for directories (skip the last part which is the filename)
+    parts[0..-2].each do |dir|
         next if dir == "."
         existing = group[dir]
         unless existing
@@ -76,19 +77,15 @@ swift_files.each do |file_path|
         group = existing
     end
     
-    file_ref = group.new_file(relative)
+    # File reference should be just the filename
+    filename = parts.last
+    file_ref = group.new_file(filename)
     target.source_build_phase.add_file_reference(file_ref)
 end
 
 # Assets.xcassets
-assets_path = "#{project_name}/Assets.xcassets"
-assets_ref = project.main_group[project_name]&.[]("Assets.xcassets")
-unless assets_ref
-    main_group = project.main_group[project_name]
-    if main_group
-        assets_ref = main_group.new_file(assets_path)
-    end
-end
+assets_group = project.main_group[project_name]
+assets_ref = assets_group.new_file("Assets.xcassets")
 
 # Resources build phase
 if assets_ref
