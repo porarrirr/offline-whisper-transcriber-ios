@@ -11,7 +11,7 @@ targets:
         buildPhase: none
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.yourname.whispertranscription
+        PRODUCT_BUNDLE_IDENTIFIER: com.porarrirr.offlinewhispertranscriber
         SWIFT_VERSION: "5.9"
         SWIFT_OBJC_BRIDGING_HEADER: WhisperTranscriptionApp-Bridging-Header.h
         HEADER_SEARCH_PATHS:
