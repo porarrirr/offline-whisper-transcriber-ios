@@ -25,6 +25,14 @@ targets:
         CFBundleDisplayName: Whisper文字起こし
         CFBundleDevelopmentRegion: ja_JP
         NSMicrophoneUsageDescription: "音声を録音して文字起こしするためにマイクへのアクセスが必要です。"
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
     dependencies:
       - framework: Frameworks/whisper.xcframework
         embed: true

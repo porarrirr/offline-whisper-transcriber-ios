@@ -16,21 +16,16 @@ struct ModelDownloadView: View {
             AppColors.background.ignoresSafeArea()
 
             ScrollView {
-                VStack(spacing: 28) {
+                VStack(spacing: 22) {
                     header
                     stateContent
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.horizontal, 24)
-                .padding(.top, 28)
-                .padding(.bottom, viewModel.isDownloading ? 32 : 150)
+                .padding(.top, 20)
+                .padding(.bottom, 32)
             }
             .scrollIndicators(.hidden)
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if !viewModel.isDownloading {
-                bottomAction
-            }
         }
         .onAppear {
             viewModel.checkAvailability()
@@ -38,16 +33,16 @@ struct ModelDownloadView: View {
     }
 
     private var header: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 20) {
             ZStack {
                 Circle()
                     .fill(AppColors.accent.opacity(0.2))
-                    .frame(width: 112, height: 112)
+                    .frame(width: 104, height: 104)
 
                 Image(systemName: "waveform.circle.fill")
                     .resizable()
                     .aspectRatio(contentMode: .fit)
-                    .frame(width: 68, height: 68)
+                    .frame(width: 64, height: 64)
                     .foregroundColor(AppColors.accent)
             }
 
@@ -74,6 +69,20 @@ struct ModelDownloadView: View {
                 Text("準備完了！")
                     .font(AppFonts.headline)
                     .foregroundColor(AppColors.textPrimary)
+
+                if isPresentedAsSheet {
+                    Button(action: {
+                        dismiss()
+                    }) {
+                        Text("閉じる")
+                            .font(AppFonts.button)
+                            .foregroundColor(AppColors.textOnAccent)
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(AppColors.accent)
+                            .cornerRadius(16)
+                    }
+                }
             }
         } else if viewModel.isDownloading {
             VStack(spacing: 20) {
@@ -140,28 +149,7 @@ struct ModelDownloadView: View {
                         .foregroundColor(AppColors.warning)
                         .multilineTextAlignment(.center)
                 }
-            }
-        }
-    }
 
-    @ViewBuilder
-    private var bottomAction: some View {
-        VStack(spacing: 10) {
-            if viewModel.isComplete {
-                if isPresentedAsSheet {
-                    Button(action: {
-                        dismiss()
-                    }) {
-                        Text("閉じる")
-                            .font(AppFonts.button)
-                            .foregroundColor(AppColors.textOnAccent)
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(AppColors.accent)
-                            .cornerRadius(16)
-                    }
-                }
-            } else {
                 Button(action: {
                     viewModel.startDownload()
                 }) {
@@ -176,6 +164,7 @@ struct ModelDownloadView: View {
                     .background(AppColors.accent)
                     .cornerRadius(16)
                 }
+                .padding(.top, 8)
 
                 Text("初回のみ\(settings.selectedModelSize.approximateSize)のデータをダウンロードします\nWi-Fi環境での実行を推奨します")
                     .font(AppFonts.caption)
@@ -184,9 +173,5 @@ struct ModelDownloadView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.horizontal, 24)
-        .padding(.top, 12)
-        .padding(.bottom, 12)
-        .background(AppColors.background)
     }
 }
