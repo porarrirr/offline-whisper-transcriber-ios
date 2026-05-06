@@ -34,7 +34,7 @@ final class AppLogger: ObservableObject {
     }
 
     static func error(_ message: String, context: String? = nil, error: Error? = nil) {
-        let detail = error.map { "\($0.localizedDescription)".isEmpty ? message : "\(message): \($0.localizedDescription)" } ?? message
+        let detail = error.map { "\(message): \($0.localizedDescription)" } ?? message
         write(level: .error, message: detail, context: context)
     }
 
