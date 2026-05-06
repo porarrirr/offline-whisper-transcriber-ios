@@ -91,6 +91,65 @@ class WhisperContext: ObservableObject {
             }
         }
     }
+
+    func transcribe(
+        samples: [Float],
+        language: String = "ja",
+        translate: Bool = false,
+        prompt: String = "",
+        useVAD: Bool = false,
+        vadModelPath: String? = nil,
+        onProgress: ((Double) -> Void)? = nil
+    ) async -> TranscriptionResult? {
+        guard let context = whisperContext else {
+            await MainActor.run {
+                errorMessage = "モデルが読み込まれていません"
+            }
+            return nil
+        }
+
+        guard !samples.isEmpty else {
+            await MainActor.run {
+                errorMessage = WhisperContextError.emptyAudioFile.localizedDescription
+            }
+            return nil
+        }
+
+        await MainActor.run {
+            isProcessing = true
+            progress = 0
+            resultText = ""
+        }
+
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self = self else {
+                    continuation.resume(returning: nil)
+                    return
+                }
+
+                let result = self.runWhisper(
+                    context: context,
+                    samples: samples,
+                    language: language,
+                    translate: translate,
+                    prompt: prompt,
+                    useVAD: useVAD,
+                    vadModelPath: vadModelPath,
+                    onProgress: onProgress
+                )
+
+                DispatchQueue.main.async {
+                    self.isProcessing = false
+                    self.progress = 1.0
+                    if let result = result {
+                        self.resultText = result.text
+                    }
+                    continuation.resume(returning: result)
+                }
+            }
+        }
+    }
     
     private func performTranscription(
         context: OpaquePointer,

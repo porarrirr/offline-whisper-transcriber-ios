@@ -94,18 +94,7 @@ class TranscribeViewModel: ObservableObject {
         }
         
         do {
-            guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-                errorMessage = "音声変換用の保存先を取得できませんでした"
-                return
-            }
-            let wavURL = documentsPath.appendingPathComponent("temp_\(UUID().uuidString).wav")
-            defer {
-                if FileManager.default.fileExists(atPath: wavURL.path) {
-                    try? FileManager.default.removeItem(at: wavURL)
-                }
-            }
-            
-            try await AudioConverter.shared.convertToWav(inputURL: url, outputURL: wavURL)
+            let samples = try await AudioConverter.shared.convertToWhisperSamples(inputURL: url)
             
             if whisperContext.isModelLoaded == false {
                 let loaded = await loadModelAsync()
@@ -124,7 +113,7 @@ class TranscribeViewModel: ObservableObject {
             }
             
             if let result = await whisperContext.transcribe(
-                audioPath: wavURL.path,
+                samples: samples,
                 language: language,
                 translate: settings.translateToEnglish,
                 prompt: prompt,

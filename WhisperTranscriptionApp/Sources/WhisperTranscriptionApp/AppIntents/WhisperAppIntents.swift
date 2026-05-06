@@ -45,28 +45,19 @@ struct TranscribeAudioIntent: AppIntent {
         }
 
         let transcriptionText = try await audioFile.withFile(contentType: .audio, allowOpenInPlace: true) { audioURL, _ in
-            guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-                throw IntentError.documentsDirectoryUnavailable
-            }
-            let wavURL = documentsPath.appendingPathComponent("shortcut_\(UUID().uuidString).wav")
-            defer {
-                if FileManager.default.fileExists(atPath: wavURL.path) {
-                    try? FileManager.default.removeItem(at: wavURL)
-                }
-            }
-            
+            let samples: [Float]
             do {
-                try await AudioConverter.shared.convertToWav(inputURL: audioURL, outputURL: wavURL)
+                samples = try await AudioConverter.shared.convertToWhisperSamples(inputURL: audioURL)
             } catch {
                 throw IntentError.conversionFailed
             }
-            
+
             let selectedLanguage = language ?? settings.selectedLanguage
             if settings.useVAD && !modelManager.isVADModelReady {
                 throw IntentError.vadModelNotReady
             }
             let result = await whisperContext.transcribe(
-                audioPath: wavURL.path,
+                samples: samples,
                 language: selectedLanguage,
                 translate: settings.translateToEnglish,
                 prompt: settings.promptText,
@@ -77,7 +68,7 @@ struct TranscribeAudioIntent: AppIntent {
             guard let transcriptionResult = result else {
                 throw IntentError.transcriptionFailed
             }
-            
+
             return transcriptionResult.text
         }
         
@@ -133,7 +124,6 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case modelNotReady
     case modelLoadFailed
     case noAudioFile
-    case documentsDirectoryUnavailable
     case conversionFailed
     case transcriptionFailed
     case vadModelNotReady
@@ -146,8 +136,6 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
             return "モデルの読み込みに失敗しました。"
         case .noAudioFile:
             return "音声ファイルが指定されていません。"
-        case .documentsDirectoryUnavailable:
-            return "一時ファイルの保存先を取得できませんでした。"
         case .conversionFailed:
             return "音声ファイルの変換に失敗しました。"
         case .transcriptionFailed:
