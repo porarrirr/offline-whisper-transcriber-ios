@@ -3,7 +3,7 @@ import AppIntents
 import SwiftData
 import UniformTypeIdentifiers
 
-@available(iOS 16.0, *)
+@available(iOS 18.0, *)
 struct TranscribeAudioIntent: AppIntent {
     static var title: LocalizedStringResource = "文字起こしを開始"
     static var description = IntentDescription("音声ファイルを文字起こしします")
@@ -113,7 +113,7 @@ struct GetTranscriptionHistoryIntent: AppIntent {
     }
 }
 
-@available(iOS 16.0, *)
+@available(iOS 18.0, *)
 struct WhisperShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(

@@ -192,24 +192,24 @@ class WhisperContext: ObservableObject {
         params.token_timestamps = true
         params.detect_language = language.isEmpty || language == "auto"
         params.temperature_inc = 0
-        let languageCString = params.detect_language ? nil : strdup(language)
+        let languageCString = strdup(params.detect_language ? "auto" : language)
         defer {
             if let languageCString {
                 free(languageCString)
             }
         }
-        params.language = languageCString
+        params.language = UnsafePointer(languageCString!)
         params.n_threads = Int32(max(1, min(ProcessInfo.processInfo.processorCount - 1, 4)))
         params.offset_ms = 0
         params.duration_ms = 0
         
-        let promptCString = prompt.isEmpty ? nil : strdup(prompt)
+        let promptCString = strdup(prompt)
         defer {
             if let promptCString {
                 free(promptCString)
             }
         }
-        params.initial_prompt = promptCString
+        params.initial_prompt = UnsafePointer(promptCString!)
         
         let vadModelCString: UnsafeMutablePointer<CChar>?
         if useVAD {
@@ -222,7 +222,7 @@ class WhisperContext: ObservableObject {
 
             params.vad = true
             vadModelCString = strdup(vadModelPath)
-            params.vad_model_path = vadModelCString
+            params.vad_model_path = UnsafePointer(vadModelCString!)
             var vadParams = whisper_vad_default_params()
             vadParams.threshold = 0.6
             vadParams.min_speech_duration_ms = 250
@@ -272,7 +272,7 @@ class WhisperContext: ObservableObject {
                 let end = Double(t1) / 100.0
                 
                 let segment = TranscriptionSegment(
-                    id: i,
+                    id: Int(i),
                     start: start,
                     end: end,
                     text: text
