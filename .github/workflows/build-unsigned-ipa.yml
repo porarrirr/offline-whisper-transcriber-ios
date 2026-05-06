@@ -60,6 +60,9 @@ jobs:
           rm -rf "$PWD/build/Payload"
           mkdir -p "$PWD/build/Payload"
           cp -R "$APP_PATH" "$PWD/build/Payload/"
+          find "$PWD/build/Payload" -name "_CodeSignature" -type d -prune -exec rm -rf {} +
+          find "$PWD/build/Payload" -name "embedded.mobileprovision" -type f -delete
+          rm -rf "$PWD/build/Payload/WhisperTranscriptionApp.app/Metadata.appintents"
           ditto -c -k --keepParent "$PWD/build/Payload" "$PWD/build/WhisperTranscriptionApp-unsigned.ipa"
 
       - name: Upload unsigned IPA artifact
