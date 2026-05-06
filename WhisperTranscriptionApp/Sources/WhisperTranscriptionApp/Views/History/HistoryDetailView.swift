@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct HistoryDetailView: View {
     let record: TranscriptionRecord

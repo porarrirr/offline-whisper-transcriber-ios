@@ -9,11 +9,24 @@ class ModelManager: NSObject, ObservableObject {
     @Published var isDownloading = false
     @Published var downloadError: String?
     @Published var currentModelSize: AppSettings.ModelSize = .base
+    @Published var isVADModelReady = false
+    @Published var vadDownloadProgress: Double = 0
+    @Published var isVADDownloading = false
+    @Published var vadDownloadError: String?
     
     private var downloadTask: URLSessionDownloadTask?
+    private var vadDownloadTask: URLSessionDownloadTask?
+    private var modelDownloadSession: URLSession?
+    private var vadDownloadSession: URLSession?
+    private let vadModelFileName = "ggml-silero-v6.2.0.bin"
+    private let vadModelURL = URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin")!
     
     var modelPath: String {
         modelURL.path
+    }
+
+    var vadModelPath: String {
+        vadModelFileURL.path
     }
     
     private var modelURL: URL {
@@ -22,17 +35,32 @@ class ModelManager: NSObject, ObservableObject {
         }
         return documentsPath.appendingPathComponent(currentModelSize.fileName)
     }
+
+    private var vadModelFileURL: URL {
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            preconditionFailure("Documents directory is unavailable")
+        }
+        return documentsPath.appendingPathComponent(vadModelFileName)
+    }
     
     private override init() {
         currentModelSize = AppSettings.shared.selectedModelSize
         super.init()
         checkModelAvailability()
+        checkVADModelAvailability()
     }
     
     func checkModelAvailability() {
         let exists = FileManager.default.fileExists(atPath: modelPath)
         DispatchQueue.main.async {
             self.isModelReady = exists
+        }
+    }
+
+    func checkVADModelAvailability() {
+        let exists = FileManager.default.fileExists(atPath: vadModelPath)
+        DispatchQueue.main.async {
+            self.isVADModelReady = exists
         }
     }
     
@@ -61,9 +89,27 @@ class ModelManager: NSObject, ObservableObject {
         
         let configuration = URLSessionConfiguration.default
         let session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
+        modelDownloadSession = session
         
         downloadTask = session.downloadTask(with: url)
+        downloadTask?.taskDescription = "mainModel"
         downloadTask?.resume()
+    }
+
+    func downloadVADModel() {
+        guard !isVADDownloading else { return }
+
+        isVADDownloading = true
+        vadDownloadProgress = 0
+        vadDownloadError = nil
+
+        let configuration = URLSessionConfiguration.default
+        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
+        vadDownloadSession = session
+
+        vadDownloadTask = session.downloadTask(with: vadModelURL)
+        vadDownloadTask?.taskDescription = "vadModel"
+        vadDownloadTask?.resume()
     }
     
     func cancelDownload() {
@@ -71,6 +117,13 @@ class ModelManager: NSObject, ObservableObject {
         downloadTask = nil
         isDownloading = false
         downloadProgress = 0
+    }
+
+    func cancelVADDownload() {
+        vadDownloadTask?.cancel()
+        vadDownloadTask = nil
+        isVADDownloading = false
+        vadDownloadProgress = 0
     }
     
     func getModelSize() -> String? {
@@ -99,6 +152,18 @@ class ModelManager: NSObject, ObservableObject {
             }
         }
     }
+
+    func deleteVADModel() {
+        if FileManager.default.fileExists(atPath: vadModelPath) {
+            do {
+                try FileManager.default.removeItem(atPath: vadModelPath)
+                isVADModelReady = false
+                vadDownloadError = nil
+            } catch {
+                vadDownloadError = "VADモデル削除エラー: \(error.localizedDescription)"
+            }
+        }
+    }
     
     func deleteAllModels() {
         guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
@@ -123,29 +188,55 @@ class ModelManager: NSObject, ObservableObject {
 extension ModelManager: URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard totalBytesExpectedToWrite > 0 else { return }
-        downloadProgress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
+        if downloadTask.taskDescription == "vadModel" {
+            vadDownloadProgress = progress
+        } else {
+            downloadProgress = progress
+        }
     }
     
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         do {
-            let destinationURL = URL(fileURLWithPath: modelPath)
+            let isVADModelDownload = downloadTask.taskDescription == "vadModel"
+            let destinationURL = isVADModelDownload ? vadModelFileURL : URL(fileURLWithPath: modelPath)
             if FileManager.default.fileExists(atPath: destinationURL.path) {
                 try FileManager.default.removeItem(at: destinationURL)
             }
             try FileManager.default.moveItem(at: location, to: destinationURL)
-            isModelReady = true
-            isDownloading = false
-            downloadProgress = 1.0
+            if isVADModelDownload {
+                isVADModelReady = true
+                isVADDownloading = false
+                vadDownloadProgress = 1.0
+                vadDownloadTask = nil
+            } else {
+                isModelReady = true
+                isDownloading = false
+                downloadProgress = 1.0
+                self.downloadTask = nil
+            }
         } catch {
-            downloadError = "ファイル保存エラー: \(error.localizedDescription)"
-            isDownloading = false
+            if downloadTask.taskDescription == "vadModel" {
+                vadDownloadError = "VADモデル保存エラー: \(error.localizedDescription)"
+                isVADDownloading = false
+            } else {
+                downloadError = "ファイル保存エラー: \(error.localizedDescription)"
+                isDownloading = false
+            }
         }
     }
     
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
-            downloadError = "ダウンロードエラー: \(error.localizedDescription)"
-            isDownloading = false
+            if task.taskDescription == "vadModel" {
+                vadDownloadError = "VADモデルダウンロードエラー: \(error.localizedDescription)"
+                isVADDownloading = false
+                vadDownloadTask = nil
+            } else {
+                downloadError = "ダウンロードエラー: \(error.localizedDescription)"
+                isDownloading = false
+                downloadTask = nil
+            }
         }
     }
 }

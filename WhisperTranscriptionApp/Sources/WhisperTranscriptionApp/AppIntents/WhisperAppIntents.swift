@@ -62,12 +62,16 @@ struct TranscribeAudioIntent: AppIntent {
             }
             
             let selectedLanguage = language ?? settings.selectedLanguage
+            if settings.useVAD && !modelManager.isVADModelReady {
+                throw IntentError.vadModelNotReady
+            }
             let result = await whisperContext.transcribe(
                 audioPath: wavURL.path,
                 language: selectedLanguage,
                 translate: settings.translateToEnglish,
                 prompt: settings.promptText,
-                useVAD: settings.useVAD
+                useVAD: settings.useVAD,
+                vadModelPath: settings.useVAD ? modelManager.vadModelPath : nil
             )
 
             guard let transcriptionResult = result else {
@@ -132,6 +136,7 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case documentsDirectoryUnavailable
     case conversionFailed
     case transcriptionFailed
+    case vadModelNotReady
     
     var localizedStringResource: LocalizedStringResource {
         switch self {
@@ -147,6 +152,8 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
             return "音声ファイルの変換に失敗しました。"
         case .transcriptionFailed:
             return "文字起こしに失敗しました。"
+        case .vadModelNotReady:
+            return "VADモデルが準備できていません。アプリを開いて設定からVADモデルをダウンロードしてください。"
         }
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Combine
+import UIKit
 
 @MainActor
 class TranscribeViewModel: ObservableObject {
@@ -117,6 +118,10 @@ class TranscribeViewModel: ObservableObject {
             let language = settings.selectedLanguage == "auto" ? "" : settings.selectedLanguage
             let prompt = settings.promptText
             let useVAD = settings.useVAD
+            if useVAD && !modelManager.isVADModelReady {
+                errorMessage = "VADモデルが準備できていません。設定からVADモデルをダウンロードしてください。"
+                return
+            }
             
             if let result = await whisperContext.transcribe(
                 audioPath: wavURL.path,
@@ -124,6 +129,7 @@ class TranscribeViewModel: ObservableObject {
                 translate: settings.translateToEnglish,
                 prompt: prompt,
                 useVAD: useVAD,
+                vadModelPath: useVAD ? modelManager.vadModelPath : nil,
                 onProgress: { [weak self] progress in
                     self?.transcriptionProgress = progress
                 }

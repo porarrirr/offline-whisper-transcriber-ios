@@ -29,6 +29,7 @@ class AudioConverter {
         }
 
         var reachedEndOfInput = false
+        var inputReadError: Error?
         var error: NSError?
 
         let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
@@ -47,13 +48,21 @@ class AudioConverter {
                 outStatus.pointee = .haveData
                 return inputBuffer
             } catch {
+                inputReadError = error
                 outStatus.pointee = .endOfStream
                 return nil
             }
         }
 
         while true {
+            if let inputReadError {
+                throw AudioConverterError.conversionFailed(inputReadError)
+            }
+
             let status = converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
+            if let inputReadError {
+                throw AudioConverterError.conversionFailed(inputReadError)
+            }
 
             if status == .haveData {
                 if outputBuffer.frameLength > 0 {

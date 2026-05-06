@@ -34,7 +34,7 @@ struct SettingsView: View {
                                     Text(size.displayName).tag(size)
                                 }
                             }
-                            .pickerStyle(.segmented)
+                            .pickerStyle(.menu)
                             .onChange(of: settings.selectedModelSize) { _, newValue in
                                 modelManager.switchModel(size: newValue)
                             }
@@ -185,6 +185,68 @@ struct SettingsView: View {
                                 }
                             }
                             .tint(AppColors.accent)
+
+                            if settings.useVAD {
+                                VStack(spacing: 10) {
+                                    HStack {
+                                        Image(systemName: modelManager.isVADModelReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                                            .foregroundColor(modelManager.isVADModelReady ? AppColors.accent : AppColors.warning)
+                                        Text(modelManager.isVADModelReady ? "VADモデル準備完了" : "VADモデルをダウンロードしてください")
+                                            .font(AppFonts.callout)
+                                            .foregroundColor(AppColors.textSecondary)
+                                        Spacer()
+                                    }
+
+                                    if modelManager.isVADDownloading {
+                                        ProgressView(value: modelManager.vadDownloadProgress)
+                                            .tint(AppColors.accent)
+
+                                        Button("VADモデルのダウンロードをキャンセル") {
+                                            modelManager.cancelVADDownload()
+                                        }
+                                        .font(AppFonts.callout)
+                                        .foregroundColor(AppColors.warning)
+                                    } else if !modelManager.isVADModelReady {
+                                        Button(action: {
+                                            modelManager.downloadVADModel()
+                                        }) {
+                                            HStack {
+                                                Image(systemName: "arrow.down.circle.fill")
+                                                Text("VADモデルをダウンロード")
+                                            }
+                                            .font(AppFonts.callout)
+                                            .foregroundColor(AppColors.textOnAccent)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 10)
+                                            .background(AppColors.accent)
+                                            .cornerRadius(10)
+                                        }
+                                    } else {
+                                        Button(action: {
+                                            modelManager.deleteVADModel()
+                                        }) {
+                                            HStack {
+                                                Image(systemName: "trash")
+                                                Text("VADモデルを削除")
+                                            }
+                                            .font(AppFonts.callout)
+                                            .foregroundColor(AppColors.warning)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 10)
+                                            .background(AppColors.warning.opacity(0.1))
+                                            .cornerRadius(10)
+                                        }
+                                    }
+
+                                    if let error = modelManager.vadDownloadError {
+                                        Text(error)
+                                            .font(AppFonts.caption)
+                                            .foregroundColor(AppColors.warning)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                                .padding(.top, 4)
+                            }
                             
                             Divider().background(AppColors.surface)
                             

@@ -107,7 +107,7 @@ struct ModelDownloadView: View {
                                         Text(size.displayName).tag(size)
                                     }
                                 }
-                                .pickerStyle(.segmented)
+                                .pickerStyle(.menu)
                                 .onChange(of: settings.selectedModelSize) { _, newValue in
                                     ModelManager.shared.switchModel(size: newValue)
                                     viewModel.checkAvailability()

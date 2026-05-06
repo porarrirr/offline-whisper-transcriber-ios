@@ -46,6 +46,7 @@ class WhisperContext: ObservableObject {
         translate: Bool = false,
         prompt: String = "",
         useVAD: Bool = false,
+        vadModelPath: String? = nil,
         onProgress: ((Double) -> Void)? = nil
     ) async -> TranscriptionResult? {
         guard let context = whisperContext else {
@@ -75,6 +76,7 @@ class WhisperContext: ObservableObject {
                     translate: translate,
                     prompt: prompt,
                     useVAD: useVAD,
+                    vadModelPath: vadModelPath,
                     onProgress: onProgress
                 )
                 
@@ -97,6 +99,7 @@ class WhisperContext: ObservableObject {
         translate: Bool,
         prompt: String,
         useVAD: Bool,
+        vadModelPath: String?,
         onProgress: ((Double) -> Void)?
     ) -> TranscriptionResult? {
         do {
@@ -108,6 +111,7 @@ class WhisperContext: ObservableObject {
                 translate: translate,
                 prompt: prompt,
                 useVAD: useVAD,
+                vadModelPath: vadModelPath,
                 onProgress: onProgress
             )
         } catch {
@@ -174,6 +178,7 @@ class WhisperContext: ObservableObject {
         translate: Bool,
         prompt: String,
         useVAD: Bool,
+        vadModelPath: String?,
         onProgress: ((Double) -> Void)?
     ) -> TranscriptionResult? {
         guard !samples.isEmpty else { return nil }
@@ -206,13 +211,30 @@ class WhisperContext: ObservableObject {
         }
         params.initial_prompt = promptCString
         
+        let vadModelCString: UnsafeMutablePointer<CChar>?
         if useVAD {
+            guard let vadModelPath, FileManager.default.fileExists(atPath: vadModelPath) else {
+                DispatchQueue.main.async { [weak self] in
+                    self?.errorMessage = "VADモデルが見つかりません。設定からVADモデルをダウンロードしてください。"
+                }
+                return nil
+            }
+
             params.vad = true
+            vadModelCString = strdup(vadModelPath)
+            params.vad_model_path = vadModelCString
             var vadParams = whisper_vad_default_params()
             vadParams.threshold = 0.6
             vadParams.min_speech_duration_ms = 250
             vadParams.min_silence_duration_ms = 500
             params.vad_params = vadParams
+        } else {
+            vadModelCString = nil
+        }
+        defer {
+            if let vadModelCString {
+                free(vadModelCString)
+            }
         }
         
         // Progress callback
