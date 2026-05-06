@@ -47,18 +47,18 @@ class TranscribeViewModel: ObservableObject {
                             UIApplication.shared.isIdleTimerDisabled = true
                         }
                     } catch {
-                        self.errorMessage = error.localizedDescription
+                        self.setError(error.localizedDescription)
                     }
                 }
             } else {
-                self.errorMessage = "マイクの使用許可が必要です"
+                self.setError("マイクの使用許可が必要です")
             }
         }
     }
     
     func stopRecordingAndTranscribe(modelContext: ModelContext) {
         guard let recordingURL = audioRecorder.stopRecording() else {
-            errorMessage = "録音の保存に失敗しました"
+            setError("録音の保存に失敗しました")
             isRecording = false
             return
         }
@@ -79,7 +79,7 @@ class TranscribeViewModel: ObservableObject {
     
     private func transcribeAudio(url: URL, sourceType: TranscriptionRecord.SourceType, modelContext: ModelContext) async {
         guard modelManager.isModelReady else {
-            errorMessage = "モデルが準備できていません"
+            setError("モデルが準備できていません")
             return
         }
         
@@ -99,7 +99,7 @@ class TranscribeViewModel: ObservableObject {
             if whisperContext.isModelLoaded == false {
                 let loaded = await loadModelAsync()
                 guard loaded else {
-                    errorMessage = whisperContext.errorMessage ?? "モデルの読み込みに失敗しました"
+                    setError(whisperContext.errorMessage ?? "モデルの読み込みに失敗しました")
                     return
                 }
             }
@@ -108,7 +108,7 @@ class TranscribeViewModel: ObservableObject {
             let prompt = settings.promptText
             let useVAD = settings.useVAD
             if useVAD && !modelManager.isVADModelReady {
-                errorMessage = "VADモデルが準備できていません。設定からVADモデルをダウンロードしてください。"
+                setError("VADモデルが準備できていません。設定からVADモデルをダウンロードしてください。")
                 return
             }
             
@@ -144,17 +144,17 @@ class TranscribeViewModel: ObservableObject {
                     try modelContext.save()
                 } catch {
                     modelContext.delete(record)
-                    errorMessage = "履歴の保存に失敗しました: \(error.localizedDescription)"
+                    setError("履歴の保存に失敗しました: \(error.localizedDescription)")
                 }
                 
                 if settings.autoDeleteRecordings && sourceType == .recording {
                     scheduleRecordingDeletion(url: url)
                 }
             } else {
-                errorMessage = whisperContext.errorMessage ?? "文字起こしに失敗しました"
+                setError(whisperContext.errorMessage ?? "文字起こしに失敗しました")
             }
         } catch {
-            errorMessage = "音声変換エラー: \(error.localizedDescription)"
+            setError("音声変換エラー: \(error.localizedDescription)")
         }
     }
     
@@ -176,8 +176,17 @@ class TranscribeViewModel: ObservableObject {
     
     private func scheduleRecordingDeletion(url: URL) {
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 7 * 24 * 60 * 60) {
-            try? FileManager.default.removeItem(at: url)
+            do {
+                try FileManager.default.removeItem(at: url)
+            } catch {
+                AppLogger.error("録音ファイルの自動削除に失敗しました", context: "TranscribeViewModel", error: error)
+            }
         }
+    }
+
+    func setError(_ message: String) {
+        errorMessage = message
+        AppLogger.error(message, context: "TranscribeViewModel")
     }
     
     func reset() {

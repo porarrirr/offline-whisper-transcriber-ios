@@ -39,7 +39,7 @@ class HistoryViewModel: ObservableObject {
             
             records = allRecords
         } catch {
-            errorMessage = "履歴の読み込みに失敗しました: \(error.localizedDescription)"
+            setError("履歴の読み込みに失敗しました: \(error.localizedDescription)")
         }
     }
     
@@ -49,7 +49,7 @@ class HistoryViewModel: ObservableObject {
         do {
             try modelContext.save()
         } catch {
-            errorMessage = "履歴の削除に失敗しました: \(error.localizedDescription)"
+            setError("履歴の削除に失敗しました: \(error.localizedDescription)")
         }
         fetchRecords()
     }
@@ -60,7 +60,7 @@ class HistoryViewModel: ObservableObject {
             try modelContext?.save()
         } catch {
             record.isFavorite.toggle()
-            errorMessage = "お気に入りの更新に失敗しました: \(error.localizedDescription)"
+            setError("お気に入りの更新に失敗しました: \(error.localizedDescription)")
         }
         fetchRecords()
     }
@@ -87,7 +87,12 @@ class HistoryViewModel: ObservableObject {
                 }
             }
         } catch {
-            errorMessage = "古い録音ファイルの削除に失敗しました: \(error.localizedDescription)"
+            setError("古い録音ファイルの削除に失敗しました: \(error.localizedDescription)")
         }
+    }
+
+    private func setError(_ message: String) {
+        errorMessage = message
+        AppLogger.error(message, context: "HistoryViewModel")
     }
 }

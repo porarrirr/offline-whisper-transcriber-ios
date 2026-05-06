@@ -1,12 +1,16 @@
 import SwiftUI
+import UIKit
 
 struct SettingsView: View {
     @StateObject private var settings = AppSettings.shared
     @StateObject private var modelManager = ModelManager.shared
+    @StateObject private var logger = AppLogger.shared
     
     @State private var showModelDownload = false
     @State private var showDeleteConfirmation = false
     @State private var showLanguagePicker = false
+    @State private var showLogCopiedConfirmation = false
+    @FocusState private var isPromptEditorFocused: Bool
     
     var body: some View {
         ZStack {
@@ -144,6 +148,7 @@ struct SettingsView: View {
                                 .padding(8)
                                 .background(AppColors.background)
                                 .cornerRadius(8)
+                                .focused($isPromptEditorFocused)
                             
                             Text("例: 「こんにちは。今日はテクノロジーについて話します。」")
                                 .font(AppFonts.caption)
@@ -295,14 +300,85 @@ struct SettingsView: View {
                         .cornerRadius(16)
                     }
                     .padding(.horizontal)
+
+                    // Logs
+                    VStack(alignment: .leading, spacing: 16) {
+                        SectionHeader(title: "ログ", icon: "doc.text.magnifyingglass")
+
+                        VStack(spacing: 12) {
+                            if logger.entries.isEmpty {
+                                Text("まだログはありません")
+                                    .font(AppFonts.callout)
+                                    .foregroundColor(AppColors.textSecondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            } else {
+                                ScrollView {
+                                    Text(logger.latestPreview)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(AppColors.textSecondary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .textSelection(.enabled)
+                                }
+                                .frame(minHeight: 96, maxHeight: 160)
+                                .padding(10)
+                                .background(AppColors.background)
+                                .cornerRadius(8)
+                            }
+
+                            HStack(spacing: 12) {
+                                Button(action: {
+                                    UIPasteboard.general.string = logger.exportText
+                                    showLogCopiedConfirmation = true
+                                }) {
+                                    HStack {
+                                        Image(systemName: "doc.on.doc")
+                                        Text("ログをコピー")
+                                    }
+                                    .font(AppFonts.callout)
+                                    .foregroundColor(AppColors.textOnAccent)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                                    .background(AppColors.accent)
+                                    .cornerRadius(12)
+                                }
+
+                                Button(action: {
+                                    logger.clear()
+                                }) {
+                                    Image(systemName: "trash")
+                                        .font(AppFonts.callout)
+                                        .foregroundColor(AppColors.warning)
+                                        .frame(width: 44, height: 44)
+                                        .background(AppColors.warning.opacity(0.1))
+                                        .cornerRadius(12)
+                                }
+                                .disabled(logger.entries.isEmpty)
+                                .opacity(logger.entries.isEmpty ? 0.4 : 1)
+                            }
+                        }
+                        .padding()
+                        .background(AppColors.cardBackground)
+                        .cornerRadius(16)
+                    }
+                    .padding(.horizontal)
                     
                     Spacer(minLength: 40)
                 }
                 .padding(.vertical)
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .navigationTitle("設定")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .keyboard) {
+                Spacer()
+                Button("完了") {
+                    isPromptEditorFocused = false
+                }
+                .foregroundColor(AppColors.accent)
+            }
+        }
         .sheet(isPresented: $showModelDownload) {
             ModelDownloadView(isPresentedAsSheet: true)
         }
@@ -313,6 +389,9 @@ struct SettingsView: View {
             }
         } message: {
             Text("現在のモデルを削除しますか？")
+        }
+        .alert("ログをコピーしました", isPresented: $showLogCopiedConfirmation) {
+            Button("OK", role: .cancel) {}
         }
         .sheet(isPresented: $showLanguagePicker) {
             LanguagePickerView(selectedLanguage: $settings.selectedLanguage, isPresented: $showLanguagePicker)

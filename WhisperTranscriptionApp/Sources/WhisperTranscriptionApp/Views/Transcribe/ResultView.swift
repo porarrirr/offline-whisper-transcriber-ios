@@ -173,14 +173,14 @@ struct ExportSheetView: View {
                     
                     ForEach(ExportFormat.allCases) { format in
                         Button(action: {
-                            let tempRecord = TranscriptionRecord(
+                            let url = TranscriptionExporter.export(
                                 title: "エクスポート",
                                 text: text,
-                                sourceType: .recording,
                                 duration: 0,
-                                segments: segments
+                                segments: segments,
+                                language: nil,
+                                format: format
                             )
-                            let url = TranscriptionExporter.export(record: tempRecord, format: format)
                             dismiss()
                             onExport(url)
                         }) {

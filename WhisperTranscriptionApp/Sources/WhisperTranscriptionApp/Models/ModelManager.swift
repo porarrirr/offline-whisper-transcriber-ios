@@ -1,4 +1,6 @@
 import Foundation
+import SwiftData
+import UIKit
 
 @MainActor
 class ModelManager: NSObject, ObservableObject {
@@ -79,7 +81,7 @@ class ModelManager: NSObject, ObservableObject {
         
         guard !isDownloading else { return }
         guard let url = targetSize.downloadURL else {
-            downloadError = "ダウンロードURLが無効です"
+            setDownloadError("ダウンロードURLが無効です")
             return
         }
         
@@ -136,7 +138,7 @@ class ModelManager: NSObject, ObservableObject {
                 return formatter.string(fromByteCount: size)
             }
         } catch {
-            downloadError = "モデルサイズの取得に失敗しました: \(error.localizedDescription)"
+            setDownloadError("モデルサイズの取得に失敗しました: \(error.localizedDescription)")
         }
         return nil
     }
@@ -148,7 +150,7 @@ class ModelManager: NSObject, ObservableObject {
                 isModelReady = false
                 downloadError = nil
             } catch {
-                downloadError = "モデル削除エラー: \(error.localizedDescription)"
+                setDownloadError("モデル削除エラー: \(error.localizedDescription)")
             }
         }
     }
@@ -160,14 +162,14 @@ class ModelManager: NSObject, ObservableObject {
                 isVADModelReady = false
                 vadDownloadError = nil
             } catch {
-                vadDownloadError = "VADモデル削除エラー: \(error.localizedDescription)"
+                setVADDownloadError("VADモデル削除エラー: \(error.localizedDescription)")
             }
         }
     }
     
     func deleteAllModels() {
         guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            downloadError = "モデル保存先を取得できませんでした"
+            setDownloadError("モデル保存先を取得できませんでした")
             return
         }
         for size in AppSettings.ModelSize.allCases {
@@ -176,12 +178,22 @@ class ModelManager: NSObject, ObservableObject {
                 do {
                     try FileManager.default.removeItem(atPath: path)
                 } catch {
-                    downloadError = "モデル削除エラー: \(error.localizedDescription)"
+                    setDownloadError("モデル削除エラー: \(error.localizedDescription)")
                     return
                 }
             }
         }
         isModelReady = false
+    }
+
+    private func setDownloadError(_ message: String) {
+        downloadError = message
+        AppLogger.error(message, context: "ModelManager")
+    }
+
+    private func setVADDownloadError(_ message: String) {
+        vadDownloadError = message
+        AppLogger.error(message, context: "ModelManager")
     }
 }
 
@@ -217,10 +229,10 @@ extension ModelManager: URLSessionDownloadDelegate {
             }
         } catch {
             if downloadTask.taskDescription == "vadModel" {
-                vadDownloadError = "VADモデル保存エラー: \(error.localizedDescription)"
+                setVADDownloadError("VADモデル保存エラー: \(error.localizedDescription)")
                 isVADDownloading = false
             } else {
-                downloadError = "ファイル保存エラー: \(error.localizedDescription)"
+                setDownloadError("ファイル保存エラー: \(error.localizedDescription)")
                 isDownloading = false
             }
         }
@@ -229,11 +241,11 @@ extension ModelManager: URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
             if task.taskDescription == "vadModel" {
-                vadDownloadError = "VADモデルダウンロードエラー: \(error.localizedDescription)"
+                setVADDownloadError("VADモデルダウンロードエラー: \(error.localizedDescription)")
                 isVADDownloading = false
                 vadDownloadTask = nil
             } else {
-                downloadError = "ダウンロードエラー: \(error.localizedDescription)"
+                setDownloadError("ダウンロードエラー: \(error.localizedDescription)")
                 isDownloading = false
                 downloadTask = nil
             }

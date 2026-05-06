@@ -18,6 +18,7 @@ class WhisperContext: ObservableObject {
     func loadModel(path: String, useFlashAttention: Bool = false) {
         guard FileManager.default.fileExists(atPath: path) else {
             errorMessage = "モデルファイルが見つかりません"
+            AppLogger.error("モデルファイルが見つかりません", context: "WhisperContext")
             return
         }
         
@@ -34,7 +35,7 @@ class WhisperContext: ObservableObject {
                     self?.isModelLoaded = true
                     self?.errorMessage = nil
                 } else {
-                    self?.errorMessage = "モデルの読み込みに失敗しました"
+                    self?.setErrorOnMain("モデルの読み込みに失敗しました")
                 }
             }
         }
@@ -52,6 +53,7 @@ class WhisperContext: ObservableObject {
         guard let context = whisperContext else {
             await MainActor.run {
                 errorMessage = "モデルが読み込まれていません"
+                AppLogger.error("モデルが読み込まれていません", context: "WhisperContext")
             }
             return nil
         }
@@ -104,6 +106,7 @@ class WhisperContext: ObservableObject {
         guard let context = whisperContext else {
             await MainActor.run {
                 errorMessage = "モデルが読み込まれていません"
+                AppLogger.error("モデルが読み込まれていません", context: "WhisperContext")
             }
             return nil
         }
@@ -111,6 +114,7 @@ class WhisperContext: ObservableObject {
         guard !samples.isEmpty else {
             await MainActor.run {
                 errorMessage = WhisperContextError.emptyAudioFile.localizedDescription
+                AppLogger.error(WhisperContextError.emptyAudioFile.localizedDescription, context: "WhisperContext")
             }
             return nil
         }
@@ -175,7 +179,7 @@ class WhisperContext: ObservableObject {
             )
         } catch {
             DispatchQueue.main.async { [weak self] in
-                self?.errorMessage = error.localizedDescription
+                self?.setErrorOnMain(error.localizedDescription)
             }
             return nil
         }
@@ -274,7 +278,7 @@ class WhisperContext: ObservableObject {
         if useVAD {
             guard let vadModelPath, FileManager.default.fileExists(atPath: vadModelPath) else {
                 DispatchQueue.main.async { [weak self] in
-                    self?.errorMessage = "VADモデルが見つかりません。設定からVADモデルをダウンロードしてください。"
+                    self?.setErrorOnMain("VADモデルが見つかりません。設定からVADモデルをダウンロードしてください。")
                 }
                 return nil
             }
@@ -296,7 +300,6 @@ class WhisperContext: ObservableObject {
             }
         }
         
-        // Progress callback
         let progressPointer = UnsafeMutablePointer<WhisperProgressCallbackData>.allocate(capacity: 1)
         progressPointer.pointee = WhisperProgressCallbackData(callback: onProgress)
         defer { progressPointer.deallocate() }
@@ -312,7 +315,7 @@ class WhisperContext: ObservableObject {
         
         guard ret == 0 else {
             DispatchQueue.main.async { [weak self] in
-                self?.errorMessage = "Whisperの文字起こし処理に失敗しました（code: \(ret)）"
+                self?.setErrorOnMain("Whisperの文字起こし処理に失敗しました（code: \(ret)）")
             }
             return nil
         }
@@ -372,6 +375,11 @@ class WhisperContext: ObservableObject {
             whisperContext = nil
         }
         isModelLoaded = false
+    }
+
+    private func setErrorOnMain(_ message: String) {
+        errorMessage = message
+        AppLogger.error(message, context: "WhisperContext")
     }
     
     deinit {

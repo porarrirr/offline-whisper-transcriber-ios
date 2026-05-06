@@ -148,7 +148,7 @@ struct TranscribeView: View {
                 case .success(let url):
                     viewModel.transcribeFile(url: url, modelContext: modelContext)
                 case .failure(let error):
-                    viewModel.errorMessage = "ファイル選択エラー: \(error.localizedDescription)"
+                    viewModel.setError("ファイル選択エラー: \(error.localizedDescription)")
                 }
             }
         }

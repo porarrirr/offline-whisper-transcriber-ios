@@ -18,6 +18,7 @@ class AudioPlayer: ObservableObject {
             errorMessage = nil
         } catch {
             errorMessage = "音声の再生準備に失敗しました: \(error.localizedDescription)"
+            AppLogger.error(errorMessage ?? "音声の再生準備に失敗しました", context: "AudioPlayer")
         }
     }
     
