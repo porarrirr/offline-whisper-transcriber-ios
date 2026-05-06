@@ -1,0 +1,36 @@
+name: WhisperTranscriptionApp
+targets:
+  WhisperTranscriptionApp:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources/WhisperTranscriptionApp
+        createIntermediateGroups: true
+      - path: WhisperTranscriptionApp-Bridging-Header.h
+        buildPhase: none
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.yourname.whispertranscription
+        SWIFT_VERSION: "5.9"
+        SWIFT_OBJC_BRIDGING_HEADER: WhisperTranscriptionApp-Bridging-Header.h
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/whisper.cpp/include"
+          - "$(SRCROOT)/whisper.cpp/ggml/include"
+        OTHER_LDFLAGS: "-lc++"
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Whisper文字起こし
+        CFBundleDevelopmentRegion: ja_JP
+        NSMicrophoneUsageDescription: "音声を録音して文字起こしするためにマイクへのアクセスが必要です。"
+    dependencies:
+      - framework: Frameworks/whisper.xcframework
+        embed: true
+        codeSign: true
+      - sdk: AVFoundation.framework
+      - sdk: UniformTypeIdentifiers.framework
+      - sdk: AppIntents.framework
+    scheme:
+      testTargets: []
