@@ -50,6 +50,10 @@ class AudioConverter {
             outputFormat: outputFormat,
             inputFile: inputFile
         )
+        AppLogger.info(
+            "音声変換を開始しました: \(conversionDetails), inputCapacity=\(inputCapacity), outputCapacity=\(outputCapacity)",
+            context: "AudioConverter"
+        )
 
         let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
             if reachedEndOfInput {
@@ -57,12 +61,26 @@ class AudioConverter {
                 return nil
             }
 
+            inputReadPosition = inputFile.framePosition
+            if inputFile.length > 0 && inputReadPosition >= inputFile.length {
+                reachedEndOfInput = true
+                outStatus.pointee = .endOfStream
+                AppLogger.info(
+                    "音声入力の終端に到達しました: \(conversionDetails), readPosition=\(inputReadPosition), samples=\(samples.count)",
+                    context: "AudioConverter"
+                )
+                return nil
+            }
+
             do {
-                inputReadPosition = inputFile.framePosition
                 try inputFile.read(into: inputBuffer)
                 if inputBuffer.frameLength == 0 {
                     reachedEndOfInput = true
                     outStatus.pointee = .endOfStream
+                    AppLogger.info(
+                        "音声入力の読み込みが空で終了しました: \(conversionDetails), readPosition=\(inputReadPosition), samples=\(samples.count)",
+                        context: "AudioConverter"
+                    )
                     return nil
                 }
                 outStatus.pointee = .haveData
@@ -108,28 +126,52 @@ class AudioConverter {
             case .inputRanDry:
                 if reachedEndOfInput && outputBuffer.frameLength == 0 {
                     guard !samples.isEmpty else {
+                        AppLogger.error(
+                            "音声変換結果が空です: status=inputRanDry, \(conversionDetails), readPosition=\(inputReadPosition)",
+                            context: "AudioConverter"
+                        )
                         throw AudioConverterError.emptyAudioFile
                     }
+                    AppLogger.info(
+                        "音声変換が完了しました: status=inputRanDry, \(conversionDetails), readPosition=\(inputReadPosition), samples=\(samples.count), duration=\(Self.sampleDuration(samples.count, sampleRate: sampleRate))",
+                        context: "AudioConverter"
+                    )
                     return samples
                 }
                 continue
             case .endOfStream:
                 guard !samples.isEmpty else {
+                    AppLogger.error(
+                        "音声変換結果が空です: status=endOfStream, \(conversionDetails), readPosition=\(inputReadPosition)",
+                        context: "AudioConverter"
+                    )
                     throw AudioConverterError.emptyAudioFile
                 }
+                AppLogger.info(
+                    "音声変換が完了しました: status=endOfStream, \(conversionDetails), readPosition=\(inputReadPosition), samples=\(samples.count), duration=\(Self.sampleDuration(samples.count, sampleRate: sampleRate))",
+                    context: "AudioConverter"
+                )
                 return samples
             case .error:
                 if let error {
                     AppLogger.error(
-                        "音声変換に失敗しました: \(conversionDetails), readPosition=\(inputReadPosition)",
+                        "音声変換に失敗しました: status=error, \(conversionDetails), readPosition=\(inputReadPosition), samples=\(samples.count)",
                         context: "AudioConverter",
                         error: error
                     )
                     throw AudioConverterError.conversionFailed(error)
                 } else {
+                    AppLogger.error(
+                        "音声変換がエラー詳細なしで終了しました: status=error, \(conversionDetails), readPosition=\(inputReadPosition), samples=\(samples.count)",
+                        context: "AudioConverter"
+                    )
                     throw AudioConverterError.conversionEndedUnexpectedly
                 }
             @unknown default:
+                AppLogger.error(
+                    "音声変換が未知の状態で終了しました: status=\(status), \(conversionDetails), readPosition=\(inputReadPosition), samples=\(samples.count)",
+                    context: "AudioConverter"
+                )
                 throw AudioConverterError.conversionEndedUnexpectedly
             }
         }
@@ -151,6 +193,10 @@ class AudioConverter {
 
     private static func formatDescription(_ format: AVAudioFormat) -> String {
         "\(Int(format.sampleRate))Hz/\(format.channelCount)ch/\(format.commonFormat)"
+    }
+
+    private static func sampleDuration(_ sampleCount: Int, sampleRate: Double) -> String {
+        String(format: "%.2fs", Double(sampleCount) / sampleRate)
     }
     
     enum AudioConverterError: LocalizedError {

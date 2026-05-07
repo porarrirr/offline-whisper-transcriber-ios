@@ -94,14 +94,24 @@ class TranscribeViewModel: ObservableObject {
         }
         
         do {
+            AppLogger.info(
+                "文字起こしを開始しました: source=\(sourceType), file=\(url.lastPathComponent), language=\(settings.selectedLanguage), translate=\(settings.translateToEnglish), useVAD=\(settings.useVAD)",
+                context: "TranscribeViewModel"
+            )
             let samples = try await AudioConverter.shared.convertToWhisperSamples(inputURL: url)
+            AppLogger.info(
+                "音声変換が完了しました: file=\(url.lastPathComponent), samples=\(samples.count)",
+                context: "TranscribeViewModel"
+            )
             
             if whisperContext.isModelLoaded == false {
+                AppLogger.info("Whisperモデルを読み込みます", context: "TranscribeViewModel")
                 let loaded = await loadModelAsync()
                 guard loaded else {
                     setError(whisperContext.errorMessage ?? "モデルの読み込みに失敗しました")
                     return
                 }
+                AppLogger.info("Whisperモデルの読み込みが完了しました", context: "TranscribeViewModel")
             }
             
             let language = settings.selectedLanguage == "auto" ? "" : settings.selectedLanguage
@@ -123,6 +133,10 @@ class TranscribeViewModel: ObservableObject {
                     self?.transcriptionProgress = progress
                 }
             ) {
+                AppLogger.info(
+                    "文字起こしが完了しました: file=\(url.lastPathComponent), textLength=\(result.text.count), segments=\(result.segments.count), language=\(result.language ?? "unknown")",
+                    context: "TranscribeViewModel"
+                )
                 transcriptionResult = result.text
                 transcriptionSegments = result.segments
                 transcriptionLanguage = result.language
@@ -151,9 +165,18 @@ class TranscribeViewModel: ObservableObject {
                     scheduleRecordingDeletion(url: url)
                 }
             } else {
+                AppLogger.error(
+                    "Whisperの文字起こし結果がnilでした: file=\(url.lastPathComponent), samples=\(samples.count), whisperError=\(whisperContext.errorMessage ?? "none")",
+                    context: "TranscribeViewModel"
+                )
                 setError(whisperContext.errorMessage ?? "文字起こしに失敗しました")
             }
         } catch {
+            AppLogger.error(
+                "音声変換で例外が発生しました: file=\(url.lastPathComponent), source=\(sourceType)",
+                context: "TranscribeViewModel",
+                error: error
+            )
             setError("音声変換エラー: \(error.localizedDescription)")
         }
     }
