@@ -22,7 +22,7 @@ struct ResultView: View {
         _showTimestampView = State(initialValue: AppSettings.shared.includeTimestamps && !segments.isEmpty)
     }
     
-    private var displayText: String {
+    private func currentDisplayText() -> String {
         if showTimestampView && !segments.isEmpty {
             return segments.map { "\($0.formattedTimestamp) \($0.text)" }.joined(separator: "\n")
         }
@@ -48,7 +48,12 @@ struct ResultView: View {
                             .padding(.horizontal)
                         }
                         
-                        TranscriptionCard(text: displayText, isLoading: false)
+                        TranscriptionCard(
+                            text: text,
+                            segments: segments,
+                            showTimestamps: showTimestampView,
+                            isLoading: false
+                        )
                             .padding(.horizontal)
                         
                         if !segments.isEmpty {
@@ -75,7 +80,7 @@ struct ResultView: View {
                                 title: "コピー",
                                 color: AppColors.accent
                             ) {
-                                UIPasteboard.general.string = displayText
+                                UIPasteboard.general.string = currentDisplayText()
                                 showCopyConfirmation = true
                             }
                             
@@ -84,7 +89,7 @@ struct ResultView: View {
                                 title: "共有",
                                 color: AppColors.surface
                             ) {
-                                shareItems = [displayText]
+                                shareItems = [currentDisplayText()]
                                 showShareSheet = true
                             }
                             

@@ -44,7 +44,7 @@ struct HistoryListView: View {
                     TextField("検索", text: $viewModel.searchText)
                         .foregroundColor(AppColors.textPrimary)
                         .onChange(of: viewModel.searchText) { _, _ in
-                            viewModel.fetchRecords()
+                            viewModel.scheduleFetchRecords()
                         }
                     
                     if !viewModel.searchText.isEmpty {
@@ -156,7 +156,7 @@ struct HistoryRow: View {
                     .foregroundColor(AppColors.accent)
             }
             
-            Text(record.text)
+            Text(previewText)
                 .font(AppFonts.callout)
                 .foregroundColor(AppColors.textSecondary)
                 .lineLimit(2)
@@ -168,5 +168,10 @@ struct HistoryRow: View {
             RoundedRectangle(cornerRadius: 12)
                 .stroke(AppColors.accent.opacity(0.1), lineWidth: 1)
         )
+    }
+
+    private var previewText: String {
+        let prefix = record.text.prefix(160)
+        return String(prefix) + (prefix.endIndex == record.text.endIndex ? "" : "...")
     }
 }

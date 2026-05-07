@@ -322,7 +322,9 @@ class WhisperContext: ObservableObject {
         
         let nSegments = whisper_full_n_segments(context)
         var segments: [TranscriptionSegment] = []
-        var fullText = ""
+        var textParts: [String] = []
+        segments.reserveCapacity(Int(nSegments))
+        textParts.reserveCapacity(Int(nSegments))
         
         for i in 0..<nSegments {
             let t0 = whisper_full_get_segment_t0(context, i)
@@ -340,11 +342,7 @@ class WhisperContext: ObservableObject {
                     text: text
                 )
                 segments.append(segment)
-                
-                if !fullText.isEmpty {
-                    fullText += "\n"
-                }
-                fullText += text
+                textParts.append(text)
             }
         }
         
@@ -354,7 +352,7 @@ class WhisperContext: ObservableObject {
         }
         
         return TranscriptionResult(
-            text: fullText.trimmingCharacters(in: .whitespacesAndNewlines),
+            text: textParts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines),
             segments: segments,
             language: detectedLanguage ?? language
         )

@@ -143,7 +143,7 @@ class TranscribeViewModel: ObservableObject {
                 showResult = true
                 
                 let duration = AudioConverter.shared.getAudioDuration(url: url)
-                let title = String(result.text.prefix(20)) + (result.text.count > 20 ? "..." : "")
+                let title = makeTitle(from: result.text)
                 let record = TranscriptionRecord(
                     title: title.isEmpty ? "無題の文字起こし" : title,
                     text: result.text,
@@ -205,6 +205,11 @@ class TranscribeViewModel: ObservableObject {
                 AppLogger.error("録音ファイルの自動削除に失敗しました", context: "TranscribeViewModel", error: error)
             }
         }
+    }
+
+    private func makeTitle(from text: String) -> String {
+        let prefix = text.prefix(20)
+        return String(prefix) + (prefix.endIndex == text.endIndex ? "" : "...")
     }
 
     func setError(_ message: String) {

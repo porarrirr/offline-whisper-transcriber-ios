@@ -10,6 +10,7 @@ class HistoryViewModel: ObservableObject {
     @Published var errorMessage: String?
     
     private var modelContext: ModelContext?
+    private var fetchTask: Task<Void, Never>?
     
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
@@ -17,6 +18,11 @@ class HistoryViewModel: ObservableObject {
     }
     
     func fetchRecords() {
+        fetchTask?.cancel()
+        performFetchRecords()
+    }
+
+    private func performFetchRecords() {
         guard let modelContext = modelContext else { return }
         
         let descriptor = FetchDescriptor<TranscriptionRecord>(
@@ -40,6 +46,15 @@ class HistoryViewModel: ObservableObject {
             records = allRecords
         } catch {
             setError("履歴の読み込みに失敗しました: \(error.localizedDescription)")
+        }
+    }
+
+    func scheduleFetchRecords() {
+        fetchTask?.cancel()
+        fetchTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 250_000_000)
+            guard !Task.isCancelled else { return }
+            await self?.performFetchRecords()
         }
     }
     

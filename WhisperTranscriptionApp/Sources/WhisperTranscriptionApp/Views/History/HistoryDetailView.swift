@@ -11,10 +11,11 @@ struct HistoryDetailView: View {
     @State private var showExportSheet = false
     @State private var showTimestampView = false
     @State private var shareItems: [Any] = []
+    @State private var cachedSegments: [TranscriptionSegment] = []
     
-    private var displayText: String {
-        if showTimestampView && !record.segments.isEmpty {
-            return record.segments.map { "\($0.formattedTimestamp) \($0.text)" }.joined(separator: "\n")
+    private func currentDisplayText() -> String {
+        if showTimestampView && !cachedSegments.isEmpty {
+            return cachedSegments.map { "\($0.formattedTimestamp) \($0.text)" }.joined(separator: "\n")
         }
         return record.text
     }
@@ -46,30 +47,15 @@ struct HistoryDetailView: View {
                         .padding(.horizontal)
                     }
                     
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            Image(systemName: "text.quote")
-                                .foregroundColor(AppColors.accent)
-                            
-                            Text(record.displayTitle)
-                                .font(AppFonts.headline)
-                                .foregroundColor(AppColors.textPrimary)
-                            
-                            Spacer()
-                        }
-                        
-                        Text(displayText)
-                            .font(AppFonts.body)
-                            .foregroundColor(AppColors.textPrimary)
-                            .lineSpacing(6)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding()
-                    .background(AppColors.cardBackground)
-                    .cornerRadius(16)
+                    TranscriptionCard(
+                        text: record.text,
+                        segments: cachedSegments,
+                        showTimestamps: showTimestampView,
+                        isLoading: false
+                    )
                     .padding(.horizontal)
                     
-                    if !record.segments.isEmpty {
+                    if !cachedSegments.isEmpty {
                         Button(action: {
                             showTimestampView.toggle()
                         }) {
@@ -93,7 +79,7 @@ struct HistoryDetailView: View {
                             title: "テキストをコピー",
                             color: AppColors.accent
                         ) {
-                            UIPasteboard.general.string = displayText
+                            UIPasteboard.general.string = currentDisplayText()
                             showCopyConfirmation = true
                         }
                         
@@ -102,7 +88,7 @@ struct HistoryDetailView: View {
                             title: "テキストを共有",
                             color: AppColors.surface
                         ) {
-                            shareItems = [displayText]
+                            shareItems = [currentDisplayText()]
                             showShareSheet = true
                         }
                         
@@ -139,6 +125,11 @@ struct HistoryDetailView: View {
         }
         .navigationTitle("詳細")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            if cachedSegments.isEmpty {
+                cachedSegments = record.segments
+            }
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: {

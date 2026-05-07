@@ -2,10 +2,23 @@ import SwiftUI
 
 struct TranscriptionCard: View {
     let text: String
+    let segments: [TranscriptionSegment]
+    let showTimestamps: Bool
     let isLoading: Bool
-    
-    @State private var displayedText = ""
-    @State private var currentIndex = 0
+    @State private var textChunks: [TranscriptionTextChunk]
+
+    init(
+        text: String,
+        segments: [TranscriptionSegment] = [],
+        showTimestamps: Bool = false,
+        isLoading: Bool
+    ) {
+        self.text = text
+        self.segments = segments
+        self.showTimestamps = showTimestamps
+        self.isLoading = isLoading
+        _textChunks = State(initialValue: TranscriptionTextChunk.chunks(from: text))
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -39,24 +52,28 @@ struct TranscriptionCard: View {
                 }
                 .shimmer()
             } else {
-                Text(displayedText)
-                    .font(AppFonts.body)
-                    .foregroundColor(AppColors.textPrimary)
-                    .lineSpacing(6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .onAppear {
-                        if !isLoading {
-                            animateText()
+                if showTimestamps && !segments.isEmpty {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(segments) { segment in
+                            TranscriptionSegmentRow(segment: segment)
                         }
                     }
-                    .onChange(of: text) { _, newValue in
-                        if !isLoading {
-                            displayedText = ""
-                            currentIndex = 0
-                            animateText()
+                } else {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(textChunks) { chunk in
+                            Text(chunk.text)
+                                .font(AppFonts.body)
+                                .foregroundColor(AppColors.textPrimary)
+                                .lineSpacing(6)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
                     }
+                }
             }
+        }
+        .onChange(of: text) { _, newValue in
+            textChunks = TranscriptionTextChunk.chunks(from: newValue)
         }
         .padding()
         .background(AppColors.cardBackground)
@@ -66,17 +83,71 @@ struct TranscriptionCard: View {
                 .stroke(AppColors.accent.opacity(0.2), lineWidth: 1)
         )
     }
-    
-    private func animateText() {
-        guard currentIndex < text.count else { return }
-        
-        let index = text.index(text.startIndex, offsetBy: currentIndex)
-        displayedText += String(text[index])
-        currentIndex += 1
-        
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-            animateText()
+}
+
+private struct TranscriptionSegmentRow: View {
+    let segment: TranscriptionSegment
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(segment.formattedTimestamp)
+                .font(AppFonts.caption)
+                .foregroundColor(AppColors.accent)
+                .monospacedDigit()
+
+            Text(segment.text)
+                .font(AppFonts.body)
+                .foregroundColor(AppColors.textPrimary)
+                .lineSpacing(6)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+private struct TranscriptionTextChunk: Identifiable {
+    let id: Int
+    let text: String
+
+    static func chunks(from text: String, targetLength: Int = 1_200) -> [TranscriptionTextChunk] {
+        guard !text.isEmpty else { return [] }
+
+        var chunks: [TranscriptionTextChunk] = []
+        chunks.reserveCapacity(max(1, text.count / targetLength))
+
+        var current = ""
+        current.reserveCapacity(targetLength)
+
+        func appendCurrentIfNeeded() {
+            guard !current.isEmpty else { return }
+            chunks.append(TranscriptionTextChunk(id: chunks.count, text: current))
+            current = ""
+            current.reserveCapacity(targetLength)
+        }
+
+        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let lineText = String(line)
+            if current.count + lineText.count + 1 > targetLength {
+                appendCurrentIfNeeded()
+            }
+
+            if lineText.count > targetLength {
+                var start = lineText.startIndex
+                while start < lineText.endIndex {
+                    let end = lineText.index(start, offsetBy: targetLength, limitedBy: lineText.endIndex) ?? lineText.endIndex
+                    chunks.append(TranscriptionTextChunk(id: chunks.count, text: String(lineText[start..<end])))
+                    start = end
+                }
+            } else {
+                if !current.isEmpty {
+                    current.append("\n")
+                }
+                current.append(lineText)
+            }
+        }
+
+        appendCurrentIfNeeded()
+        return chunks
     }
 }
 
