@@ -43,6 +43,13 @@ class AudioConverter {
 
         var reachedEndOfInput = false
         var inputReadError: Error?
+        var inputReadPosition: AVAudioFramePosition = inputFile.framePosition
+        let conversionDetails = Self.conversionDetails(
+            inputURL: inputURL,
+            inputFormat: inputFormat,
+            outputFormat: outputFormat,
+            inputFile: inputFile
+        )
 
         let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
             if reachedEndOfInput {
@@ -51,6 +58,7 @@ class AudioConverter {
             }
 
             do {
+                inputReadPosition = inputFile.framePosition
                 try inputFile.read(into: inputBuffer)
                 if inputBuffer.frameLength == 0 {
                     reachedEndOfInput = true
@@ -62,6 +70,11 @@ class AudioConverter {
             } catch {
                 inputReadError = error
                 outStatus.pointee = .endOfStream
+                AppLogger.error(
+                    "音声入力の読み込みに失敗しました: \(conversionDetails), readPosition=\(inputReadPosition)",
+                    context: "AudioConverter",
+                    error: error
+                )
                 return nil
             }
         }
@@ -89,20 +102,34 @@ class AudioConverter {
                 samples.append(contentsOf: UnsafeBufferPointer(start: channelData, count: frameCount))
             }
 
-            if status == .haveData || status == .inputRanDry {
+            switch status {
+            case .haveData:
                 continue
-            }
-
-            if status == .endOfStream {
+            case .inputRanDry:
+                if reachedEndOfInput && outputBuffer.frameLength == 0 {
+                    guard !samples.isEmpty else {
+                        throw AudioConverterError.emptyAudioFile
+                    }
+                    return samples
+                }
+                continue
+            case .endOfStream:
                 guard !samples.isEmpty else {
                     throw AudioConverterError.emptyAudioFile
                 }
                 return samples
-            }
-
-            if let error {
-                throw AudioConverterError.conversionFailed(error)
-            } else {
+            case .error:
+                if let error {
+                    AppLogger.error(
+                        "音声変換に失敗しました: \(conversionDetails), readPosition=\(inputReadPosition)",
+                        context: "AudioConverter",
+                        error: error
+                    )
+                    throw AudioConverterError.conversionFailed(error)
+                } else {
+                    throw AudioConverterError.conversionEndedUnexpectedly
+                }
+            @unknown default:
                 throw AudioConverterError.conversionEndedUnexpectedly
             }
         }
@@ -111,6 +138,19 @@ class AudioConverter {
     func getAudioDuration(url: URL) -> Double {
         let asset = AVAsset(url: url)
         return CMTimeGetSeconds(asset.duration)
+    }
+
+    private static func conversionDetails(
+        inputURL: URL,
+        inputFormat: AVAudioFormat,
+        outputFormat: AVAudioFormat,
+        inputFile: AVAudioFile
+    ) -> String {
+        "url=\(inputURL.lastPathComponent), input=\(formatDescription(inputFormat)), output=\(formatDescription(outputFormat)), length=\(inputFile.length)"
+    }
+
+    private static func formatDescription(_ format: AVAudioFormat) -> String {
+        "\(Int(format.sampleRate))Hz/\(format.channelCount)ch/\(format.commonFormat)"
     }
     
     enum AudioConverterError: LocalizedError {
@@ -138,7 +178,8 @@ class AudioConverter {
             case .unsupportedPCMFormat:
                 return "対応していないPCM形式です"
             case .conversionFailed(let error):
-                return "音声変換に失敗しました: \(error.localizedDescription)"
+                let nsError = error as NSError
+                return "音声変換に失敗しました: \(nsError.localizedDescription)（domain: \(nsError.domain), code: \(nsError.code)）"
             case .conversionEndedUnexpectedly:
                 return "音声変換が予期せず終了しました"
             }
