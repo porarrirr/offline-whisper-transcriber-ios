@@ -55,18 +55,30 @@ class AppSettings: ObservableObject {
     
     enum ModelSize: String, CaseIterable, Identifiable {
         case tiny = "tiny"
+        case tinyQ5_1 = "tiny-q5_1"
         case base = "base"
+        case baseQ5_1 = "base-q5_1"
         case small = "small"
+        case smallQ5_1 = "small-q5_1"
         case medium = "medium"
+        case mediumQ5_0 = "medium-q5_0"
+        case largeV3TurboQ8_0 = "large-v3-turbo-q8_0"
+        case largeV3TurboQ5_0 = "large-v3-turbo-q5_0"
         
         var id: String { rawValue }
         
         var displayName: String {
             switch self {
             case .tiny: return "Tiny（高速・軽量）"
+            case .tinyQ5_1: return "Tiny Q5_1（さらに軽量）"
             case .base: return "Base（バランス）"
+            case .baseQ5_1: return "Base Q5_1（軽量・バランス）"
             case .small: return "Small（高精度）"
+            case .smallQ5_1: return "Small Q5_1（軽量・高精度）"
             case .medium: return "Medium（最高精度）"
+            case .mediumQ5_0: return "Medium Q5_0（軽量・最高精度）"
+            case .largeV3TurboQ8_0: return "Large v3 Turbo Q8_0（高速・高精度）"
+            case .largeV3TurboQ5_0: return "Large v3 Turbo Q5_0（軽量・高速高精度）"
             }
         }
         
@@ -81,9 +93,15 @@ class AppSettings: ObservableObject {
         var approximateSize: String {
             switch self {
             case .tiny: return "約39MB"
+            case .tinyQ5_1: return "約15MB"
             case .base: return "約142MB"
+            case .baseQ5_1: return "約60MB"
             case .small: return "約466MB"
+            case .smallQ5_1: return "約163MB"
             case .medium: return "約1.5GB"
+            case .mediumQ5_0: return "約568MB"
+            case .largeV3TurboQ8_0: return "約874MB"
+            case .largeV3TurboQ5_0: return "約574MB"
             }
         }
     }
