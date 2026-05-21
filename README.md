@@ -1,12 +1,12 @@
 # Offline Whisper Transcriber for iOS
 
-iPhone上で完全オフライン動作するAI音声文字起こしアプリ。OpenAI Whisperモデル ([whisper.cpp](https://github.com/ggerganov/whisper.cpp)) をオンデバイスで実行し、音声ファイル・リアルタイム録音から高精度な文字起こしを行います。
+iPhone上でAI音声文字起こしを行うアプリ。OpenAI Whisperモデル ([whisper.cpp](https://github.com/ggerganov/whisper.cpp)) をオンデバイスで実行し、音声ファイル・リアルタイム録音から高精度な文字起こしを行います。初回にモデルをダウンロードした後は、文字起こし処理はオフラインで完結します。
 
 > 詳細なセットアップ手順は [WhisperTranscriptionApp/README.md](WhisperTranscriptionApp/README.md) を参照してください。
 
 ## 主な特徴
 
-- **完全オフライン** — モデルダウンロード後はインターネット不要。すべての推論がデバイス上で完結
+- **オフライン推論** — 初回のモデルダウンロード後はインターネット不要。すべての推論がデバイス上で完結
 - **リアルタイム録音 & 文字起こし** — 録音完了後すぐにテキスト化
 - **ファイルインポート対応** — m4a / wav / mp3 / mp4 / mov から文字起こし
 - **マルチ言語** — 日本語を含む約20言語に対応

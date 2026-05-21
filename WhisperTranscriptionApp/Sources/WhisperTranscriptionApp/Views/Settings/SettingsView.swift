@@ -361,6 +361,56 @@ struct SettingsView: View {
                         .cornerRadius(16)
                     }
                     .padding(.horizontal)
+
+                    // Legal & Support
+                    VStack(alignment: .leading, spacing: 16) {
+                        SectionHeader(title: "サポートとポリシー", icon: "info.circle")
+
+                        VStack(spacing: 0) {
+                            Link(destination: AppLegalURLs.marketing) {
+                                HStack {
+                                    Text("アプリについて")
+                                        .font(AppFonts.body)
+                                        .foregroundColor(AppColors.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "arrow.up.right")
+                                        .foregroundColor(AppColors.textSecondary)
+                                }
+                                .padding()
+                            }
+
+                            Divider().background(AppColors.surface)
+
+                            Link(destination: AppLegalURLs.support) {
+                                HStack {
+                                    Text("サポート")
+                                        .font(AppFonts.body)
+                                        .foregroundColor(AppColors.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "arrow.up.right")
+                                        .foregroundColor(AppColors.textSecondary)
+                                }
+                                .padding()
+                            }
+
+                            Divider().background(AppColors.surface)
+
+                            Link(destination: AppLegalURLs.privacyPolicy) {
+                                HStack {
+                                    Text("プライバシーポリシー")
+                                        .font(AppFonts.body)
+                                        .foregroundColor(AppColors.textPrimary)
+                                    Spacer()
+                                    Image(systemName: "arrow.up.right")
+                                        .foregroundColor(AppColors.textSecondary)
+                                }
+                                .padding()
+                            }
+                        }
+                        .background(AppColors.cardBackground)
+                        .cornerRadius(16)
+                    }
+                    .padding(.horizontal)
                     
                     Spacer(minLength: 40)
                 }
