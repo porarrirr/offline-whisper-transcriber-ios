@@ -72,7 +72,10 @@ whisper.cpp/build-apple/whisper.xcframework
 
 ```bash
 cp -R whisper.cpp/build-apple/whisper.xcframework Frameworks/
+./Scripts/sign-whisper-xcframework.sh
 ```
+
+`sign-whisper-xcframework.sh` は Keychain の **Apple Development** 証明書で各スライスを署名し、Xcode の「unsigned framework」警告を防ぎます。
 
 > **注意**: `build-xcframework.sh` はXcodeのコマンドラインツールを使用します。失敗する場合はXcodeを起動し、`Xcode > Settings > Locations` でCommand Line Toolsが正しく設定されているか確認してください。
 

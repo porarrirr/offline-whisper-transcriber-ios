@@ -42,6 +42,8 @@ cd offline-whisper-transcriber-ios/WhisperTranscriptionApp
 
 # whisper.xcframework のビルド（初回のみ・必要に応じて）
 cd whisper.cpp && ./build-xcframework.sh && cd ..
+cp -R whisper.cpp/build-apple/whisper.xcframework Frameworks/ 2>/dev/null || true
+./Scripts/sign-whisper-xcframework.sh
 
 # Xcodeプロジェクト生成 & ビルド
 xcodegen generate

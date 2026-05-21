@@ -22,7 +22,7 @@ targets:
           - "$(SRCROOT)/whisper.cpp/ggml/include"
         OTHER_LDFLAGS: "-lc++"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
-        DEVELOPMENT_TEAM: HZ5XFG62KH
+        DEVELOPMENT_TEAM: 77V64TWCFD
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
         MARKETING_VERSION: "1.0"
