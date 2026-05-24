@@ -10,6 +10,8 @@ class AudioRecorder: NSObject, ObservableObject {
     private var audioRecorder: AVAudioRecorder?
     private var timer: Timer?
     private var recordingURL: URL?
+    private var stopContinuation: CheckedContinuation<URL, Error>?
+    private var stopDuration: TimeInterval = 0
 
     var currentRecordingURL: URL? {
         recordingURL
@@ -22,6 +24,9 @@ class AudioRecorder: NSObject, ObservableObject {
     }
 
     func startRecording() throws {
+        guard stopContinuation == nil else {
+            throw AudioRecorderError.stopInProgress
+        }
         try setupSession()
         let audioFilename = try makeRecordingURL()
 
@@ -50,35 +55,30 @@ class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
-    func stopRecording() throws -> URL {
+    func stopRecording() async throws -> URL {
         guard let recorder = audioRecorder, let recordingURL else {
             throw AudioRecorderError.noActiveRecording
         }
-
-        let finalDuration = recorder.currentTime
-        recorder.stop()
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        } catch {
-            AppLogger.error("Failed to deactivate audio session after recording", context: "AudioRecorder", error: error)
+        guard stopContinuation == nil else {
+            throw AudioRecorderError.stopInProgress
         }
 
-        timer?.invalidate()
-        timer = nil
-        isRecording = false
-        audioLevel = 0
-        currentTime = finalDuration
+        stopDuration = recorder.currentTime
+        let stoppedURL = try await withCheckedThrowingContinuation { continuation in
+            stopContinuation = continuation
+            recorder.stop()
+        }
 
-        guard FileManager.default.fileExists(atPath: recordingURL.path) else {
+        guard stoppedURL == recordingURL, FileManager.default.fileExists(atPath: stoppedURL.path) else {
             throw AudioRecorderError.recordingFileMissing
         }
-        let attributes = try FileManager.default.attributesOfItem(atPath: recordingURL.path)
+        let attributes = try FileManager.default.attributesOfItem(atPath: stoppedURL.path)
         let fileSize = attributes[.size] as? NSNumber
         guard fileSize?.int64Value ?? 0 > 0 else {
             throw AudioRecorderError.recordingFileEmpty
         }
 
-        return recordingURL
+        return stoppedURL
     }
 
     private func updateRecordingState() {
@@ -86,6 +86,25 @@ class AudioRecorder: NSObject, ObservableObject {
         currentTime = recorder.currentTime
         recorder.updateMeters()
         audioLevel = recorder.averagePower(forChannel: 0)
+    }
+
+    private func finishRecordingState() {
+        timer?.invalidate()
+        timer = nil
+        isRecording = false
+        audioLevel = 0
+        currentTime = stopDuration
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            AppLogger.error("Failed to deactivate audio session after recording", context: "AudioRecorder", error: error)
+        }
+    }
+
+    private func resumeStopContinuation(with result: Result<URL, Error>) {
+        guard let continuation = stopContinuation else { return }
+        stopContinuation = nil
+        continuation.resume(with: result)
     }
 
     func requestPermission(completion: @escaping (Bool) -> Void) {
@@ -115,9 +134,8 @@ class AudioRecorder: NSObject, ObservableObject {
 
 extension AudioRecorder: AVAudioRecorderDelegate {
     func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
+        finishRecordingState()
         if !flag {
-            isRecording = false
-            audioLevel = 0
             let message: String
             if FileManager.default.fileExists(atPath: recorder.url.path) {
                 message = String(localized: "Recording ended unsuccessfully. A partial recording file was saved.")
@@ -126,16 +144,19 @@ extension AudioRecorder: AVAudioRecorderDelegate {
             }
             recordingError = message
             AppLogger.error(message, context: "AudioRecorder")
+            resumeStopContinuation(with: .failure(AudioRecorderError.recordingEndedUnsuccessfully(message)))
+            return
         }
+        resumeStopContinuation(with: .success(recorder.url))
     }
 
     func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
-        isRecording = false
-        audioLevel = 0
+        finishRecordingState()
         let detail = error?.localizedDescription ?? String(localized: "Unknown encoding error")
         let message = String(localized: "Recording encoding failed") + ": \(detail)"
         recordingError = message
         AppLogger.error(message, context: "AudioRecorder", error: error)
+        resumeStopContinuation(with: .failure(AudioRecorderError.recordingEncodingFailed(message)))
     }
 }
 
@@ -145,6 +166,9 @@ enum AudioRecorderError: LocalizedError {
     case recordingStartFailed
     case recordingFileMissing
     case recordingFileEmpty
+    case stopInProgress
+    case recordingEndedUnsuccessfully(String)
+    case recordingEncodingFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -158,6 +182,10 @@ enum AudioRecorderError: LocalizedError {
             return String(localized: "Recording stopped, but the recording file was not saved.")
         case .recordingFileEmpty:
             return String(localized: "Recording stopped, but the recording file is empty.")
+        case .stopInProgress:
+            return String(localized: "Recording is already stopping.")
+        case .recordingEndedUnsuccessfully(let message), .recordingEncodingFailed(let message):
+            return message
         }
     }
 }

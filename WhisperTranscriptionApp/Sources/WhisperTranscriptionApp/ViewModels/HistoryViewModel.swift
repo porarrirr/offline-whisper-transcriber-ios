@@ -60,9 +60,11 @@ class HistoryViewModel: ObservableObject {
     
     func deleteRecord(_ record: TranscriptionRecord) {
         guard let modelContext = modelContext else { return }
+        let audioFilePath = record.audioFilePath
         modelContext.delete(record)
         do {
             try modelContext.save()
+            deleteRecordingFileIfNeeded(at: audioFilePath)
         } catch {
             setError(String(localized: "Failed to delete history") + ": \(error.localizedDescription)")
         }
@@ -109,5 +111,14 @@ class HistoryViewModel: ObservableObject {
     private func setError(_ message: String) {
         errorMessage = message
         AppLogger.error(message, context: "HistoryViewModel")
+    }
+
+    private func deleteRecordingFileIfNeeded(at path: String?) {
+        guard let path, FileManager.default.fileExists(atPath: path) else { return }
+        do {
+            try FileManager.default.removeItem(atPath: path)
+        } catch {
+            setError(String(localized: "Failed to delete recording file") + ": \(error.localizedDescription)")
+        }
     }
 }

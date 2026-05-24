@@ -21,6 +21,7 @@ class TranscribeViewModel: ObservableObject {
     private let modelManager = ModelManager.shared
     private let settings = AppSettings.shared
     private let transcriptionChunkDuration: TimeInterval = 5 * 60
+    private var cancellables = Set<AnyCancellable>()
     
     var audioLevel: Float {
         audioRecorder.audioLevel
@@ -30,6 +31,21 @@ class TranscribeViewModel: ObservableObject {
         audioRecorder.$currentTime
             .receive(on: DispatchQueue.main)
             .assign(to: &$recordingDuration)
+        audioRecorder.$isRecording
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$isRecording)
+        audioRecorder.$recordingError
+            .compactMap { $0 }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] message in
+                guard let self else { return }
+                self.setError(message)
+                UIApplication.shared.isIdleTimerDisabled = false
+                Task {
+                    await RecordingLiveActivityManager.shared.endRecordingActivity()
+                }
+            }
+            .store(in: &cancellables)
     }
     
     func startRecording() {
@@ -39,7 +55,6 @@ class TranscribeViewModel: ObservableObject {
                 DispatchQueue.main.async {
                     do {
                         try self.audioRecorder.startRecording()
-                        self.isRecording = true
                         self.transcriptionResult = ""
                         self.transcriptionSegments = []
                         self.errorMessage = nil
@@ -62,9 +77,15 @@ class TranscribeViewModel: ObservableObject {
     }
     
     func stopRecordingAndTranscribe(modelContext: ModelContext) {
+        Task {
+            await stopRecordingAndTranscribeAsync(modelContext: modelContext)
+        }
+    }
+
+    private func stopRecordingAndTranscribeAsync(modelContext: ModelContext) async {
         let recordingURL: URL
         do {
-            recordingURL = try audioRecorder.stopRecording()
+            recordingURL = try await audioRecorder.stopRecording()
         } catch {
             setError(error.localizedDescription)
             isRecording = false
