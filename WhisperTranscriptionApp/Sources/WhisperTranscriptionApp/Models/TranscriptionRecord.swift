@@ -58,7 +58,7 @@ class TranscriptionRecord: Identifiable {
     
     var formattedDate: String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.locale = Locale.current
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: createdAt)
@@ -66,7 +66,7 @@ class TranscriptionRecord: Identifiable {
     
     var displayTitle: String {
         if title.isEmpty {
-            return "文字起こし \(formattedDate)"
+            return String(localized: "Transcription") + " \(formattedDate)"
         }
         return title
     }

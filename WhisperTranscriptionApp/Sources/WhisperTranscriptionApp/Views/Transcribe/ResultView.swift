@@ -30,118 +30,72 @@ struct ResultView: View {
     }
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                AppColors.background.ignoresSafeArea()
-                
-                ScrollView {
-                    VStack(spacing: 20) {
-                        if let language = language {
-                            HStack {
-                                Image(systemName: "globe")
-                                    .foregroundColor(AppColors.accent)
-                                Text("検出言語: \(language)")
-                                    .font(AppFonts.callout)
-                                    .foregroundColor(AppColors.textSecondary)
-                                Spacer()
-                            }
-                            .padding(.horizontal)
+        NavigationStack {
+            List {
+                if let language = language {
+                    Section {
+                        HStack {
+                            Image(systemName: "globe")
+                                .foregroundColor(.accentColor)
+                            Text("Detected Language: \(language)")
                         }
-                        
-                        TranscriptionCard(
-                            text: text,
-                            segments: segments,
-                            showTimestamps: showTimestampView,
-                            isLoading: false
-                        )
-                            .padding(.horizontal)
-                        
-                        if !segments.isEmpty {
-                            Button(action: {
-                                showTimestampView.toggle()
-                            }) {
-                                HStack {
-                                    Image(systemName: showTimestampView ? "text.alignleft" : "clock")
-                                    Text(showTimestampView ? "テキストのみ表示" : "タイムスタンプ付きで表示")
-                                }
-                                .font(AppFonts.callout)
-                                .foregroundColor(AppColors.accent)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(AppColors.accent.opacity(0.1))
-                                .cornerRadius(12)
-                            }
-                            .padding(.horizontal)
-                        }
-                        
-                        VStack(spacing: 12) {
-                            ActionButton(
-                                icon: "doc.on.doc.fill",
-                                title: "コピー",
-                                color: AppColors.accent
-                            ) {
-                                UIPasteboard.general.string = currentDisplayText()
-                                showCopyConfirmation = true
-                            }
-                            
-                            ActionButton(
-                                icon: "square.and.arrow.up.fill",
-                                title: "共有",
-                                color: AppColors.surface
-                            ) {
-                                shareItems = [currentDisplayText()]
-                                showShareSheet = true
-                            }
-                            
-                            ActionButton(
-                                icon: "arrow.down.doc.fill",
-                                title: "エクスポート",
-                                color: AppColors.surface
-                            ) {
-                                showExportSheet = true
-                            }
-                        }
-                        .padding(.horizontal)
-                        
-                        Spacer(minLength: 40)
                     }
-                    .padding(.vertical)
+                }
+                
+                Section {
+                    TranscriptionCard(
+                        text: text,
+                        segments: segments,
+                        showTimestamps: showTimestampView,
+                        isLoading: false
+                    )
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                }
+                
+                Section {
+                    if !segments.isEmpty {
+                        Button(action: { showTimestampView.toggle() }) {
+                            Label(showTimestampView ? "Show Text Only" : "Show with Timestamps", systemImage: showTimestampView ? "text.alignleft" : "clock")
+                        }
+                    }
+                    
+                    Button(action: {
+                        UIPasteboard.general.string = currentDisplayText()
+                        showCopyConfirmation = true
+                    }) {
+                        Label("Copy", systemImage: "doc.on.doc")
+                    }
+                    
+                    Button(action: {
+                        shareItems = [currentDisplayText()]
+                        showShareSheet = true
+                    }) {
+                        Label("Share", systemImage: "square.and.arrow.up")
+                    }
+                    
+                    Button(action: {
+                        showExportSheet = true
+                    }) {
+                        Label("Export", systemImage: "arrow.down.doc")
+                    }
+                }
+                
+                Section {
+                    LegalDisclaimerFootnote()
+                        .listRowBackground(Color.clear)
                 }
             }
-            .navigationTitle("結果")
+            .navigationTitle("Result")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("完了") {
-                        onDismiss()
-                    }
-                    .foregroundColor(AppColors.accent)
+                    Button("Done", action: onDismiss)
                 }
             }
-            .overlay(
-                Group {
-                    if showCopyConfirmation {
-                        VStack {
-                            Spacer()
-                            Text("コピーしました！")
-                                .font(AppFonts.callout)
-                                .foregroundColor(AppColors.textPrimary)
-                                .padding(.horizontal, 20)
-                                .padding(.vertical, 12)
-                                .background(AppColors.accent)
-                                .cornerRadius(24)
-                                .padding(.bottom, 40)
-                                .transition(.move(edge: .bottom).combined(with: .opacity))
-                        }
-                        .animation(.easeInOut(duration: 0.3), value: showCopyConfirmation)
-                        .onAppear {
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                showCopyConfirmation = false
-                            }
-                        }
-                    }
-                }
-            )
+            .alert("Copied!", isPresented: $showCopyConfirmation) {
+                Button("OK", role: .cancel) {}
+            }
             .sheet(isPresented: $showShareSheet) {
                 ShareSheet(activityItems: shareItems)
             }
@@ -154,7 +108,6 @@ struct ResultView: View {
                 }
             }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
     }
 }
 
@@ -166,20 +119,13 @@ struct ExportSheetView: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                AppColors.background.ignoresSafeArea()
-                
-                VStack(spacing: 16) {
-                    Text("エクスポート形式を選択")
-                        .font(AppFonts.headline)
-                        .foregroundColor(AppColors.textPrimary)
-                        .padding(.top)
-                    
+        NavigationStack {
+            List {
+                Section(header: Text("Select Export Format")) {
                     ForEach(ExportFormat.allCases) { format in
                         Button(action: {
                             let url = TranscriptionExporter.export(
-                                title: "エクスポート",
+                                title: "Export",
                                 text: text,
                                 duration: 0,
                                 segments: segments,
@@ -191,45 +137,30 @@ struct ExportSheetView: View {
                         }) {
                             HStack {
                                 Image(systemName: iconForFormat(format))
-                                    .foregroundColor(AppColors.accent)
+                                    .foregroundColor(.accentColor)
                                     .frame(width: 30)
                                 
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading) {
                                     Text(format.displayName)
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
+                                        .foregroundColor(.primary)
                                     Text(extensionForFormat(format))
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
-                                
                                 Spacer()
-                                
-                                Image(systemName: "chevron.right")
-                                    .foregroundColor(AppColors.textSecondary)
                             }
-                            .padding()
-                            .background(AppColors.cardBackground)
-                            .cornerRadius(12)
                         }
                     }
-                    
-                    Spacer()
                 }
-                .padding(.horizontal)
             }
-            .navigationTitle("エクスポート")
+            .navigationTitle("Export")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("キャンセル") {
-                        dismiss()
-                    }
-                    .foregroundColor(AppColors.accent)
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
                 }
             }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
     }
     
     private func iconForFormat(_ format: ExportFormat) -> String {
@@ -243,29 +174,6 @@ struct ExportSheetView: View {
     
     private func extensionForFormat(_ format: ExportFormat) -> String {
         ".\(format.fileExtension)"
-    }
-}
-
-struct ActionButton: View {
-    let icon: String
-    let title: String
-    let color: Color
-    let action: () -> Void
-    
-    var body: some View {
-        Button(action: action) {
-            VStack(spacing: 8) {
-                Image(systemName: icon)
-                    .font(.system(size: 24))
-                Text(title)
-                    .font(AppFonts.callout)
-            }
-            .foregroundColor(color == AppColors.accent ? AppColors.textOnAccent : AppColors.textPrimary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(color)
-            .cornerRadius(16)
-        }
     }
 }
 

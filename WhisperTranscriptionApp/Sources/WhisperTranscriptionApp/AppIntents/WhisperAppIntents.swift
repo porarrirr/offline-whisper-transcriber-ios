@@ -5,13 +5,13 @@ import UniformTypeIdentifiers
 
 @available(iOS 18.0, *)
 struct TranscribeAudioIntent: AppIntent {
-    static var title: LocalizedStringResource = "文字起こしを開始"
-    static var description = IntentDescription("音声ファイルを文字起こしします")
+    static var title: LocalizedStringResource = "Transcribe Media"
+    static var description = IntentDescription("Transcribes an audio or video file")
     
-    @Parameter(title: "音声ファイル", description: "文字起こしする音声ファイル")
+    @Parameter(title: "Audio or Video File", description: "Audio or video file to transcribe")
     var audioFile: IntentFile?
     
-    @Parameter(title: "言語", description: "文字起こしの言語")
+    @Parameter(title: "Language", description: "Language for transcription")
     var language: String?
     
     @MainActor
@@ -44,7 +44,7 @@ struct TranscribeAudioIntent: AppIntent {
             throw IntentError.noAudioFile
         }
 
-        let transcriptionText = try await audioFile.withFile(contentType: .audio, allowOpenInPlace: true) { audioURL, _ in
+        let transcriptionText = try await audioFile.withFile(contentType: .audiovisualContent, allowOpenInPlace: true) { audioURL, _ in
             let samples: [Float]
             do {
                 samples = try await AudioConverter.shared.convertToWhisperSamples(inputURL: audioURL)
@@ -78,10 +78,10 @@ struct TranscribeAudioIntent: AppIntent {
 
 @available(iOS 16.0, *)
 struct GetTranscriptionHistoryIntent: AppIntent {
-    static var title: LocalizedStringResource = "文字起こし履歴を取得"
-    static var description = IntentDescription("最近の文字起こし履歴を取得します")
+    static var title: LocalizedStringResource = "Get Transcription History"
+    static var description = IntentDescription("Retrieves recent transcription history")
     
-    @Parameter(title: "件数", description: "取得する履歴の件数", default: 5)
+    @Parameter(title: "Count", description: "Number of history records to retrieve", default: 5)
     var limit: Int
     
     @MainActor
@@ -110,11 +110,11 @@ struct WhisperShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: TranscribeAudioIntent(),
             phrases: [
-                "\(.applicationName)で文字起こし",
-                "\(.applicationName)で音声を文字起こし",
-                "\(.applicationName)でファイルを文字起こし"
+                "Transcribe with \(.applicationName)",
+                "Transcribe media with \(.applicationName)",
+                "Transcribe file with \(.applicationName)"
             ],
-            shortTitle: "文字起こし",
+            shortTitle: "Transcribe",
             systemImageName: "waveform"
         )
     }
@@ -131,17 +131,17 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     var localizedStringResource: LocalizedStringResource {
         switch self {
         case .modelNotReady:
-            return "モデルが準備できていません。アプリを開いてモデルをダウンロードしてください。"
+            return "Model is not ready. Please open the app and download the model."
         case .modelLoadFailed:
-            return "モデルの読み込みに失敗しました。"
+            return "Failed to load model."
         case .noAudioFile:
-            return "音声ファイルが指定されていません。"
+            return "No audio or video file specified."
         case .conversionFailed:
-            return "音声ファイルの変換に失敗しました。"
+            return "Failed to convert audio or video file."
         case .transcriptionFailed:
-            return "文字起こしに失敗しました。"
+            return "Transcription failed."
         case .vadModelNotReady:
-            return "VADモデルが準備できていません。アプリを開いて設定からVADモデルをダウンロードしてください。"
+            return "VAD model is not ready. Please open the app and download the VAD model from settings."
         }
     }
 }

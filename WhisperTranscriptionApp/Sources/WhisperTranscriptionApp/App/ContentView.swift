@@ -14,5 +14,6 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut(duration: 0.3), value: modelManager.isModelReady)
+        .preferredColorScheme(.dark)
     }
 }

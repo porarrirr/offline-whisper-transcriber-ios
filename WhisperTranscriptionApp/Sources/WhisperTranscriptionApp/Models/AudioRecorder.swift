@@ -93,9 +93,9 @@ enum AudioRecorderError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .documentsDirectoryUnavailable:
-            return "録音ファイルの保存先を取得できませんでした"
+            return String(localized: "Could not retrieve document directory for saving recording.")
         case .recordingStartFailed:
-            return "録音を開始できませんでした"
+            return String(localized: "Failed to start recording.")
         }
     }
 }

@@ -13,453 +13,221 @@ struct SettingsView: View {
     @FocusState private var isPromptEditorFocused: Bool
     
     var body: some View {
-        ZStack {
-            AppColors.background.ignoresSafeArea()
+        Form {
+            Section(header: Text("Model Settings")) {
+                Picker("Model Size", selection: $settings.selectedModelSize) {
+                    ForEach(AppSettings.ModelSize.allCases) { size in
+                        Text(size.displayName).tag(size)
+                    }
+                }
+                .onChange(of: settings.selectedModelSize) { _, newValue in
+                    modelManager.switchModel(size: newValue)
+                }
+                
+                HStack {
+                    Image(systemName: modelManager.isModelReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                        .foregroundColor(modelManager.isModelReady ? AppColors.accent : AppColors.warning)
+                    Text(modelManager.isModelReady ? LocalizedStringKey("Model Ready") : LocalizedStringKey("Please download model"))
+                    Spacer()
+                    if let size = modelManager.getModelSize() {
+                        Text(size)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                if !modelManager.isModelReady {
+                    Button(action: { showModelDownload = true }) {
+                        Label("Download \(settings.selectedModelSize.approximateSize)", systemImage: "arrow.down.circle.fill")
+                    }
+                }
+                
+                Button(action: { showDeleteConfirmation = true }) {
+                    Label("Delete Model", systemImage: "trash.fill")
+                        .foregroundColor(.red)
+                }
+            }
             
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Model Settings
-                    VStack(alignment: .leading, spacing: 16) {
-                        SectionHeader(title: "モデル設定", icon: "cpu")
-                        
-                        VStack(spacing: 12) {
-                            HStack {
-                                Text("モデルサイズ")
-                                    .font(AppFonts.body)
-                                    .foregroundColor(AppColors.textPrimary)
-                                Spacer()
-                                Text(settings.selectedModelSize.displayName)
-                                    .font(AppFonts.callout)
-                                    .foregroundColor(AppColors.accent)
-                            }
-                            
-                            Picker("モデルサイズ", selection: $settings.selectedModelSize) {
-                                ForEach(AppSettings.ModelSize.allCases) { size in
-                                    Text(size.displayName).tag(size)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .onChange(of: settings.selectedModelSize) { _, newValue in
-                                modelManager.switchModel(size: newValue)
-                            }
-                            
-                            HStack {
-                                Image(systemName: modelManager.isModelReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                                    .foregroundColor(modelManager.isModelReady ? AppColors.accent : AppColors.warning)
-                                Text(modelManager.isModelReady ? "モデル準備完了" : "モデルをダウンロードしてください")
-                                    .font(AppFonts.callout)
-                                    .foregroundColor(AppColors.textSecondary)
-                                Spacer()
-                                if let size = modelManager.getModelSize() {
-                                    Text(size)
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                            }
-                            
-                            if !modelManager.isModelReady {
-                                Button(action: {
-                                    showModelDownload = true
-                                }) {
-                                    HStack {
-                                        Image(systemName: "arrow.down.circle.fill")
-                                        Text("\(settings.selectedModelSize.approximateSize) をダウンロード")
-                                    }
-                                    .font(AppFonts.callout)
-                                    .foregroundColor(AppColors.textOnAccent)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                                    .background(AppColors.accent)
-                                    .cornerRadius(12)
-                                }
-                            }
-                            
-                            Button(action: {
-                                showDeleteConfirmation = true
-                            }) {
-                                HStack {
-                                    Image(systemName: "trash.fill")
-                                    Text("モデルを削除")
-                                }
-                                .font(AppFonts.callout)
-                                .foregroundColor(AppColors.warning)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 12)
-                                .background(AppColors.warning.opacity(0.1))
-                                .cornerRadius(12)
+            Section(header: Text("Language Settings")) {
+                Button(action: { showLanguagePicker = true }) {
+                    HStack {
+                        Text("Transcription Language")
+                            .foregroundColor(.primary)
+                        Spacer()
+                        if let language = AppSettings.supportedLanguages.first(where: { $0.code == settings.selectedLanguage }) {
+                            Text(LocalizedStringKey(language.name))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                
+                Toggle(isOn: $settings.translateToEnglish) {
+                    VStack(alignment: .leading) {
+                        Text("Translate to English")
+                        Text("Translate transcription results to English")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(AppColors.accent)
+            }
+            
+            Section(header: Text("Prompt"), footer: Text("Example: \"Hello, today we will talk about technology.\"")) {
+                TextEditor(text: $settings.promptText)
+                    .frame(minHeight: 80)
+                    .focused($isPromptEditorFocused)
+            }
+            
+            Section(header: Text("Advanced Settings")) {
+                Toggle(isOn: $settings.useFlashAttention) {
+                    VStack(alignment: .leading) {
+                        Text("Flash Attention")
+                        Text("Optimize processing speed and memory usage")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(AppColors.accent)
+                
+                Toggle(isOn: $settings.useVAD) {
+                    VStack(alignment: .leading) {
+                        Text("Skip Silence (VAD)")
+                        Text("Automatically skip portions with no audio")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(AppColors.accent)
+
+                if settings.useVAD {
+                    HStack {
+                        Image(systemName: modelManager.isVADModelReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                            .foregroundColor(modelManager.isVADModelReady ? AppColors.accent : AppColors.warning)
+                        Text(modelManager.isVADModelReady ? LocalizedStringKey("VAD Model Ready") : LocalizedStringKey("Please download VAD model"))
+                    }
+
+                    if modelManager.isVADDownloading {
+                        HStack {
+                            ProgressView(value: modelManager.vadDownloadProgress)
+                                .tint(AppColors.accent)
+                            Button(action: { modelManager.cancelVADDownload() }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
                             }
                         }
-                        .padding()
-                        .background(AppColors.cardBackground)
-                        .cornerRadius(16)
-                    }
-                    .padding(.horizontal)
-                    
-                    // Language Settings
-                    VStack(alignment: .leading, spacing: 16) {
-                        SectionHeader(title: "言語設定", icon: "globe")
-                        
-                        VStack(spacing: 12) {
-                            Button(action: {
-                                showLanguagePicker = true
-                            }) {
-                                HStack {
-                                    Text("文字起こし言語")
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    Spacer()
-                                    if let language = AppSettings.supportedLanguages.first(where: { $0.code == settings.selectedLanguage }) {
-                                        Text(language.name)
-                                            .font(AppFonts.callout)
-                                            .foregroundColor(AppColors.accent)
-                                    }
-                                    Image(systemName: "chevron.right")
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                            }
-                            
-                            Toggle(isOn: $settings.translateToEnglish) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("英語に翻訳")
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    Text("文字起こし結果を英語に翻訳します")
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                            }
-                            .tint(AppColors.accent)
+                    } else if !modelManager.isVADModelReady {
+                        Button(action: { modelManager.downloadVADModel() }) {
+                            Label("Download VAD Model", systemImage: "arrow.down.circle.fill")
                         }
-                        .padding()
-                        .background(AppColors.cardBackground)
-                        .cornerRadius(16)
-                    }
-                    .padding(.horizontal)
-                    
-                    // Prompt
-                    VStack(alignment: .leading, spacing: 16) {
-                        SectionHeader(title: "プロンプト", icon: "text.bubble")
-                        
-                        VStack(spacing: 12) {
-                            TextEditor(text: $settings.promptText)
-                                .font(AppFonts.body)
-                                .foregroundColor(AppColors.textPrimary)
-                                .frame(minHeight: 80)
-                                .padding(8)
-                                .background(AppColors.background)
-                                .cornerRadius(8)
-                                .focused($isPromptEditorFocused)
-                            
-                            Text("例: 「こんにちは。今日はテクノロジーについて話します。」")
-                                .font(AppFonts.caption)
-                                .foregroundColor(AppColors.textSecondary)
+                    } else {
+                        Button(action: { modelManager.deleteVADModel() }) {
+                            Label("Delete VAD Model", systemImage: "trash")
+                                .foregroundColor(.red)
                         }
-                        .padding()
-                        .background(AppColors.cardBackground)
-                        .cornerRadius(16)
                     }
-                    .padding(.horizontal)
-                    
-                    // Advanced Settings
-                    VStack(alignment: .leading, spacing: 16) {
-                        SectionHeader(title: "詳細設定", icon: "gearshape.2")
-                        
-                        VStack(spacing: 12) {
-                            Toggle(isOn: $settings.useFlashAttention) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Flash Attention")
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    Text("処理速度とメモリ使用量を最適化します")
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                            }
-                            .tint(AppColors.accent)
-                            
-                            Divider().background(AppColors.surface)
-                            
-                            Toggle(isOn: $settings.useVAD) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("無音部分をスキップ（VAD）")
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    Text("音声がない部分を自動的にスキップします")
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                            }
-                            .tint(AppColors.accent)
 
-                            if settings.useVAD {
-                                VStack(spacing: 10) {
-                                    HStack {
-                                        Image(systemName: modelManager.isVADModelReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                                            .foregroundColor(modelManager.isVADModelReady ? AppColors.accent : AppColors.warning)
-                                        Text(modelManager.isVADModelReady ? "VADモデル準備完了" : "VADモデルをダウンロードしてください")
-                                            .font(AppFonts.callout)
-                                            .foregroundColor(AppColors.textSecondary)
-                                        Spacer()
-                                    }
-
-                                    if modelManager.isVADDownloading {
-                                        ProgressView(value: modelManager.vadDownloadProgress)
-                                            .tint(AppColors.accent)
-
-                                        Button("VADモデルのダウンロードをキャンセル") {
-                                            modelManager.cancelVADDownload()
-                                        }
-                                        .font(AppFonts.callout)
-                                        .foregroundColor(AppColors.warning)
-                                    } else if !modelManager.isVADModelReady {
-                                        Button(action: {
-                                            modelManager.downloadVADModel()
-                                        }) {
-                                            HStack {
-                                                Image(systemName: "arrow.down.circle.fill")
-                                                Text("VADモデルをダウンロード")
-                                            }
-                                            .font(AppFonts.callout)
-                                            .foregroundColor(AppColors.textOnAccent)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 10)
-                                            .background(AppColors.accent)
-                                            .cornerRadius(10)
-                                        }
-                                    } else {
-                                        Button(action: {
-                                            modelManager.deleteVADModel()
-                                        }) {
-                                            HStack {
-                                                Image(systemName: "trash")
-                                                Text("VADモデルを削除")
-                                            }
-                                            .font(AppFonts.callout)
-                                            .foregroundColor(AppColors.warning)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 10)
-                                            .background(AppColors.warning.opacity(0.1))
-                                            .cornerRadius(10)
-                                        }
-                                    }
-
-                                    if let error = modelManager.vadDownloadError {
-                                        Text(error)
-                                            .font(AppFonts.caption)
-                                            .foregroundColor(AppColors.warning)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                    }
-                                }
-                                .padding(.top, 4)
-                            }
-                            
-                            Divider().background(AppColors.surface)
-                            
-                            Toggle(isOn: $settings.includeTimestamps) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("タイムスタンプを含める")
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    Text("結果にタイムスタンプを含めます")
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                            }
-                            .tint(AppColors.accent)
-                            
-                            Divider().background(AppColors.surface)
-                            
-                            Toggle(isOn: $settings.keepScreenOn) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("画面をスリープしない")
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    Text("文字起こし中に画面をONに保ちます")
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                            }
-                            .tint(AppColors.accent)
-                            
-                            Divider().background(AppColors.surface)
-                            
-                            Toggle(isOn: $settings.autoDeleteRecordings) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("録音を自動削除")
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    Text("7日後に録音ファイルを自動削除します")
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                            }
-                            .tint(AppColors.accent)
+                    if let error = modelManager.vadDownloadError {
+                        Text(error)
+                            .font(.caption)
+                            .foregroundColor(.red)
+                    }
+                }
+                
+                Toggle(isOn: $settings.includeTimestamps) {
+                    VStack(alignment: .leading) {
+                        Text("Include Timestamps")
+                        Text("Include timestamps in the transcription result")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(AppColors.accent)
+                
+                Toggle(isOn: $settings.keepScreenOn) {
+                    VStack(alignment: .leading) {
+                        Text("Keep Screen On")
+                        Text("Keep the screen on during transcription")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(AppColors.accent)
+                
+                Toggle(isOn: $settings.autoDeleteRecordings) {
+                    VStack(alignment: .leading) {
+                        Text("Auto-Delete Recordings")
+                        Text("Automatically delete recording files after 7 days")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .tint(AppColors.accent)
+            }
+            
+            Section(header: Text("Logs")) {
+                if logger.entries.isEmpty {
+                    Text("No logs yet")
+                        .foregroundColor(.secondary)
+                } else {
+                    NavigationLink("View Logs") {
+                        ScrollView {
+                            Text(logger.latestPreview)
+                                .font(.system(.caption, design: .monospaced))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding()
+                                .textSelection(.enabled)
                         }
-                        .padding()
-                        .background(AppColors.cardBackground)
-                        .cornerRadius(16)
-                    }
-                    .padding(.horizontal)
-
-                    // Logs
-                    VStack(alignment: .leading, spacing: 16) {
-                        SectionHeader(title: "ログ", icon: "doc.text.magnifyingglass")
-
-                        VStack(spacing: 12) {
-                            if logger.entries.isEmpty {
-                                Text("まだログはありません")
-                                    .font(AppFonts.callout)
-                                    .foregroundColor(AppColors.textSecondary)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            } else {
-                                ScrollView {
-                                    Text(logger.latestPreview)
-                                        .font(.system(.caption, design: .monospaced))
-                                        .foregroundColor(AppColors.textSecondary)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .textSelection(.enabled)
-                                }
-                                .frame(minHeight: 96, maxHeight: 160)
-                                .padding(10)
-                                .background(AppColors.background)
-                                .cornerRadius(8)
-                            }
-
-                            HStack(spacing: 12) {
-                                Button(action: {
+                        .navigationTitle("Logs")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Copy") {
                                     UIPasteboard.general.string = logger.exportText
                                     showLogCopiedConfirmation = true
-                                }) {
-                                    HStack {
-                                        Image(systemName: "doc.on.doc")
-                                        Text("ログをコピー")
-                                    }
-                                    .font(AppFonts.callout)
-                                    .foregroundColor(AppColors.textOnAccent)
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 12)
-                                    .background(AppColors.accent)
-                                    .cornerRadius(12)
                                 }
-
-                                Button(action: {
-                                    logger.clear()
-                                }) {
+                            }
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button(role: .destructive, action: { logger.clear() }) {
                                     Image(systemName: "trash")
-                                        .font(AppFonts.callout)
-                                        .foregroundColor(AppColors.warning)
-                                        .frame(width: 44, height: 44)
-                                        .background(AppColors.warning.opacity(0.1))
-                                        .cornerRadius(12)
                                 }
-                                .disabled(logger.entries.isEmpty)
-                                .opacity(logger.entries.isEmpty ? 0.4 : 1)
                             }
                         }
-                        .padding()
-                        .background(AppColors.cardBackground)
-                        .cornerRadius(16)
                     }
-                    .padding(.horizontal)
-
-                    // Legal & Support
-                    VStack(alignment: .leading, spacing: 16) {
-                        SectionHeader(title: "サポートとポリシー", icon: "info.circle")
-
-                        VStack(spacing: 0) {
-                            Link(destination: AppLegalURLs.marketing) {
-                                HStack {
-                                    Text("アプリについて")
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    Spacer()
-                                    Image(systemName: "arrow.up.right")
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                                .padding()
-                            }
-
-                            Divider().background(AppColors.surface)
-
-                            Link(destination: AppLegalURLs.support) {
-                                HStack {
-                                    Text("サポート")
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    Spacer()
-                                    Image(systemName: "arrow.up.right")
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                                .padding()
-                            }
-
-                            Divider().background(AppColors.surface)
-
-                            Link(destination: AppLegalURLs.privacyPolicy) {
-                                HStack {
-                                    Text("プライバシーポリシー")
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    Spacer()
-                                    Image(systemName: "arrow.up.right")
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                                .padding()
-                            }
-                        }
-                        .background(AppColors.cardBackground)
-                        .cornerRadius(16)
-                    }
-                    .padding(.horizontal)
-                    
-                    Spacer(minLength: 40)
                 }
-                .padding(.vertical)
             }
-            .scrollDismissesKeyboard(.interactively)
+            
+            Section(header: Text("Support & Policies"), footer: LegalDisclaimerFootnote()) {
+                Link("About App", destination: AppLegalURLs.marketing)
+                Link("Support", destination: AppLegalURLs.support)
+                Link("Privacy Policy", destination: AppLegalURLs.privacyPolicy)
+                Link("Disclaimer & Terms", destination: AppLegalURLs.disclaimer)
+            }
         }
-        .navigationTitle("設定")
+        .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
-                Button("完了") {
+                Button("Done") {
                     isPromptEditorFocused = false
                 }
-                .foregroundColor(AppColors.accent)
             }
         }
         .sheet(isPresented: $showModelDownload) {
             ModelDownloadView(isPresentedAsSheet: true)
         }
-        .alert("モデルを削除", isPresented: $showDeleteConfirmation) {
-            Button("キャンセル", role: .cancel) {}
-            Button("削除", role: .destructive) {
+        .alert("Delete Model", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
                 modelManager.deleteCurrentModel()
             }
         } message: {
-            Text("現在のモデルを削除しますか？")
+            Text("Are you sure you want to delete the current model?")
         }
-        .alert("ログをコピーしました", isPresented: $showLogCopiedConfirmation) {
+        .alert("Logs Copied", isPresented: $showLogCopiedConfirmation) {
             Button("OK", role: .cancel) {}
         }
         .sheet(isPresented: $showLanguagePicker) {
             LanguagePickerView(selectedLanguage: $settings.selectedLanguage, isPresented: $showLanguagePicker)
-        }
-    }
-}
-
-struct SectionHeader: View {
-    let title: String
-    let icon: String
-    
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon)
-                .foregroundColor(AppColors.accent)
-            Text(title)
-                .font(AppFonts.headline)
-                .foregroundColor(AppColors.textPrimary)
         }
     }
 }
@@ -469,44 +237,34 @@ struct LanguagePickerView: View {
     @Binding var isPresented: Bool
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                AppColors.background.ignoresSafeArea()
-                
-                List {
-                    ForEach(AppSettings.supportedLanguages, id: \.code) { language in
-                        Button(action: {
-                            selectedLanguage = language.code
-                            isPresented = false
-                        }) {
-                            HStack {
-                                Text(language.name)
-                                    .font(AppFonts.body)
-                                    .foregroundColor(AppColors.textPrimary)
-                                Spacer()
-                                if selectedLanguage == language.code {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(AppColors.accent)
-                                }
+        NavigationStack {
+            List {
+                ForEach(AppSettings.supportedLanguages, id: \.code) { language in
+                    Button(action: {
+                        selectedLanguage = language.code
+                        isPresented = false
+                    }) {
+                        HStack {
+                            Text(LocalizedStringKey(language.name))
+                                .foregroundColor(.primary)
+                            Spacer()
+                            if selectedLanguage == language.code {
+                                Image(systemName: "checkmark")
+                                    .foregroundColor(AppColors.accent)
                             }
                         }
                     }
                 }
-                .listStyle(.plain)
-                .background(AppColors.background)
-                .scrollContentBackground(.hidden)
             }
-            .navigationTitle("言語を選択")
+            .navigationTitle("Select Language")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("完了") {
+                    Button("Done") {
                         isPresented = false
                     }
-                    .foregroundColor(AppColors.accent)
                 }
             }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
     }
 }

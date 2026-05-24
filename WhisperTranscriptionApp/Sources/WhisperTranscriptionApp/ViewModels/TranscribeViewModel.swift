@@ -51,14 +51,14 @@ class TranscribeViewModel: ObservableObject {
                     }
                 }
             } else {
-                self.setError("マイクの使用許可が必要です")
+                self.setError(String(localized: "Microphone permission is required"))
             }
         }
     }
     
     func stopRecordingAndTranscribe(modelContext: ModelContext) {
         guard let recordingURL = audioRecorder.stopRecording() else {
-            setError("録音の保存に失敗しました")
+            setError(String(localized: "Failed to save recording"))
             isRecording = false
             return
         }
@@ -71,15 +71,28 @@ class TranscribeViewModel: ObservableObject {
         }
     }
     
-    func transcribeFile(url: URL, modelContext: ModelContext) {
+    func transcribeFile(url: URL, modelContext: ModelContext, cleanupAfterProcessing: Bool = false) {
         Task {
-            await transcribeAudio(url: url, sourceType: .file, modelContext: modelContext)
+            await transcribeAudio(
+                url: url,
+                sourceType: .file,
+                modelContext: modelContext,
+                cleanupAfterProcessing: cleanupAfterProcessing
+            )
         }
     }
     
-    private func transcribeAudio(url: URL, sourceType: TranscriptionRecord.SourceType, modelContext: ModelContext) async {
+    private func transcribeAudio(
+        url: URL,
+        sourceType: TranscriptionRecord.SourceType,
+        modelContext: ModelContext,
+        cleanupAfterProcessing: Bool = false
+    ) async {
         guard modelManager.isModelReady else {
-            setError("モデルが準備できていません")
+            if cleanupAfterProcessing {
+                removeTemporaryInput(url: url)
+            }
+            setError(String(localized: "Model is not ready"))
             return
         }
         
@@ -91,34 +104,37 @@ class TranscribeViewModel: ObservableObject {
             isProcessing = false
             transcriptionProgress = 0
             UIApplication.shared.isIdleTimerDisabled = false
+            if cleanupAfterProcessing {
+                removeTemporaryInput(url: url)
+            }
         }
         
         do {
             AppLogger.info(
-                "文字起こしを開始しました: source=\(sourceType), file=\(url.lastPathComponent), language=\(settings.selectedLanguage), translate=\(settings.translateToEnglish), useVAD=\(settings.useVAD)",
+                "Transcription started: source=\(sourceType), file=\(url.lastPathComponent), language=\(settings.selectedLanguage), translate=\(settings.translateToEnglish), useVAD=\(settings.useVAD)",
                 context: "TranscribeViewModel"
             )
             let samples = try await AudioConverter.shared.convertToWhisperSamples(inputURL: url)
             AppLogger.info(
-                "音声変換が完了しました: file=\(url.lastPathComponent), samples=\(samples.count)",
+                "Audio conversion completed: file=\(url.lastPathComponent), samples=\(samples.count)",
                 context: "TranscribeViewModel"
             )
             
             if whisperContext.isModelLoaded == false {
-                AppLogger.info("Whisperモデルを読み込みます", context: "TranscribeViewModel")
+                AppLogger.info("Loading Whisper model...", context: "TranscribeViewModel")
                 let loaded = await loadModelAsync()
                 guard loaded else {
-                    setError(whisperContext.errorMessage ?? "モデルの読み込みに失敗しました")
+                    setError(whisperContext.errorMessage ?? String(localized: "Failed to load model"))
                     return
                 }
-                AppLogger.info("Whisperモデルの読み込みが完了しました", context: "TranscribeViewModel")
+                AppLogger.info("Whisper model load completed", context: "TranscribeViewModel")
             }
             
             let language = settings.selectedLanguage == "auto" ? "" : settings.selectedLanguage
             let prompt = settings.promptText
             let useVAD = settings.useVAD
             if useVAD && !modelManager.isVADModelReady {
-                setError("VADモデルが準備できていません。設定からVADモデルをダウンロードしてください。")
+                setError(String(localized: "VAD model is not ready. Please download the VAD model from settings."))
                 return
             }
             
@@ -145,7 +161,7 @@ class TranscribeViewModel: ObservableObject {
                 let duration = AudioConverter.shared.getAudioDuration(url: url)
                 let title = makeTitle(from: result.text)
                 let record = TranscriptionRecord(
-                    title: title.isEmpty ? "無題の文字起こし" : title,
+                    title: title.isEmpty ? String(localized: "Untitled Transcription") : title,
                     text: result.text,
                     sourceType: sourceType,
                     audioFilePath: sourceType == .recording ? url.path : nil,
@@ -158,7 +174,7 @@ class TranscribeViewModel: ObservableObject {
                     try modelContext.save()
                 } catch {
                     modelContext.delete(record)
-                    setError("履歴の保存に失敗しました: \(error.localizedDescription)")
+                    setError(String(localized: "Failed to save history") + ": \(error.localizedDescription)")
                 }
                 
                 if settings.autoDeleteRecordings && sourceType == .recording {
@@ -166,18 +182,18 @@ class TranscribeViewModel: ObservableObject {
                 }
             } else {
                 AppLogger.error(
-                    "Whisperの文字起こし結果がnilでした: file=\(url.lastPathComponent), samples=\(samples.count), whisperError=\(whisperContext.errorMessage ?? "none")",
+                    "Whisper transcription result was nil: file=\(url.lastPathComponent), samples=\(samples.count), whisperError=\(whisperContext.errorMessage ?? "none")",
                     context: "TranscribeViewModel"
                 )
-                setError(whisperContext.errorMessage ?? "文字起こしに失敗しました")
+                setError(whisperContext.errorMessage ?? String(localized: "Transcription failed"))
             }
         } catch {
             AppLogger.error(
-                "音声変換で例外が発生しました: file=\(url.lastPathComponent), source=\(sourceType)",
+                "Exception during audio conversion: file=\(url.lastPathComponent), source=\(sourceType)",
                 context: "TranscribeViewModel",
                 error: error
             )
-            setError("音声変換エラー: \(error.localizedDescription)")
+            setError(String(localized: "Audio conversion error") + ": \(error.localizedDescription)")
         }
     }
     
@@ -202,8 +218,18 @@ class TranscribeViewModel: ObservableObject {
             do {
                 try FileManager.default.removeItem(at: url)
             } catch {
-                AppLogger.error("録音ファイルの自動削除に失敗しました", context: "TranscribeViewModel", error: error)
+                AppLogger.error("Failed to automatically delete recording file", context: "TranscribeViewModel", error: error)
             }
+        }
+    }
+
+    private func removeTemporaryInput(url: URL) {
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        } catch {
+            AppLogger.error("Failed to remove temporary input file", context: "TranscribeViewModel", error: error)
         }
     }
 

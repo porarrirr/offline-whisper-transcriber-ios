@@ -17,8 +17,8 @@ class AudioPlayer: ObservableObject {
             duration = player?.duration ?? 0
             errorMessage = nil
         } catch {
-            errorMessage = "音声の再生準備に失敗しました: \(error.localizedDescription)"
-            AppLogger.error(errorMessage ?? "音声の再生準備に失敗しました", context: "AudioPlayer")
+            errorMessage = String(localized: "Failed to prepare audio playback") + ": \(error.localizedDescription)"
+            AppLogger.error(errorMessage ?? "Failed to prepare audio playback", context: "AudioPlayer")
         }
     }
     

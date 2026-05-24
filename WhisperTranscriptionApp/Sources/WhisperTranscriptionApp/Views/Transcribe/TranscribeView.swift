@@ -1,10 +1,13 @@
 import SwiftUI
 import SwiftData
+import PhotosUI
+import UniformTypeIdentifiers
 
 struct TranscribeView: View {
     @StateObject private var viewModel = TranscribeViewModel()
     @State private var showFileImporter = false
     @State private var selectedFileURL: URL?
+    @State private var selectedVideoItem: PhotosPickerItem?
     @Environment(\.modelContext) private var modelContext
     
     var body: some View {
@@ -14,11 +17,11 @@ struct TranscribeView: View {
             VStack(spacing: 0) {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("文字起こし")
+                        Text("Transcribe")
                             .font(AppFonts.largeTitle)
                             .foregroundColor(AppColors.textPrimary)
                         
-                        Text("録音またはファイルを選択")
+                        Text("Record or select a file")
                             .font(AppFonts.body)
                             .foregroundColor(AppColors.textSecondary)
                     }
@@ -43,7 +46,8 @@ struct TranscribeView: View {
                             } else {
                                 Image(systemName: "mic.circle.fill")
                                     .font(.system(size: 80))
-                                    .foregroundColor(AppColors.accent.opacity(0.3))
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundColor(AppColors.accent.opacity(0.5))
                             }
                             
                             RecordingButton(isRecording: $viewModel.isRecording) {
@@ -55,7 +59,7 @@ struct TranscribeView: View {
                             }
                             .disabled(viewModel.isProcessing)
                             
-                            Text(viewModel.isRecording ? "タップして停止" : "タップして録音開始")
+                            Text(viewModel.isRecording ? LocalizedStringKey("Tap to Stop") : LocalizedStringKey("Tap to Start Recording"))
                                 .font(AppFonts.callout)
                                 .foregroundColor(AppColors.textSecondary)
                         }
@@ -74,11 +78,11 @@ struct TranscribeView: View {
                                     .foregroundColor(AppColors.accent)
                                 
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text("ファイルを選択")
+                                    Text("Select File")
                                         .font(AppFonts.headline)
                                         .foregroundColor(AppColors.textPrimary)
                                     
-                                    Text("m4a, wav, mp3, mp4, mov 対応")
+                                    Text("Supported: audio and video files")
                                         .font(AppFonts.caption)
                                         .foregroundColor(AppColors.textSecondary)
                                 }
@@ -89,12 +93,43 @@ struct TranscribeView: View {
                                     .foregroundColor(AppColors.textSecondary)
                             }
                             .padding()
-                            .background(AppColors.cardBackground)
-                            .cornerRadius(16)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 16)
-                                    .stroke(AppColors.accent.opacity(0.2), lineWidth: 1)
-                            )
+                            .background(.regularMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
+                        }
+                        .padding(.horizontal)
+                        .disabled(viewModel.isRecording || viewModel.isProcessing)
+                        .opacity(viewModel.isRecording || viewModel.isProcessing ? 0.5 : 1)
+
+                        PhotosPicker(
+                            selection: $selectedVideoItem,
+                            matching: .videos,
+                            photoLibrary: .shared()
+                        ) {
+                            HStack {
+                                Image(systemName: "photo.on.rectangle.angled")
+                                    .font(.title2)
+                                    .foregroundColor(AppColors.accent)
+
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Select Video from Photos")
+                                        .font(AppFonts.headline)
+                                        .foregroundColor(AppColors.textPrimary)
+
+                                    Text("Only the selected video's audio is transcribed")
+                                        .font(AppFonts.caption)
+                                        .foregroundColor(AppColors.textSecondary)
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .foregroundColor(AppColors.textSecondary)
+                            }
+                            .padding()
+                            .background(.regularMaterial)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
                         }
                         .padding(.horizontal)
                         .disabled(viewModel.isRecording || viewModel.isProcessing)
@@ -121,13 +156,16 @@ struct TranscribeView: View {
                                     .scaleEffect(x: 1, y: 2)
                                     .padding(.horizontal, 40)
                                 
-                                Text("文字起こし処理中... \(Int(viewModel.transcriptionProgress * 100))%")
+                                Text("Transcribing... \(Int(viewModel.transcriptionProgress * 100))%")
                                     .font(AppFonts.callout)
                                     .foregroundColor(AppColors.textSecondary)
                             }
                             .padding(.vertical, 40)
                         }
                         
+                        LegalDisclaimerFootnote()
+                            .padding(.horizontal)
+
                         Spacer(minLength: 40)
                     }
                 }
@@ -148,8 +186,13 @@ struct TranscribeView: View {
                 case .success(let url):
                     viewModel.transcribeFile(url: url, modelContext: modelContext)
                 case .failure(let error):
-                    viewModel.setError("ファイル選択エラー: \(error.localizedDescription)")
+                    viewModel.setError(String(localized: "File selection error") + ": \(error.localizedDescription)")
                 }
+            }
+        }
+        .onChange(of: selectedVideoItem) { _, newItem in
+            Task {
+                await handlePickedVideo(newItem)
             }
         }
     }
@@ -158,5 +201,44 @@ struct TranscribeView: View {
         let minutes = Int(time) / 60
         let seconds = Int(time) % 60
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+
+    @MainActor
+    private func handlePickedVideo(_ item: PhotosPickerItem?) async {
+        guard let item else { return }
+        defer {
+            selectedVideoItem = nil
+        }
+
+        do {
+            guard let pickedVideo = try await item.loadTransferable(type: PickedVideoFile.self) else {
+                viewModel.setError(String(localized: "Video selection error") + ": " + String(localized: "No video file was selected."))
+                return
+            }
+            viewModel.transcribeFile(
+                url: pickedVideo.url,
+                modelContext: modelContext,
+                cleanupAfterProcessing: true
+            )
+        } catch {
+            viewModel.setError(String(localized: "Video selection error") + ": \(error.localizedDescription)")
+        }
+    }
+}
+
+private struct PickedVideoFile: Transferable {
+    let url: URL
+
+    static var transferRepresentation: some TransferRepresentation {
+        FileRepresentation(importedContentType: .movie) { receivedFile in
+            let sourceURL = receivedFile.file
+            let fileExtension = sourceURL.pathExtension.isEmpty ? "mov" : sourceURL.pathExtension
+            let destinationURL = FileManager.default.temporaryDirectory
+                .appendingPathComponent("picked-video-\(UUID().uuidString)")
+                .appendingPathExtension(fileExtension)
+
+            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            return PickedVideoFile(url: destinationURL)
+        }
     }
 }

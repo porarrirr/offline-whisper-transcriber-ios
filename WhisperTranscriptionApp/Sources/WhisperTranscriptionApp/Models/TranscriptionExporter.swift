@@ -10,10 +10,10 @@ enum ExportFormat: String, CaseIterable, Identifiable {
     
     var displayName: String {
         switch self {
-        case .txt: return "テキスト (.txt)"
-        case .json: return "JSON (.json)"
-        case .csv: return "CSV (.csv)"
-        case .srt: return "字幕 (.srt)"
+        case .txt: return String(localized: "Text (.txt)")
+        case .json: return String(localized: "JSON (.json)")
+        case .csv: return String(localized: "CSV (.csv)")
+        case .srt: return String(localized: "Subtitles (.srt)")
         }
     }
     
@@ -83,12 +83,12 @@ struct TranscriptionExporter {
         
         var content = """
         \(item.title)
-        作成日: \(item.formattedDate)
-        言語: \(item.language ?? "不明")
+        Date: \(item.formattedDate)
+        Language: \(item.language ?? "Unknown")
         """
         
         if !item.segments.isEmpty {
-            content += "\n\n--- タイムスタンプ付き ---\n\n"
+            content += "\n\n--- With Timestamps ---\n\n"
             for segment in item.segments {
                 content += "\(segment.formattedTimestamp) \(segment.text)\n"
             }
@@ -100,7 +100,7 @@ struct TranscriptionExporter {
             try content.write(to: tempURL, atomically: true, encoding: .utf8)
             return tempURL
         } catch {
-            AppLogger.error("TXTエクスポートに失敗しました", context: "TranscriptionExporter", error: error)
+            AppLogger.error("Failed to export TXT", context: "TranscriptionExporter", error: error)
             return nil
         }
     }
@@ -130,7 +130,7 @@ struct TranscriptionExporter {
             try data.write(to: tempURL)
             return tempURL
         } catch {
-            AppLogger.error("JSONエクスポートに失敗しました", context: "TranscriptionExporter", error: error)
+            AppLogger.error("Failed to export JSON", context: "TranscriptionExporter", error: error)
             return nil
         }
     }
@@ -155,7 +155,7 @@ struct TranscriptionExporter {
             try content.write(to: tempURL, atomically: true, encoding: .utf8)
             return tempURL
         } catch {
-            AppLogger.error("CSVエクスポートに失敗しました", context: "TranscriptionExporter", error: error)
+            AppLogger.error("Failed to export CSV", context: "TranscriptionExporter", error: error)
             return nil
         }
     }
@@ -180,7 +180,7 @@ struct TranscriptionExporter {
             try content.write(to: tempURL, atomically: true, encoding: .utf8)
             return tempURL
         } catch {
-            AppLogger.error("SRTエクスポートに失敗しました", context: "TranscriptionExporter", error: error)
+            AppLogger.error("Failed to export SRT", context: "TranscriptionExporter", error: error)
             return nil
         }
     }
@@ -223,7 +223,7 @@ private struct TranscriptionExportItem {
 
     var formattedDate: String {
         let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "ja_JP")
+        formatter.locale = Locale.current
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: createdAt)

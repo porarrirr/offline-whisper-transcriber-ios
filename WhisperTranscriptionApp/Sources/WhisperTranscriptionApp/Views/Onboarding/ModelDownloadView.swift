@@ -24,6 +24,9 @@ struct ModelDownloadView: View {
                 .padding(.horizontal, 24)
                 .padding(.top, 20)
                 .padding(.bottom, 32)
+
+                LegalDisclaimerFootnote(text: AppDisclaimer.onboardingFootnote)
+                    .padding(.horizontal, 4)
             }
             .scrollIndicators(.hidden)
         }
@@ -47,11 +50,11 @@ struct ModelDownloadView: View {
             }
 
             VStack(spacing: 12) {
-                Text("Whisper文字起こし")
+                Text("Whisper Transcriber")
                     .font(AppFonts.title)
                     .foregroundColor(AppColors.textPrimary)
 
-                Text("AIによる高精度音声認識")
+                Text("High-Accuracy Offline AI Transcription")
                     .font(AppFonts.body)
                     .foregroundColor(AppColors.textSecondary)
             }
@@ -66,7 +69,7 @@ struct ModelDownloadView: View {
                     .font(.system(size: 60))
                     .foregroundColor(AppColors.accent)
 
-                Text("準備完了！")
+                Text("Ready!")
                     .font(AppFonts.headline)
                     .foregroundColor(AppColors.textPrimary)
 
@@ -74,7 +77,7 @@ struct ModelDownloadView: View {
                     Button(action: {
                         dismiss()
                     }) {
-                        Text("閉じる")
+                        Text("Close")
                             .font(AppFonts.button)
                             .foregroundColor(AppColors.textOnAccent)
                             .frame(maxWidth: .infinity)
@@ -90,7 +93,7 @@ struct ModelDownloadView: View {
                     .frame(height: 8)
 
                 HStack {
-                    Text(viewModel.statusText)
+                    Text(LocalizedStringKey(viewModel.statusText))
                         .font(AppFonts.callout)
                         .foregroundColor(AppColors.textSecondary)
 
@@ -105,7 +108,7 @@ struct ModelDownloadView: View {
                     ModelManager.shared.cancelDownload()
                     viewModel.isDownloading = false
                 }) {
-                    Text("キャンセル")
+                    Text("Cancel")
                         .font(AppFonts.callout)
                         .foregroundColor(AppColors.warning)
                 }
@@ -114,11 +117,11 @@ struct ModelDownloadView: View {
             VStack(spacing: 16) {
                 if !viewModel.isModelAvailable {
                     VStack(spacing: 12) {
-                        Text("モデルサイズを選択")
+                        Text("Select Model Size")
                             .font(AppFonts.headline)
                             .foregroundColor(AppColors.textPrimary)
 
-                        Picker("モデルサイズ", selection: $settings.selectedModelSize) {
+                        Picker("Model Size", selection: $settings.selectedModelSize) {
                             ForEach(AppSettings.ModelSize.allCases) { size in
                                 Text(size.displayName).tag(size)
                             }
@@ -155,7 +158,7 @@ struct ModelDownloadView: View {
                 }) {
                     HStack {
                         Image(systemName: "arrow.down.circle.fill")
-                        Text(viewModel.isModelAvailable ? "モデルを更新" : "モデルをダウンロード")
+                        Text(viewModel.isModelAvailable ? LocalizedStringKey("Update Model") : LocalizedStringKey("Download Model"))
                     }
                     .font(AppFonts.button)
                     .foregroundColor(AppColors.textOnAccent)
@@ -166,7 +169,7 @@ struct ModelDownloadView: View {
                 }
                 .padding(.top, 8)
 
-                Text("初回のみ\(settings.selectedModelSize.approximateSize)のデータをダウンロードします\nWi-Fi環境での実行を推奨します")
+                Text("Will download \(settings.selectedModelSize.approximateSize) for the first time.\nWi-Fi connection is recommended.")
                     .font(AppFonts.caption)
                     .foregroundColor(AppColors.textSecondary)
                     .multilineTextAlignment(.center)

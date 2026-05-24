@@ -45,7 +45,7 @@ class HistoryViewModel: ObservableObject {
             
             records = allRecords
         } catch {
-            setError("履歴の読み込みに失敗しました: \(error.localizedDescription)")
+            setError(String(localized: "Failed to load history") + ": \(error.localizedDescription)")
         }
     }
 
@@ -64,7 +64,7 @@ class HistoryViewModel: ObservableObject {
         do {
             try modelContext.save()
         } catch {
-            setError("履歴の削除に失敗しました: \(error.localizedDescription)")
+            setError(String(localized: "Failed to delete history") + ": \(error.localizedDescription)")
         }
         fetchRecords()
     }
@@ -75,7 +75,7 @@ class HistoryViewModel: ObservableObject {
             try modelContext?.save()
         } catch {
             record.isFavorite.toggle()
-            setError("お気に入りの更新に失敗しました: \(error.localizedDescription)")
+            setError(String(localized: "Failed to update favorite status") + ": \(error.localizedDescription)")
         }
         fetchRecords()
     }
@@ -102,7 +102,7 @@ class HistoryViewModel: ObservableObject {
                 }
             }
         } catch {
-            setError("古い録音ファイルの削除に失敗しました: \(error.localizedDescription)")
+            setError(String(localized: "Failed to delete old recordings") + ": \(error.localizedDescription)")
         }
     }
 

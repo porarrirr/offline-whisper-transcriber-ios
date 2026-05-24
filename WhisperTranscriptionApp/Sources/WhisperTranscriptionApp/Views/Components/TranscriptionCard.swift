@@ -26,7 +26,7 @@ struct TranscriptionCard: View {
                 Image(systemName: "text.quote")
                     .foregroundColor(AppColors.accent)
                 
-                Text("文字起こし結果")
+                Text("Transcription Result")
                     .font(AppFonts.headline)
                     .foregroundColor(AppColors.textPrimary)
                 
@@ -76,12 +76,9 @@ struct TranscriptionCard: View {
             textChunks = TranscriptionTextChunk.chunks(from: newValue)
         }
         .padding()
-        .background(AppColors.cardBackground)
-        .cornerRadius(16)
-        .overlay(
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(AppColors.accent.opacity(0.2), lineWidth: 1)
-        )
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
     }
 }
 

@@ -1,12 +1,12 @@
 import SwiftUI
 
 struct AppFonts {
-    static let largeTitle = Font.system(size: 34, weight: .bold, design: .rounded)
-    static let title = Font.system(size: 28, weight: .bold, design: .rounded)
-    static let title2 = Font.system(size: 22, weight: .bold, design: .rounded)
-    static let headline = Font.system(size: 17, weight: .semibold, design: .rounded)
-    static let body = Font.system(size: 16, weight: .regular, design: .default)
-    static let callout = Font.system(size: 14, weight: .medium, design: .default)
-    static let caption = Font.system(size: 12, weight: .regular, design: .default)
-    static let button = Font.system(size: 18, weight: .bold, design: .rounded)
+    static let largeTitle = Font.largeTitle.weight(.bold)
+    static let title = Font.title.weight(.bold)
+    static let title2 = Font.title2.weight(.bold)
+    static let headline = Font.headline
+    static let body = Font.body
+    static let callout = Font.callout
+    static let caption = Font.caption
+    static let button = Font.headline.weight(.semibold)
 }

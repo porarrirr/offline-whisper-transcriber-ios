@@ -7,7 +7,7 @@ layout: default
 
 最終更新日: 2026年5月21日
 
-本ポリシーは、iOS アプリ「Whisper文字起こし」（以下「本アプリ」）における個人情報の取り扱いについて説明します。
+本ポリシーは、iOS アプリ「Whisper文字起こし」（以下「本アプリ」）における個人情報の取り扱いについて説明します。本ポリシーは**法的助言を構成せず**、利用者の法令遵守義務（録音への同意等）を免除するものではありません。サービス全体の免責は [免責事項](disclaimer.html) を参照してください。
 
 ## 収集するデータ
 
@@ -56,7 +56,14 @@ layout: default
 
 - [offline-whisper-transcriber-ios Issues](https://github.com/porarrirr/offline-whisper-transcriber-ios/issues)
 
+## 免責
+
+本ポリシーに記載のない事項（文字起こし精度、損害責任、サービス提供条件等）については、[免責事項・利用上の注意](disclaimer.html) が適用されます。
+
 ## 関連リンク
 
 - [マーケティングページ](index.html)
 - [サポート](support.html)
+- [免責事項・利用上の注意](disclaimer.html)
+
+{% include disclaimer-ja.md %}

@@ -15,6 +15,7 @@
 - [ ] マーケティング: https://porarrirr.github.io/offline-whisper-transcriber-ios/
 - [ ] サポート: https://porarrirr.github.io/offline-whisper-transcriber-ios/support.html
 - [ ] プライバシー: https://porarrirr.github.io/offline-whisper-transcriber-ios/privacy-policy.html
+- [ ] 免責事項: https://porarrirr.github.io/offline-whisper-transcriber-ios/disclaimer.html
 
 ## Xcode / ビルド
 

@@ -253,9 +253,10 @@ class WhisperContext: ObservableObject {
         params.translate = translate
         params.no_timestamps = false
         params.token_timestamps = true
-        params.detect_language = language.isEmpty || language == "auto"
-        params.temperature_inc = 0
-        let languageCString = strdup(params.detect_language ? "auto" : language)
+        // `detect_language` は言語検出のみで終了するモード。自動言語の文字起こしでは false のまま language を "auto" にする。
+        params.detect_language = false
+        let whisperLanguage = (language.isEmpty || language == "auto") ? "auto" : language
+        let languageCString = strdup(whisperLanguage)
         defer {
             if let languageCString {
                 free(languageCString)

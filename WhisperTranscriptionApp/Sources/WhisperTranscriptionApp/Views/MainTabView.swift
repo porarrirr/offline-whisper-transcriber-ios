@@ -10,7 +10,7 @@ struct MainTabView: View {
             }
             .tabItem {
                 Image(systemName: "waveform")
-                Text("文字起こし")
+                Text("Transcribe")
             }
             .tag(0)
             
@@ -19,7 +19,7 @@ struct MainTabView: View {
             }
             .tabItem {
                 Image(systemName: "clock.arrow.circlepath")
-                Text("履歴")
+                Text("History")
             }
             .tag(1)
             
@@ -28,7 +28,7 @@ struct MainTabView: View {
             }
             .tabItem {
                 Image(systemName: "gearshape.fill")
-                Text("設定")
+                Text("Settings")
             }
             .tag(2)
         }

@@ -1,4 +1,6 @@
 name: WhisperTranscriptionApp
+options:
+  developmentLanguage: en
 targets:
   WhisperTranscriptionApp:
     type: application
@@ -28,12 +30,14 @@ targets:
         MARKETING_VERSION: "1.0"
         CURRENT_PROJECT_VERSION: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
     info:
       path: Info.plist
       properties:
-        CFBundleDisplayName: Whisper文字起こし
-        CFBundleDevelopmentRegion: ja_JP
-        NSMicrophoneUsageDescription: "音声を録音して文字起こしするためにマイクへのアクセスが必要です。"
+        CFBundleDisplayName: Whisper Transcriber
+        CFBundleDevelopmentRegion: en
+        NSMicrophoneUsageDescription: "Microphone access is required to record audio for transcription."
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
@@ -49,6 +53,7 @@ targets:
         codeSign: true
       - sdk: AVFoundation.framework
       - sdk: UniformTypeIdentifiers.framework
+      - sdk: PhotosUI.framework
       - sdk: AppIntents.framework
     scheme:
       testTargets: []

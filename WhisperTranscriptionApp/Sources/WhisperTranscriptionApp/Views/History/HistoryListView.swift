@@ -6,64 +6,9 @@ struct HistoryListView: View {
     @Environment(\.modelContext) private var modelContext
     
     var body: some View {
-        ZStack {
-            AppColors.background.ignoresSafeArea()
-            
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("履歴")
-                            .font(AppFonts.largeTitle)
-                            .foregroundColor(AppColors.textPrimary)
-                        
-                        Text("\(viewModel.records.count)件の文字起こし")
-                            .font(AppFonts.body)
-                            .foregroundColor(AppColors.textSecondary)
-                    }
-                    
-                    Spacer()
-                    
-                    Button(action: {
-                        viewModel.filterFavorite.toggle()
-                        viewModel.fetchRecords()
-                    }) {
-                        Image(systemName: viewModel.filterFavorite ? "star.fill" : "star")
-                            .font(.title3)
-                            .foregroundColor(viewModel.filterFavorite ? AppColors.accent : AppColors.textSecondary)
-                    }
-                }
-                .padding(.horizontal)
-                .padding(.top, 20)
-                
-                // Search Bar
-                HStack {
-                    Image(systemName: "magnifyingglass")
-                        .foregroundColor(AppColors.textSecondary)
-                    
-                    TextField("検索", text: $viewModel.searchText)
-                        .foregroundColor(AppColors.textPrimary)
-                        .onChange(of: viewModel.searchText) { _, _ in
-                            viewModel.scheduleFetchRecords()
-                        }
-                    
-                    if !viewModel.searchText.isEmpty {
-                        Button(action: {
-                            viewModel.searchText = ""
-                            viewModel.fetchRecords()
-                        }) {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(AppColors.textSecondary)
-                        }
-                    }
-                }
-                .padding()
-                .background(AppColors.cardBackground)
-                .cornerRadius(12)
-                .padding(.horizontal)
-                .padding(.top, 16)
-                
-                if let error = viewModel.errorMessage {
+        List {
+            if let error = viewModel.errorMessage {
+                Section {
                     HStack {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(AppColors.warning)
@@ -71,47 +16,56 @@ struct HistoryListView: View {
                             .font(AppFonts.callout)
                             .foregroundColor(AppColors.warning)
                     }
-                    .padding()
-                    .background(AppColors.warning.opacity(0.1))
-                    .cornerRadius(12)
-                    .padding(.horizontal)
-                    .padding(.top, 12)
                 }
-                
-                if viewModel.records.isEmpty {
-                    Spacer()
+            }
+            
+            if viewModel.records.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .font(.system(size: 60))
+                        .symbolRenderingMode(.hierarchical)
+                        .foregroundColor(AppColors.textSecondary.opacity(0.5))
                     
-                    VStack(spacing: 16) {
-                        Image(systemName: "doc.text.magnifyingglass")
-                            .font(.system(size: 60))
-                            .foregroundColor(AppColors.textSecondary.opacity(0.5))
-                        
-                        Text(viewModel.searchText.isEmpty ? "まだ文字起こしがありません" : "検索結果がありません")
-                            .font(AppFonts.headline)
-                            .foregroundColor(AppColors.textSecondary)
-                    }
-                    
-                    Spacer()
-                } else {
-                    List {
-                        ForEach(viewModel.records) { record in
-                            NavigationLink(destination: HistoryDetailView(record: record, viewModel: viewModel)) {
-                                HistoryRow(record: record)
-                            }
-                            .listRowBackground(AppColors.cardBackground)
-                            .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
-                        }
-                        .onDelete { indexSet in
-                            for index in indexSet {
-                                viewModel.deleteRecord(viewModel.records[index])
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                    .background(AppColors.background)
-                    .scrollContentBackground(.hidden)
+                    Text(viewModel.searchText.isEmpty ? LocalizedStringKey("No transcriptions yet") : LocalizedStringKey("No search results"))
+                        .font(AppFonts.headline)
+                        .foregroundColor(AppColors.textSecondary)
                 }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 60)
+                .listRowBackground(Color.clear)
+            } else {
+                ForEach(viewModel.records) { record in
+                    NavigationLink(destination: HistoryDetailView(record: record, viewModel: viewModel)) {
+                        HistoryRow(record: record)
+                    }
+                }
+                .onDelete { indexSet in
+                    for index in indexSet {
+                        viewModel.deleteRecord(viewModel.records[index])
+                    }
+                }
+            }
+        }
+        .listStyle(.insetGrouped)
+        .navigationTitle("History")
+        .searchable(text: $viewModel.searchText, prompt: "Search")
+        .onChange(of: viewModel.searchText) { _, _ in
+            viewModel.scheduleFetchRecords()
+        }
+        .toolbar {
+            ToolbarItem(placement: .navigationBarTrailing) {
+                Button(action: {
+                    viewModel.filterFavorite.toggle()
+                    viewModel.fetchRecords()
+                }) {
+                    Image(systemName: viewModel.filterFavorite ? "star.fill" : "star")
+                        .foregroundColor(viewModel.filterFavorite ? AppColors.accent : AppColors.textSecondary)
+                }
+            }
+            ToolbarItem(placement: .navigationBarLeading) {
+                Text("\(viewModel.records.count) Records")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .onAppear {
@@ -151,7 +105,7 @@ struct HistoryRow: View {
                 
                 Spacer()
                 
-                Text("\(record.text.count)文字")
+                Text("\(record.text.count) characters")
                     .font(AppFonts.caption)
                     .foregroundColor(AppColors.accent)
             }
@@ -161,13 +115,7 @@ struct HistoryRow: View {
                 .foregroundColor(AppColors.textSecondary)
                 .lineLimit(2)
         }
-        .padding()
-        .background(AppColors.cardBackground)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(AppColors.accent.opacity(0.1), lineWidth: 1)
-        )
+        .padding(.vertical, 4)
     }
 
     private var previewText: String {

@@ -138,7 +138,7 @@ class ModelManager: NSObject, ObservableObject {
                 return formatter.string(fromByteCount: size)
             }
         } catch {
-            setDownloadError("モデルサイズの取得に失敗しました: \(error.localizedDescription)")
+            setDownloadError(String(localized: "Failed to get model size") + ": \(error.localizedDescription)")
         }
         return nil
     }
@@ -150,7 +150,7 @@ class ModelManager: NSObject, ObservableObject {
                 isModelReady = false
                 downloadError = nil
             } catch {
-                setDownloadError("モデル削除エラー: \(error.localizedDescription)")
+                setDownloadError(String(localized: "Error deleting model") + ": \(error.localizedDescription)")
             }
         }
     }
@@ -162,14 +162,14 @@ class ModelManager: NSObject, ObservableObject {
                 isVADModelReady = false
                 vadDownloadError = nil
             } catch {
-                setVADDownloadError("VADモデル削除エラー: \(error.localizedDescription)")
+                setVADDownloadError(String(localized: "Error deleting VAD model") + ": \(error.localizedDescription)")
             }
         }
     }
     
     func deleteAllModels() {
         guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            setDownloadError("モデル保存先を取得できませんでした")
+            setDownloadError(String(localized: "Could not retrieve documents directory for saving models."))
             return
         }
         for size in AppSettings.ModelSize.allCases {
@@ -178,7 +178,7 @@ class ModelManager: NSObject, ObservableObject {
                 do {
                     try FileManager.default.removeItem(atPath: path)
                 } catch {
-                    setDownloadError("モデル削除エラー: \(error.localizedDescription)")
+                    setDownloadError(String(localized: "Error deleting model") + ": \(error.localizedDescription)")
                     return
                 }
             }
@@ -229,10 +229,10 @@ extension ModelManager: URLSessionDownloadDelegate {
             }
         } catch {
             if downloadTask.taskDescription == "vadModel" {
-                setVADDownloadError("VADモデル保存エラー: \(error.localizedDescription)")
+                setVADDownloadError(String(localized: "Error saving VAD model") + ": \(error.localizedDescription)")
                 isVADDownloading = false
             } else {
-                setDownloadError("ファイル保存エラー: \(error.localizedDescription)")
+                setDownloadError(String(localized: "Error saving model file") + ": \(error.localizedDescription)")
                 isDownloading = false
             }
         }
@@ -241,11 +241,11 @@ extension ModelManager: URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
             if task.taskDescription == "vadModel" {
-                setVADDownloadError("VADモデルダウンロードエラー: \(error.localizedDescription)")
+                setVADDownloadError(String(localized: "Error downloading VAD model") + ": \(error.localizedDescription)")
                 isVADDownloading = false
                 vadDownloadTask = nil
             } else {
-                setDownloadError("ダウンロードエラー: \(error.localizedDescription)")
+                setDownloadError(String(localized: "Download error") + ": \(error.localizedDescription)")
                 isDownloading = false
                 downloadTask = nil
             }

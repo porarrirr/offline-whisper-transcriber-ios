@@ -21,109 +21,80 @@ struct HistoryDetailView: View {
     }
     
     var body: some View {
-        ZStack {
-            AppColors.background.ignoresSafeArea()
-            
-            ScrollView {
-                VStack(spacing: 20) {
-                    HStack {
-                        Label(record.formattedDate, systemImage: "calendar")
-                        Spacer()
-                        Label("\(Int(record.duration))秒", systemImage: "clock")
-                    }
-                    .font(AppFonts.caption)
-                    .foregroundColor(AppColors.textSecondary)
-                    .padding(.horizontal)
-                    
-                    if let language = record.language {
-                        HStack {
-                            Image(systemName: "globe")
-                                .foregroundColor(AppColors.accent)
-                            Text("言語: \(language)")
-                                .font(AppFonts.caption)
-                                .foregroundColor(AppColors.textSecondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal)
-                    }
-                    
-                    TranscriptionCard(
-                        text: record.text,
-                        segments: cachedSegments,
-                        showTimestamps: showTimestampView,
-                        isLoading: false
-                    )
-                    .padding(.horizontal)
-                    
-                    if !cachedSegments.isEmpty {
-                        Button(action: {
-                            showTimestampView.toggle()
-                        }) {
-                            HStack {
-                                Image(systemName: showTimestampView ? "text.alignleft" : "clock")
-                                Text(showTimestampView ? "テキストのみ表示" : "タイムスタンプ付きで表示")
-                            }
-                            .font(AppFonts.callout)
-                            .foregroundColor(AppColors.accent)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(AppColors.accent.opacity(0.1))
-                            .cornerRadius(12)
-                        }
-                        .padding(.horizontal)
-                    }
-                    
-                    VStack(spacing: 12) {
-                        ActionButton(
-                            icon: "doc.on.doc.fill",
-                            title: "テキストをコピー",
-                            color: AppColors.accent
-                        ) {
-                            UIPasteboard.general.string = currentDisplayText()
-                            showCopyConfirmation = true
-                        }
-                        
-                        ActionButton(
-                            icon: "square.and.arrow.up.fill",
-                            title: "テキストを共有",
-                            color: AppColors.surface
-                        ) {
-                            shareItems = [currentDisplayText()]
-                            showShareSheet = true
-                        }
-                        
-                        ActionButton(
-                            icon: "arrow.down.doc.fill",
-                            title: "エクスポート",
-                            color: AppColors.surface
-                        ) {
-                            showExportSheet = true
-                        }
-                        
-                        ActionButton(
-                            icon: record.isFavorite ? "star.slash.fill" : "star.fill",
-                            title: record.isFavorite ? "お気に入りから削除" : "お気に入りに追加",
-                            color: AppColors.surface
-                        ) {
-                            viewModel.toggleFavorite(record)
-                        }
-                        
-                        ActionButton(
-                            icon: "trash.fill",
-                            title: "削除",
-                            color: AppColors.warning.opacity(0.2)
-                        ) {
-                            showDeleteConfirmation = true
-                        }
-                    }
-                    .padding(.horizontal)
-                    
-                    Spacer(minLength: 40)
+        List {
+            Section {
+                HStack {
+                    Label(record.formattedDate, systemImage: "calendar")
+                    Spacer()
+                    Label("\(Int(record.duration))s", systemImage: "clock")
                 }
-                .padding(.vertical)
+                .font(.caption)
+                .foregroundColor(.secondary)
+                
+                if let language = record.language {
+                    HStack {
+                        Image(systemName: "globe")
+                            .foregroundColor(.accentColor)
+                        Text("Language: \(language)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            
+            Section {
+                TranscriptionCard(
+                    text: record.text,
+                    segments: cachedSegments,
+                    showTimestamps: showTimestampView,
+                    isLoading: false
+                )
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+            }
+            
+            Section {
+                if !cachedSegments.isEmpty {
+                    Button(action: { showTimestampView.toggle() }) {
+                        Label(showTimestampView ? "Show Text Only" : "Show with Timestamps", systemImage: showTimestampView ? "text.alignleft" : "clock")
+                    }
+                }
+                
+                Button(action: {
+                    UIPasteboard.general.string = currentDisplayText()
+                    showCopyConfirmation = true
+                }) {
+                    Label("Copy Text", systemImage: "doc.on.doc")
+                }
+                
+                Button(action: {
+                    shareItems = [currentDisplayText()]
+                    showShareSheet = true
+                }) {
+                    Label("Share Text", systemImage: "square.and.arrow.up")
+                }
+                
+                Button(action: {
+                    showExportSheet = true
+                }) {
+                    Label("Export", systemImage: "arrow.down.doc")
+                }
+                
+                Button(action: {
+                    viewModel.toggleFavorite(record)
+                }) {
+                    Label(record.isFavorite ? "Remove from Favorites" : "Add to Favorites", systemImage: record.isFavorite ? "star.slash" : "star")
+                }
+                
+                Button(action: {
+                    showDeleteConfirmation = true
+                }) {
+                    Label("Delete", systemImage: "trash")
+                        .foregroundColor(.red)
+                }
             }
         }
-        .navigationTitle("詳細")
+        .navigationTitle("Details")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             if cachedSegments.isEmpty {
@@ -136,42 +107,20 @@ struct HistoryDetailView: View {
                     viewModel.toggleFavorite(record)
                 }) {
                     Image(systemName: record.isFavorite ? "star.fill" : "star")
-                        .foregroundColor(record.isFavorite ? AppColors.accent : AppColors.textSecondary)
                 }
             }
         }
-        .alert("削除の確認", isPresented: $showDeleteConfirmation) {
-            Button("キャンセル", role: .cancel) {}
-            Button("削除", role: .destructive) {
+        .alert("Confirm Deletion", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
                 viewModel.deleteRecord(record)
             }
         } message: {
-            Text("この文字起こしを削除してもよろしいですか？")
+            Text("Are you sure you want to delete this transcription?")
         }
-        .overlay(
-            Group {
-                if showCopyConfirmation {
-                    VStack {
-                        Spacer()
-                        Text("コピーしました！")
-                            .font(AppFonts.callout)
-                            .foregroundColor(AppColors.textPrimary)
-                            .padding(.horizontal, 20)
-                            .padding(.vertical, 12)
-                            .background(AppColors.accent)
-                            .cornerRadius(24)
-                            .padding(.bottom, 40)
-                            .transition(.move(edge: .bottom).combined(with: .opacity))
-                    }
-                    .animation(.easeInOut(duration: 0.3), value: showCopyConfirmation)
-                    .onAppear {
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                            showCopyConfirmation = false
-                        }
-                    }
-                }
-            }
-        )
+        .alert("Copied!", isPresented: $showCopyConfirmation) {
+            Button("OK", role: .cancel) {}
+        }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: shareItems)
         }
@@ -194,16 +143,9 @@ struct HistoryExportSheetView: View {
     @Environment(\.dismiss) private var dismiss
     
     var body: some View {
-        NavigationView {
-            ZStack {
-                AppColors.background.ignoresSafeArea()
-                
-                VStack(spacing: 16) {
-                    Text("エクスポート形式を選択")
-                        .font(AppFonts.headline)
-                        .foregroundColor(AppColors.textPrimary)
-                        .padding(.top)
-                    
+        NavigationStack {
+            List {
+                Section(header: Text("Select Export Format")) {
                     ForEach(ExportFormat.allCases) { format in
                         Button(action: {
                             let url = viewModel.exportRecord(record, format: format)
@@ -212,45 +154,30 @@ struct HistoryExportSheetView: View {
                         }) {
                             HStack {
                                 Image(systemName: iconForFormat(format))
-                                    .foregroundColor(AppColors.accent)
+                                    .foregroundColor(.accentColor)
                                     .frame(width: 30)
                                 
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading) {
                                     Text(format.displayName)
-                                        .font(AppFonts.body)
-                                        .foregroundColor(AppColors.textPrimary)
+                                        .foregroundColor(.primary)
                                     Text(extensionForFormat(format))
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
                                 }
-                                
                                 Spacer()
-                                
-                                Image(systemName: "chevron.right")
-                                    .foregroundColor(AppColors.textSecondary)
                             }
-                            .padding()
-                            .background(AppColors.cardBackground)
-                            .cornerRadius(12)
                         }
                     }
-                    
-                    Spacer()
                 }
-                .padding(.horizontal)
             }
-            .navigationTitle("エクスポート")
+            .navigationTitle("Export")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("キャンセル") {
-                        dismiss()
-                    }
-                    .foregroundColor(AppColors.accent)
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Cancel") { dismiss() }
                 }
             }
         }
-        .navigationViewStyle(StackNavigationViewStyle())
     }
     
     private func iconForFormat(_ format: ExportFormat) -> String {

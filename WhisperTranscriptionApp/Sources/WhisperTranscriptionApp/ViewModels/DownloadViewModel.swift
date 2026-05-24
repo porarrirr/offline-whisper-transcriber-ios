@@ -9,7 +9,7 @@ class DownloadViewModel: ObservableObject {
     @Published var isComplete = false
     @Published var isModelAvailable = false
     @Published var errorMessage: String?
-    @Published var statusText = "モデルを準備しています..."
+    @Published var statusText = "Preparing model..."
     
     private var modelManager = ModelManager.shared
     private var cancellables = Set<AnyCancellable>()
@@ -32,7 +32,7 @@ class DownloadViewModel: ObservableObject {
         guard !isDownloading else { return }
         
         isDownloading = true
-        statusText = "モデルをダウンロード中..."
+        statusText = "Downloading model..."
         
         modelManager.downloadModel()
         
@@ -48,7 +48,7 @@ class DownloadViewModel: ObservableObject {
             if self.modelManager.isModelReady {
                 self.isComplete = true
                 self.isDownloading = false
-                self.statusText = "準備完了！"
+                self.statusText = "Ready!"
                 timer.invalidate()
             }
             
@@ -64,7 +64,7 @@ class DownloadViewModel: ObservableObject {
         modelManager.checkModelAvailability()
         if modelManager.isModelReady {
             isComplete = true
-            statusText = "モデルはすでに準備されています"
+            statusText = "Model is already prepared"
         }
     }
     
