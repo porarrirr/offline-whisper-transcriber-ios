@@ -44,6 +44,9 @@ class TranscribeViewModel: ObservableObject {
                         self.transcriptionSegments = []
                         self.errorMessage = nil
                         self.transcriptionProgress = 0
+                        Task {
+                            await RecordingLiveActivityManager.shared.startRecordingActivity()
+                        }
                         
                         if self.settings.keepScreenOn {
                             UIApplication.shared.isIdleTimerDisabled = true
@@ -65,11 +68,17 @@ class TranscribeViewModel: ObservableObject {
         } catch {
             setError(error.localizedDescription)
             isRecording = false
+            Task {
+                await RecordingLiveActivityManager.shared.endRecordingActivity()
+            }
             return
         }
 
         isRecording = false
         recordingDuration = audioRecorder.currentTime
+        Task {
+            await RecordingLiveActivityManager.shared.endRecordingActivity()
+        }
         if let recordingError = audioRecorder.recordingError {
             setError(recordingError)
             return

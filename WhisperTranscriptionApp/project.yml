@@ -7,6 +7,8 @@ targets:
     platform: iOS
     deploymentTarget: "17.0"
     sources:
+      - path: Sources/Shared
+        createIntermediateGroups: true
       - path: Sources/WhisperTranscriptionApp
         createIntermediateGroups: true
       - path: Resources
@@ -38,6 +40,7 @@ targets:
         CFBundleDisplayName: Whisper Transcriber
         CFBundleDevelopmentRegion: en
         NSMicrophoneUsageDescription: "Microphone access is required to record audio for transcription."
+        NSSupportsLiveActivities: true
         UIBackgroundModes:
           - audio
         UILaunchScreen: {}
@@ -57,5 +60,35 @@ targets:
       - sdk: UniformTypeIdentifiers.framework
       - sdk: PhotosUI.framework
       - sdk: AppIntents.framework
+      - sdk: ActivityKit.framework
+      - target: RecordingActivityWidget
+        embed: true
     scheme:
       testTargets: []
+  RecordingActivityWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources/RecordingActivityWidget
+        createIntermediateGroups: true
+      - path: Sources/Shared
+        createIntermediateGroups: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.porarrirr.offlinewhispertranscriber.recordingactivity
+        SWIFT_VERSION: "5.9"
+        DEVELOPMENT_LANGUAGE: en
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        DEVELOPMENT_TEAM: 77V64TWCFD
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        APPLICATION_EXTENSION_API_ONLY: YES
+        INFOPLIST_FILE: Sources/RecordingActivityWidget/Info.plist
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    dependencies:
+      - sdk: ActivityKit.framework
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
