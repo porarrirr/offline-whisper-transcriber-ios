@@ -19,6 +19,7 @@ class TranscribeViewModel: ObservableObject {
     private let transcriptionChunkDuration: TimeInterval = 5 * 60
 
     func startRecording(recordingService: RecordingService) {
+        releaseWhisperModel(reason: "recording started")
         transcriptionResult = ""
         transcriptionSegments = []
         transcriptionLanguage = nil
@@ -143,6 +144,7 @@ class TranscribeViewModel: ObservableObject {
             transcriptionProgress = 0
             processingStatusText = ""
             UIApplication.shared.isIdleTimerDisabled = false
+            releaseWhisperModel(reason: "transcription finished")
             if cleanupAfterProcessing {
                 removeTemporaryInput(url: url)
             }
@@ -325,6 +327,12 @@ class TranscribeViewModel: ObservableObject {
             return contextTail
         }
         return "\(trimmedBasePrompt)\n\(contextTail)"
+    }
+
+    private func releaseWhisperModel(reason: String) {
+        guard whisperContext.isModelLoaded else { return }
+        whisperContext.unloadModel()
+        AppLogger.info("Whisper model released: reason=\(reason)", context: "TranscribeViewModel")
     }
 
     func setError(_ message: String) {
