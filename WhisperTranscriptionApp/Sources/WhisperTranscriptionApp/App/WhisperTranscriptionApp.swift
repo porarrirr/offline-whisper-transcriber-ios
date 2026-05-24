@@ -22,7 +22,7 @@ struct WhisperTranscriptionApp: App {
                 .modelContainer(modelContainer)
                 .environmentObject(recordingService)
                 .onAppear {
-                    performAutoCleanup(modelContainer: modelContainer)
+                    performStartupMaintenance(modelContainer: modelContainer)
                 }
                 .onChange(of: scenePhase) { _, newPhase in
                     recordingService.handleScenePhase(newPhase)
@@ -31,17 +31,13 @@ struct WhisperTranscriptionApp: App {
     }
     
     @MainActor
-    private func performAutoCleanup(modelContainer: ModelContainer) {
-        guard AppSettings.shared.autoDeleteRecordings else { return }
-        
-        do {
-            let context = ModelContext(modelContainer)
-            let viewModel = HistoryViewModel()
-            viewModel.setModelContext(context)
+    private func performStartupMaintenance(modelContainer: ModelContainer) {
+        let context = ModelContext(modelContainer)
+        let viewModel = HistoryViewModel()
+        viewModel.setModelContext(context)
+        viewModel.importUntrackedRecordings()
+        if AppSettings.shared.autoDeleteRecordings {
             viewModel.cleanupOldRecordings()
-        } catch {
-            AppLogger.error("起動時の自動クリーンアップに失敗しました", context: "App", error: error)
-            assertionFailure("Failed to perform auto cleanup: \(error)")
         }
     }
 }

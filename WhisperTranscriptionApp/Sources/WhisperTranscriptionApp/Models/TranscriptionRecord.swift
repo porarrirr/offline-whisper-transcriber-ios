@@ -66,8 +66,30 @@ class TranscriptionRecord: Identifiable {
     
     var displayTitle: String {
         if title.isEmpty {
-            return String(localized: "Transcription") + " \(formattedDate)"
+            return Self.defaultTitle(for: createdAt)
         }
         return title
+    }
+
+    var hasTranscriptionText: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func updateTranscription(text: String, duration: Double, segments: [TranscriptionSegment], language: String?) {
+        self.text = text
+        self.duration = duration
+        self.language = language
+        if let data = try? JSONEncoder().encode(segments),
+           let json = String(data: data, encoding: .utf8) {
+            self.segmentsJSON = json
+        }
+    }
+
+    static func defaultTitle(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
     }
 }

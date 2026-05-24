@@ -40,6 +40,7 @@ class TranscribeViewModel: ObservableObject {
     }
 
     private func stopRecordingAndTranscribeAsync(recordingService: RecordingService, modelContext: ModelContext) async {
+        let recordingDuration = recordingService.currentTime
         let recordingURL: URL
         do {
             recordingURL = try await recordingService.stopRecording()
@@ -47,13 +48,20 @@ class TranscribeViewModel: ObservableObject {
             setError(error.localizedDescription)
             return
         }
-        
-        Task {
-            await transcribeAudio(url: recordingURL, sourceType: .recording, modelContext: modelContext)
+
+        let record: TranscriptionRecord
+        do {
+            record = try saveRecordingRecord(url: recordingURL, duration: recordingDuration, modelContext: modelContext)
+        } catch {
+            setError(error.localizedDescription)
+            return
         }
+
+        await transcribeAudio(url: recordingURL, sourceType: .recording, modelContext: modelContext, updating: record)
     }
 
     private func transcribeInterruptedRecordingAsync(recordingService: RecordingService, modelContext: ModelContext) async {
+        let recordingDuration = recordingService.currentTime
         let recordingURL: URL
         do {
             recordingURL = try await recordingService.consumeInterruptedRecording()
@@ -62,7 +70,15 @@ class TranscribeViewModel: ObservableObject {
             return
         }
 
-        await transcribeAudio(url: recordingURL, sourceType: .recording, modelContext: modelContext)
+        let record: TranscriptionRecord
+        do {
+            record = try saveRecordingRecord(url: recordingURL, duration: recordingDuration, modelContext: modelContext)
+        } catch {
+            setError(error.localizedDescription)
+            return
+        }
+
+        await transcribeAudio(url: recordingURL, sourceType: .recording, modelContext: modelContext, updating: record)
     }
     
     func transcribeFile(url: URL, modelContext: ModelContext, cleanupAfterProcessing: Bool = false) {
@@ -75,11 +91,33 @@ class TranscribeViewModel: ObservableObject {
             )
         }
     }
+
+    func transcribeRecord(_ record: TranscriptionRecord, modelContext: ModelContext) {
+        Task {
+            await transcribeRecordAsync(record, modelContext: modelContext)
+        }
+    }
+
+    private func transcribeRecordAsync(_ record: TranscriptionRecord, modelContext: ModelContext) async {
+        guard let audioFilePath = record.audioFilePath else {
+            setError(String(localized: "No audio file is attached to this history item."))
+            return
+        }
+
+        let audioURL = URL(fileURLWithPath: audioFilePath)
+        guard FileManager.default.fileExists(atPath: audioURL.path) else {
+            setError(String(localized: "The audio file for this history item could not be found."))
+            return
+        }
+
+        await transcribeAudio(url: audioURL, sourceType: record.sourceTypeEnum, modelContext: modelContext, updating: record)
+    }
     
     private func transcribeAudio(
         url: URL,
         sourceType: TranscriptionRecord.SourceType,
         modelContext: ModelContext,
+        updating existingRecord: TranscriptionRecord? = nil,
         cleanupAfterProcessing: Bool = false
     ) async {
         errorMessage = nil
@@ -202,21 +240,29 @@ class TranscribeViewModel: ObservableObject {
             transcriptionLanguage = detectedLanguage
             showResult = true
 
-            let title = makeTitle(from: finalText)
-            let record = TranscriptionRecord(
-                title: title.isEmpty ? String(localized: "Untitled Transcription") : title,
-                text: finalText,
+            let savedDuration = max(duration, processedAudioDuration)
+            let record = existingRecord ?? TranscriptionRecord(
+                title: TranscriptionRecord.defaultTitle(for: Date()),
+                text: "",
                 sourceType: sourceType,
                 audioFilePath: sourceType == .recording ? url.path : nil,
-                duration: max(duration, processedAudioDuration),
+                duration: savedDuration
+            )
+            if existingRecord == nil {
+                modelContext.insert(record)
+            }
+            record.updateTranscription(
+                text: finalText,
+                duration: savedDuration,
                 segments: combinedSegments,
                 language: detectedLanguage
             )
-            modelContext.insert(record)
             do {
                 try modelContext.save()
             } catch {
-                modelContext.delete(record)
+                if existingRecord == nil {
+                    modelContext.delete(record)
+                }
                 setError(String(localized: "Failed to save history") + ": \(error.localizedDescription)")
             }
 
@@ -267,11 +313,6 @@ class TranscribeViewModel: ObservableObject {
         }
     }
 
-    private func makeTitle(from text: String) -> String {
-        let prefix = text.prefix(20)
-        return String(prefix) + (prefix.endIndex == text.endIndex ? "" : "...")
-    }
-
     private func makeChunkPrompt(basePrompt: String, previousText: String) -> String {
         let trimmedBasePrompt = basePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedPreviousText = previousText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -300,12 +341,33 @@ class TranscribeViewModel: ObservableObject {
         transcriptionProgress = 0
         processingStatusText = ""
     }
+
+    private func saveRecordingRecord(url: URL, duration: TimeInterval, modelContext: ModelContext) throws -> TranscriptionRecord {
+        let createdAt = Date()
+        let record = TranscriptionRecord(
+            title: TranscriptionRecord.defaultTitle(for: createdAt),
+            text: "",
+            sourceType: .recording,
+            audioFilePath: url.path,
+            duration: duration,
+            createdAt: createdAt
+        )
+        modelContext.insert(record)
+        do {
+            try modelContext.save()
+            return record
+        } catch {
+            modelContext.delete(record)
+            throw TranscriptionPipelineError.historySaveFailed(error.localizedDescription)
+        }
+    }
 }
 
 private enum TranscriptionPipelineError: LocalizedError {
     case transcriptionFailed
     case whisperFailed(String?)
     case emptyTranscription
+    case historySaveFailed(String)
 
     var errorDescription: String? {
         switch self {
@@ -315,6 +377,8 @@ private enum TranscriptionPipelineError: LocalizedError {
             return message ?? String(localized: "Transcription failed")
         case .emptyTranscription:
             return String(localized: "Transcription finished, but no text was produced.")
+        case .historySaveFailed(let message):
+            return String(localized: "Failed to save history") + ": \(message)"
         }
     }
 }

@@ -54,7 +54,7 @@ class HistoryViewModel: ObservableObject {
         fetchTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: 250_000_000)
             guard !Task.isCancelled else { return }
-            await self?.performFetchRecords()
+            self?.performFetchRecords()
         }
     }
     
@@ -78,6 +78,19 @@ class HistoryViewModel: ObservableObject {
         } catch {
             record.isFavorite.toggle()
             setError(String(localized: "Failed to update favorite status") + ": \(error.localizedDescription)")
+        }
+        fetchRecords()
+    }
+
+    func updateTitle(_ record: TranscriptionRecord, title: String) {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previousTitle = record.title
+        record.title = trimmedTitle.isEmpty ? TranscriptionRecord.defaultTitle(for: record.createdAt) : trimmedTitle
+        do {
+            try modelContext?.save()
+        } catch {
+            record.title = previousTitle
+            setError(String(localized: "Failed to update title") + ": \(error.localizedDescription)")
         }
         fetchRecords()
     }
@@ -108,6 +121,48 @@ class HistoryViewModel: ObservableObject {
         }
     }
 
+    func importUntrackedRecordings() {
+        guard let modelContext = modelContext else { return }
+
+        do {
+            let recordingsDirectory = try recordingsDirectory()
+            guard FileManager.default.fileExists(atPath: recordingsDirectory.path) else { return }
+
+            let descriptor = FetchDescriptor<TranscriptionRecord>()
+            let records = try modelContext.fetch(descriptor)
+            let trackedAudioPaths = Set(records.compactMap(\.audioFilePath))
+            let recordingURLs = try FileManager.default.contentsOfDirectory(
+                at: recordingsDirectory,
+                includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            )
+
+            var importedRecords = 0
+            for url in recordingURLs where url.pathExtension.localizedCaseInsensitiveCompare("m4a") == .orderedSame {
+                guard !trackedAudioPaths.contains(url.path) else { continue }
+                let resourceValues = try url.resourceValues(forKeys: [.creationDateKey, .fileSizeKey])
+                guard (resourceValues.fileSize ?? 0) > 0 else { continue }
+                let createdAt = resourceValues.creationDate ?? Date()
+                let record = TranscriptionRecord(
+                    title: TranscriptionRecord.defaultTitle(for: createdAt),
+                    text: "",
+                    sourceType: .recording,
+                    audioFilePath: url.path,
+                    duration: 0,
+                    createdAt: createdAt
+                )
+                modelContext.insert(record)
+                importedRecords += 1
+            }
+
+            guard importedRecords > 0 else { return }
+            try modelContext.save()
+            fetchRecords()
+        } catch {
+            setError(String(localized: "Failed to recover saved recordings") + ": \(error.localizedDescription)")
+        }
+    }
+
     private func setError(_ message: String) {
         errorMessage = message
         AppLogger.error(message, context: "HistoryViewModel")
@@ -119,6 +174,24 @@ class HistoryViewModel: ObservableObject {
             try FileManager.default.removeItem(atPath: path)
         } catch {
             setError(String(localized: "Failed to delete recording file") + ": \(error.localizedDescription)")
+        }
+    }
+
+    private func recordingsDirectory() throws -> URL {
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            throw HistoryViewModelError.documentsDirectoryUnavailable
+        }
+        return documentsPath.appendingPathComponent("Recordings", isDirectory: true)
+    }
+}
+
+private enum HistoryViewModelError: LocalizedError {
+    case documentsDirectoryUnavailable
+
+    var errorDescription: String? {
+        switch self {
+        case .documentsDirectoryUnavailable:
+            return String(localized: "Could not retrieve document directory for saved recordings.")
         }
     }
 }

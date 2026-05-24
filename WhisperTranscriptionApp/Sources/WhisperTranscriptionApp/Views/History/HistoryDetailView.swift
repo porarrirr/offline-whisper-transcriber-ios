@@ -5,11 +5,16 @@ struct HistoryDetailView: View {
     let record: TranscriptionRecord
     @ObservedObject var viewModel: HistoryViewModel
     
+    @Environment(\.modelContext) private var modelContext
+    @StateObject private var audioPlayer = AudioPlayer()
+    @StateObject private var transcribeViewModel = TranscribeViewModel()
     @State private var showShareSheet = false
     @State private var showCopyConfirmation = false
     @State private var showDeleteConfirmation = false
     @State private var showExportSheet = false
     @State private var showTimestampView = false
+    @State private var showEditTitle = false
+    @State private var editableTitle = ""
     @State private var shareItems: [Any] = []
     @State private var cachedSegments: [TranscriptionSegment] = []
     
@@ -22,6 +27,30 @@ struct HistoryDetailView: View {
     
     var body: some View {
         List {
+            Section {
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Title")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+
+                        Text(record.displayTitle)
+                            .font(AppFonts.headline)
+                            .foregroundColor(AppColors.textPrimary)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        editableTitle = record.displayTitle
+                        showEditTitle = true
+                    } label: {
+                        Label("Edit Title", systemImage: "pencil")
+                    }
+                    .labelStyle(.iconOnly)
+                }
+            }
+
             Section {
                 HStack {
                     Label(record.formattedDate, systemImage: "calendar")
@@ -41,20 +70,102 @@ struct HistoryDetailView: View {
                     }
                 }
             }
+
+            if let audioURL {
+                Section {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Button {
+                                if audioPlayer.isPlaying {
+                                    audioPlayer.pause()
+                                } else {
+                                    audioPlayer.play()
+                                }
+                            } label: {
+                                Label(audioPlayer.isPlaying ? "Pause Audio" : "Play Audio", systemImage: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
+                            }
+                            .buttonStyle(.borderedProminent)
+
+                            Button {
+                                audioPlayer.stop()
+                            } label: {
+                                Label("Stop Audio", systemImage: "stop.fill")
+                            }
+                            .buttonStyle(.bordered)
+                            .disabled(audioPlayer.currentTime == 0 && !audioPlayer.isPlaying)
+
+                            Spacer()
+                        }
+
+                        if audioPlayer.duration > 0 {
+                            Slider(value: Binding(
+                                get: { audioPlayer.currentTime },
+                                set: { audioPlayer.seek(to: $0) }
+                            ), in: 0...audioPlayer.duration)
+
+                            HStack {
+                                Text(formatTime(audioPlayer.currentTime))
+                                Spacer()
+                                Text(formatTime(audioPlayer.duration))
+                            }
+                            .font(AppFonts.caption)
+                            .foregroundColor(AppColors.textSecondary)
+                            .monospacedDigit()
+                        }
+
+                        if let error = audioPlayer.errorMessage {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .font(AppFonts.caption)
+                                .foregroundColor(AppColors.warning)
+                        }
+
+                        Button {
+                            transcribeViewModel.transcribeRecord(record, modelContext: modelContext)
+                        } label: {
+                            Label(record.hasTranscriptionText ? "Transcribe Again" : "Transcribe from Audio", systemImage: "waveform.badge.magnifyingglass")
+                        }
+                        .disabled(transcribeViewModel.isProcessing)
+
+                        if transcribeViewModel.isProcessing {
+                            ProgressView(value: transcribeViewModel.transcriptionProgress)
+                            Text(transcribeViewModel.processingStatusText.isEmpty ? LocalizedStringKey("Preparing audio") : LocalizedStringKey(transcribeViewModel.processingStatusText))
+                                .font(AppFonts.caption)
+                                .foregroundColor(AppColors.textSecondary)
+                        }
+
+                        if let error = transcribeViewModel.errorMessage {
+                            Label(error, systemImage: "exclamationmark.triangle.fill")
+                                .font(AppFonts.caption)
+                                .foregroundColor(AppColors.warning)
+                        }
+                    }
+                    .onAppear {
+                        audioPlayer.prepare(url: audioURL)
+                    }
+                }
+            }
             
-            Section {
-                TranscriptionCard(
-                    text: record.text,
-                    segments: cachedSegments,
-                    showTimestamps: showTimestampView,
-                    isLoading: false
-                )
-                .listRowInsets(EdgeInsets())
-                .listRowBackground(Color.clear)
+            if record.hasTranscriptionText {
+                Section {
+                    TranscriptionCard(
+                        text: record.text,
+                        segments: cachedSegments,
+                        showTimestamps: showTimestampView,
+                        isLoading: false
+                    )
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                }
+            } else {
+                Section {
+                    Label("No transcription yet", systemImage: "text.quote")
+                        .font(AppFonts.callout)
+                        .foregroundColor(AppColors.textSecondary)
+                }
             }
             
             Section {
-                if !cachedSegments.isEmpty {
+                if record.hasTranscriptionText && !cachedSegments.isEmpty {
                     Button(action: { showTimestampView.toggle() }) {
                         Label(showTimestampView ? "Show Text Only" : "Show with Timestamps", systemImage: showTimestampView ? "text.alignleft" : "clock")
                     }
@@ -66,6 +177,7 @@ struct HistoryDetailView: View {
                 }) {
                     Label("Copy Text", systemImage: "doc.on.doc")
                 }
+                .disabled(!record.hasTranscriptionText)
                 
                 Button(action: {
                     shareItems = [currentDisplayText()]
@@ -73,12 +185,14 @@ struct HistoryDetailView: View {
                 }) {
                     Label("Share Text", systemImage: "square.and.arrow.up")
                 }
+                .disabled(!record.hasTranscriptionText)
                 
                 Button(action: {
                     showExportSheet = true
                 }) {
                     Label("Export", systemImage: "arrow.down.doc")
                 }
+                .disabled(!record.hasTranscriptionText)
                 
                 Button(action: {
                     viewModel.toggleFavorite(record)
@@ -101,6 +215,12 @@ struct HistoryDetailView: View {
                 cachedSegments = record.segments
             }
         }
+        .onChange(of: record.segmentsJSON) { _, _ in
+            cachedSegments = record.segments
+        }
+        .onDisappear {
+            audioPlayer.stop()
+        }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: {
@@ -121,6 +241,13 @@ struct HistoryDetailView: View {
         .alert("Copied!", isPresented: $showCopyConfirmation) {
             Button("OK", role: .cancel) {}
         }
+        .alert("Edit Title", isPresented: $showEditTitle) {
+            TextField("Title", text: $editableTitle)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                viewModel.updateTitle(record, title: editableTitle)
+            }
+        }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: shareItems)
         }
@@ -132,6 +259,31 @@ struct HistoryDetailView: View {
                 }
             }
         }
+        .sheet(isPresented: $transcribeViewModel.showResult) {
+            ResultView(
+                text: transcribeViewModel.transcriptionResult,
+                segments: transcribeViewModel.transcriptionSegments,
+                language: transcribeViewModel.transcriptionLanguage
+            ) {
+                transcribeViewModel.reset()
+            }
+        }
+    }
+
+    private var audioURL: URL? {
+        guard let audioFilePath = record.audioFilePath else { return nil }
+        let url = URL(fileURLWithPath: audioFilePath)
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    private func formatTime(_ time: TimeInterval) -> String {
+        let hours = Int(time) / 3600
+        let minutes = (Int(time) % 3600) / 60
+        let seconds = Int(time) % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+        }
+        return String(format: "%02d:%02d", minutes, seconds)
     }
 }
 
