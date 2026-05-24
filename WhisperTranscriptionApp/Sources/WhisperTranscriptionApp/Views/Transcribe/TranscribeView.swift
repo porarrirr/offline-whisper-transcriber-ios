@@ -156,7 +156,7 @@ struct TranscribeView: View {
                                     .scaleEffect(x: 1, y: 2)
                                     .padding(.horizontal, 40)
                                 
-                                Text("Transcribing... \(Int(viewModel.transcriptionProgress * 100))%")
+                                Text("\(viewModel.processingStatusText) \(Int(viewModel.transcriptionProgress * 100))%")
                                     .font(AppFonts.callout)
                                     .foregroundColor(AppColors.textSecondary)
                             }
@@ -198,9 +198,10 @@ struct TranscribeView: View {
     }
     
     private func formatTime(_ time: TimeInterval) -> String {
-        let minutes = Int(time) / 60
+        let hours = Int(time) / 3600
+        let minutes = (Int(time) % 3600) / 60
         let seconds = Int(time) % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
     }
 
     @MainActor

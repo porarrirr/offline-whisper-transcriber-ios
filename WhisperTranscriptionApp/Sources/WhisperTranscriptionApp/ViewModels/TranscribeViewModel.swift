@@ -14,11 +14,13 @@ class TranscribeViewModel: ObservableObject {
     @Published var recordingDuration: TimeInterval = 0
     @Published var showResult = false
     @Published var transcriptionProgress: Double = 0
+    @Published var processingStatusText: String = ""
     
     private let audioRecorder = AudioRecorder()
     private let whisperContext = WhisperContext()
     private let modelManager = ModelManager.shared
     private let settings = AppSettings.shared
+    private let transcriptionChunkDuration: TimeInterval = 5 * 60
     
     var audioLevel: Float {
         audioRecorder.audioLevel
@@ -57,14 +59,21 @@ class TranscribeViewModel: ObservableObject {
     }
     
     func stopRecordingAndTranscribe(modelContext: ModelContext) {
-        guard let recordingURL = audioRecorder.stopRecording() else {
-            setError(String(localized: "Failed to save recording"))
+        let recordingURL: URL
+        do {
+            recordingURL = try audioRecorder.stopRecording()
+        } catch {
+            setError(error.localizedDescription)
             isRecording = false
             return
         }
-        
+
         isRecording = false
         recordingDuration = audioRecorder.currentTime
+        if let recordingError = audioRecorder.recordingError {
+            setError(recordingError)
+            return
+        }
         
         Task {
             await transcribeAudio(url: recordingURL, sourceType: .recording, modelContext: modelContext)
@@ -99,10 +108,12 @@ class TranscribeViewModel: ObservableObject {
         isProcessing = true
         showResult = false
         transcriptionProgress = 0
+        processingStatusText = String(localized: "Converting...")
         UIApplication.shared.isIdleTimerDisabled = settings.keepScreenOn
         defer {
             isProcessing = false
             transcriptionProgress = 0
+            processingStatusText = ""
             UIApplication.shared.isIdleTimerDisabled = false
             if cleanupAfterProcessing {
                 removeTemporaryInput(url: url)
@@ -114,12 +125,7 @@ class TranscribeViewModel: ObservableObject {
                 "Transcription started: source=\(sourceType), file=\(url.lastPathComponent), language=\(settings.selectedLanguage), translate=\(settings.translateToEnglish), useVAD=\(settings.useVAD)",
                 context: "TranscribeViewModel"
             )
-            let samples = try await AudioConverter.shared.convertToWhisperSamples(inputURL: url)
-            AppLogger.info(
-                "Audio conversion completed: file=\(url.lastPathComponent), samples=\(samples.count)",
-                context: "TranscribeViewModel"
-            )
-            
+
             if whisperContext.isModelLoaded == false {
                 AppLogger.info("Loading Whisper model...", context: "TranscribeViewModel")
                 let loaded = await loadModelAsync()
@@ -137,79 +143,117 @@ class TranscribeViewModel: ObservableObject {
                 setError(String(localized: "VAD model is not ready. Please download the VAD model from settings."))
                 return
             }
-            
-            if let result = await whisperContext.transcribe(
-                samples: samples,
-                language: language,
-                translate: settings.translateToEnglish,
-                prompt: prompt,
-                useVAD: useVAD,
-                vadModelPath: useVAD ? modelManager.vadModelPath : nil,
-                onProgress: { [weak self] progress in
-                    self?.transcriptionProgress = progress
-                }
-            ) {
-                AppLogger.info(
-                    "文字起こしが完了しました: file=\(url.lastPathComponent), textLength=\(result.text.count), segments=\(result.segments.count), language=\(result.language ?? "unknown")",
-                    context: "TranscribeViewModel"
+
+            let duration = try await AudioConverter.shared.getAudioDuration(url: url)
+            var textParts: [String] = []
+            var combinedSegments: [TranscriptionSegment] = []
+            var detectedLanguage: String?
+            var processedAudioDuration: TimeInterval = 0
+
+            try await AudioConverter.shared.convertToWhisperChunks(
+                inputURL: url,
+                chunkDuration: transcriptionChunkDuration
+            ) { [weak self] chunk in
+                guard let self else { throw TranscriptionPipelineError.transcriptionFailed }
+                let chunkPrompt = self.makeChunkPrompt(basePrompt: prompt, previousText: textParts.joined(separator: "\n"))
+                let totalDuration = chunk.totalDuration > 0 ? chunk.totalDuration : max(duration, chunk.startTime + chunk.duration)
+                let progressStart = totalDuration > 0 ? min(chunk.startTime / totalDuration, 0.99) : 0
+                let progressSpan = totalDuration > 0 ? max(chunk.duration / totalDuration, 0.01) : 0.01
+
+                self.processingStatusText = String(localized: "Transcribing...")
+                let result = await self.whisperContext.transcribeChunk(
+                    samples: chunk.samples,
+                    startOffset: chunk.startTime,
+                    segmentIDOffset: combinedSegments.count,
+                    language: language,
+                    translate: self.settings.translateToEnglish,
+                    prompt: chunkPrompt,
+                    useVAD: useVAD,
+                    vadModelPath: useVAD ? self.modelManager.vadModelPath : nil,
+                    onProgress: { [weak self] progress in
+                        Task { @MainActor in
+                            self?.transcriptionProgress = min(progressStart + progress * progressSpan, 0.99)
+                        }
+                    }
                 )
-                transcriptionResult = result.text
-                transcriptionSegments = result.segments
-                transcriptionLanguage = result.language
-                showResult = true
-                
-                let duration = AudioConverter.shared.getAudioDuration(url: url)
-                let title = makeTitle(from: result.text)
-                let record = TranscriptionRecord(
-                    title: title.isEmpty ? String(localized: "Untitled Transcription") : title,
-                    text: result.text,
-                    sourceType: sourceType,
-                    audioFilePath: sourceType == .recording ? url.path : nil,
-                    duration: duration,
-                    segments: result.segments,
-                    language: result.language
-                )
-                modelContext.insert(record)
-                do {
-                    try modelContext.save()
-                } catch {
-                    modelContext.delete(record)
-                    setError(String(localized: "Failed to save history") + ": \(error.localizedDescription)")
+
+                guard let result else {
+                    AppLogger.error(
+                        "Whisper transcription chunk failed: file=\(url.lastPathComponent), chunk=\(chunk.index), start=\(chunk.startTime), whisperError=\(self.whisperContext.errorMessage ?? "none")",
+                        context: "TranscribeViewModel"
+                    )
+                    throw TranscriptionPipelineError.whisperFailed(self.whisperContext.errorMessage)
                 }
-                
-                if settings.autoDeleteRecordings && sourceType == .recording {
-                    scheduleRecordingDeletion(url: url)
+
+                if !result.text.isEmpty {
+                    textParts.append(result.text)
                 }
-            } else {
-                AppLogger.error(
-                    "Whisper transcription result was nil: file=\(url.lastPathComponent), samples=\(samples.count), whisperError=\(whisperContext.errorMessage ?? "none")",
-                    context: "TranscribeViewModel"
-                )
-                setError(whisperContext.errorMessage ?? String(localized: "Transcription failed"))
+                combinedSegments.append(contentsOf: result.segments)
+                detectedLanguage = detectedLanguage ?? result.language
+                processedAudioDuration = chunk.startTime + chunk.duration
+                if totalDuration > 0 {
+                    self.transcriptionProgress = min(processedAudioDuration / totalDuration, 0.99)
+                }
+                self.processingStatusText = String(localized: "Converting...")
+            }
+
+            let finalText = textParts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !finalText.isEmpty else {
+                throw TranscriptionPipelineError.emptyTranscription
+            }
+
+            AppLogger.info(
+                "文字起こしが完了しました: file=\(url.lastPathComponent), textLength=\(finalText.count), segments=\(combinedSegments.count), language=\(detectedLanguage ?? "unknown")",
+                context: "TranscribeViewModel"
+            )
+            transcriptionProgress = 1
+            transcriptionResult = finalText
+            transcriptionSegments = combinedSegments
+            transcriptionLanguage = detectedLanguage
+            showResult = true
+
+            let title = makeTitle(from: finalText)
+            let record = TranscriptionRecord(
+                title: title.isEmpty ? String(localized: "Untitled Transcription") : title,
+                text: finalText,
+                sourceType: sourceType,
+                audioFilePath: sourceType == .recording ? url.path : nil,
+                duration: max(duration, processedAudioDuration),
+                segments: combinedSegments,
+                language: detectedLanguage
+            )
+            modelContext.insert(record)
+            do {
+                try modelContext.save()
+            } catch {
+                modelContext.delete(record)
+                setError(String(localized: "Failed to save history") + ": \(error.localizedDescription)")
+            }
+
+            if settings.autoDeleteRecordings && sourceType == .recording {
+                scheduleRecordingDeletion(url: url)
             }
         } catch {
             AppLogger.error(
-                "Exception during audio conversion: file=\(url.lastPathComponent), source=\(sourceType)",
+                "Exception during transcription pipeline: file=\(url.lastPathComponent), source=\(sourceType)",
                 context: "TranscribeViewModel",
                 error: error
             )
-            setError(String(localized: "Audio conversion error") + ": \(error.localizedDescription)")
+            setError(error.localizedDescription)
         }
     }
     
     private func loadModelAsync() async -> Bool {
-        await withCheckedContinuation { continuation in
-            whisperContext.loadModel(
-                path: modelManager.modelPath,
-                useFlashAttention: settings.useFlashAttention
-            )
-            
-            Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
-                if self?.whisperContext.isModelLoaded == true || self?.whisperContext.errorMessage != nil {
-                    timer.invalidate()
-                    continuation.resume(returning: self?.whisperContext.isModelLoaded == true)
-                }
+        whisperContext.loadModel(
+            path: modelManager.modelPath,
+            useFlashAttention: settings.useFlashAttention
+        )
+
+        while true {
+            if whisperContext.isModelLoaded || whisperContext.errorMessage != nil {
+                return whisperContext.isModelLoaded
             }
+            try? await Task.sleep(nanoseconds: 500_000_000)
         }
     }
     
@@ -238,6 +282,20 @@ class TranscribeViewModel: ObservableObject {
         return String(prefix) + (prefix.endIndex == text.endIndex ? "" : "...")
     }
 
+    private func makeChunkPrompt(basePrompt: String, previousText: String) -> String {
+        let trimmedBasePrompt = basePrompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedPreviousText = previousText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPreviousText.isEmpty else {
+            return trimmedBasePrompt
+        }
+
+        let contextTail = String(trimmedPreviousText.suffix(800))
+        guard !trimmedBasePrompt.isEmpty else {
+            return contextTail
+        }
+        return "\(trimmedBasePrompt)\n\(contextTail)"
+    }
+
     func setError(_ message: String) {
         errorMessage = message
         AppLogger.error(message, context: "TranscribeViewModel")
@@ -250,5 +308,23 @@ class TranscribeViewModel: ObservableObject {
         showResult = false
         errorMessage = nil
         transcriptionProgress = 0
+        processingStatusText = ""
+    }
+}
+
+private enum TranscriptionPipelineError: LocalizedError {
+    case transcriptionFailed
+    case whisperFailed(String?)
+    case emptyTranscription
+
+    var errorDescription: String? {
+        switch self {
+        case .transcriptionFailed:
+            return String(localized: "Transcription failed")
+        case .whisperFailed(let message):
+            return message ?? String(localized: "Transcription failed")
+        case .emptyTranscription:
+            return String(localized: "Transcription finished, but no text was produced.")
+        }
     }
 }

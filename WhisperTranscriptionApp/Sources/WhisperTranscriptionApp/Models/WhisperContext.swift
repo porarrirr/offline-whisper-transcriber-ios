@@ -154,6 +154,45 @@ class WhisperContext: ObservableObject {
             }
         }
     }
+
+    func transcribeChunk(
+        samples: [Float],
+        startOffset: TimeInterval,
+        segmentIDOffset: Int,
+        language: String = "ja",
+        translate: Bool = false,
+        prompt: String = "",
+        useVAD: Bool = false,
+        vadModelPath: String? = nil,
+        onProgress: ((Double) -> Void)? = nil
+    ) async -> TranscriptionResult? {
+        guard let result = await transcribe(
+            samples: samples,
+            language: language,
+            translate: translate,
+            prompt: prompt,
+            useVAD: useVAD,
+            vadModelPath: vadModelPath,
+            onProgress: onProgress
+        ) else {
+            return nil
+        }
+
+        let offsetSegments = result.segments.enumerated().map { index, segment in
+            TranscriptionSegment(
+                id: segmentIDOffset + index,
+                start: segment.start + startOffset,
+                end: segment.end + startOffset,
+                text: segment.text
+            )
+        }
+
+        return TranscriptionResult(
+            text: result.text,
+            segments: offsetSegments,
+            language: result.language
+        )
+    }
     
     private func performTranscription(
         context: OpaquePointer,

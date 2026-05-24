@@ -38,6 +38,8 @@ targets:
         CFBundleDisplayName: Whisper Transcriber
         CFBundleDevelopmentRegion: en
         NSMicrophoneUsageDescription: "Microphone access is required to record audio for transcription."
+        UIBackgroundModes:
+          - audio
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
