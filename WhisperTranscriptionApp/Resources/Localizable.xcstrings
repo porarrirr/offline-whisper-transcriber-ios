@@ -5880,6 +5880,46 @@
         }
       }
     },
+    "Converting..." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声を準備中..."
+          }
+        }
+      }
+    },
+    "Please keep the app open until this finishes." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了するまでアプリを開いたままお待ちください。"
+          }
+        }
+      }
+    },
+    "Preparing audio" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声を準備中"
+          }
+        }
+      }
+    },
+    "Processing will continue while this screen is open." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この画面を開いたままにすると処理が続きます。"
+          }
+        }
+      }
+    },
     "Transcribing... %@%%" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5922,6 +5962,36 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "正在轉寫... %lld%%"
+          }
+        }
+      }
+    },
+    "Transcribing..." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AIが文字起こし中..."
+          }
+        }
+      }
+    },
+    "Transcription in progress" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こし中"
+          }
+        }
+      }
+    },
+    "Transcription progress" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしの進捗"
           }
         }
       }

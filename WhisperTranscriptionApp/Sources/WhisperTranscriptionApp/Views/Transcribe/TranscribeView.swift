@@ -34,6 +34,15 @@ struct TranscribeView: View {
                 
                 ScrollView {
                     VStack(spacing: 24) {
+                        if viewModel.isProcessing {
+                            TranscriptionProgressPanel(
+                                progress: viewModel.transcriptionProgress,
+                                statusText: viewModel.processingStatusText
+                            )
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                        }
+
                         VStack(spacing: 20) {
                             if recordingService.isRecording {
                                 WaveformView(audioLevel: recordingService.audioLevel)
@@ -44,11 +53,6 @@ struct TranscribeView: View {
                                     .font(AppFonts.title2)
                                     .foregroundColor(AppColors.accent)
                                     .monospacedDigit()
-                            } else {
-                                Image(systemName: "mic.circle.fill")
-                                    .font(.system(size: 80))
-                                    .symbolRenderingMode(.hierarchical)
-                                    .foregroundColor(AppColors.accent.opacity(0.5))
                             }
                             
                             RecordingButton(isRecording: $recordingService.isRecording) {
@@ -65,6 +69,7 @@ struct TranscribeView: View {
                                 .foregroundColor(AppColors.textSecondary)
                         }
                         .padding(.vertical, 20)
+                        .opacity(viewModel.isProcessing ? 0.28 : 1)
                         
                         Divider()
                             .background(AppColors.surface)
@@ -185,17 +190,12 @@ struct TranscribeView: View {
                         }
                         
                         if viewModel.isProcessing {
-                            VStack(spacing: 12) {
-                                ProgressView(value: viewModel.transcriptionProgress)
-                                    .tint(AppColors.accent)
-                                    .scaleEffect(x: 1, y: 2)
-                                    .padding(.horizontal, 40)
-                                
-                                Text("\(viewModel.processingStatusText) \(Int(viewModel.transcriptionProgress * 100))%")
-                                    .font(AppFonts.callout)
-                                    .foregroundColor(AppColors.textSecondary)
-                            }
-                            .padding(.vertical, 40)
+                            Text("Processing will continue while this screen is open.")
+                                .font(AppFonts.caption)
+                                .foregroundColor(AppColors.textSecondary)
+                                .multilineTextAlignment(.center)
+                                .padding(.horizontal, 32)
+                                .accessibilityHidden(true)
                         }
                         
                         LegalDisclaimerFootnote()
@@ -267,6 +267,77 @@ struct TranscribeView: View {
         } catch {
             viewModel.setError(String(localized: "Video selection error") + ": \(error.localizedDescription)")
         }
+    }
+}
+
+private struct TranscriptionProgressPanel: View {
+    let progress: Double
+    let statusText: String
+
+    private var clampedProgress: Double {
+        min(max(progress, 0), 1)
+    }
+
+    private var percentText: String {
+        "\(Int((clampedProgress * 100).rounded()))%"
+    }
+
+    private var visibleStatusText: LocalizedStringKey {
+        statusText.isEmpty ? "Preparing audio" : LocalizedStringKey(statusText)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .center, spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(AppColors.accent.opacity(0.16))
+                        .frame(width: 58, height: 58)
+
+                    Image(systemName: "waveform.and.magnifyingglass")
+                        .font(.system(size: 26, weight: .semibold))
+                        .foregroundColor(AppColors.accent)
+                        .symbolEffect(.pulse, options: .repeating, value: percentText)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Transcription in progress")
+                        .font(AppFonts.title2)
+                        .foregroundColor(AppColors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Text(visibleStatusText)
+                        .font(AppFonts.callout)
+                        .foregroundColor(AppColors.textSecondary)
+                }
+
+                Spacer(minLength: 8)
+
+                Text(percentText)
+                    .font(.title2.weight(.bold).monospacedDigit())
+                    .foregroundColor(AppColors.accent)
+                    .accessibilityLabel(Text("Transcription progress"))
+                    .accessibilityValue(Text(percentText))
+            }
+
+            ProgressView(value: clampedProgress)
+                .tint(AppColors.accent)
+                .scaleEffect(x: 1, y: 2.4)
+                .padding(.vertical, 4)
+
+            Text("Please keep the app open until this finishes.")
+                .font(AppFonts.callout)
+                .foregroundColor(AppColors.textPrimary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(20)
+        .background(AppColors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(AppColors.accent.opacity(0.25), lineWidth: 1)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 
