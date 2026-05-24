@@ -4,6 +4,8 @@ import SwiftData
 @main
 struct WhisperTranscriptionApp: App {
     private let modelContainer: ModelContainer
+    @StateObject private var recordingService = RecordingService()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         do {
@@ -18,8 +20,12 @@ struct WhisperTranscriptionApp: App {
         WindowGroup {
             ContentView()
                 .modelContainer(modelContainer)
+                .environmentObject(recordingService)
                 .onAppear {
                     performAutoCleanup(modelContainer: modelContainer)
+                }
+                .onChange(of: scenePhase) { _, newPhase in
+                    recordingService.handleScenePhase(newPhase)
                 }
         }
     }

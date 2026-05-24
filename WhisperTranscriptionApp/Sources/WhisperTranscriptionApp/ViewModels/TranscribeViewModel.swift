@@ -1,113 +1,68 @@
 import Foundation
 import SwiftData
-import Combine
 import UIKit
 
 @MainActor
 class TranscribeViewModel: ObservableObject {
-    @Published var isRecording = false
     @Published var isProcessing = false
     @Published var transcriptionResult: String = ""
     @Published var transcriptionSegments: [TranscriptionSegment] = []
     @Published var transcriptionLanguage: String?
     @Published var errorMessage: String?
-    @Published var recordingDuration: TimeInterval = 0
     @Published var showResult = false
     @Published var transcriptionProgress: Double = 0
     @Published var processingStatusText: String = ""
     
-    private let audioRecorder = AudioRecorder()
     private let whisperContext = WhisperContext()
     private let modelManager = ModelManager.shared
     private let settings = AppSettings.shared
     private let transcriptionChunkDuration: TimeInterval = 5 * 60
-    private var cancellables = Set<AnyCancellable>()
-    
-    var audioLevel: Float {
-        audioRecorder.audioLevel
+
+    func startRecording(recordingService: RecordingService) {
+        transcriptionResult = ""
+        transcriptionSegments = []
+        transcriptionLanguage = nil
+        errorMessage = nil
+        transcriptionProgress = 0
+        recordingService.startRecording()
     }
     
-    init() {
-        audioRecorder.$currentTime
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$recordingDuration)
-        audioRecorder.$isRecording
-            .receive(on: DispatchQueue.main)
-            .assign(to: &$isRecording)
-        audioRecorder.$recordingError
-            .compactMap { $0 }
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] message in
-                guard let self else { return }
-                self.setError(message)
-                UIApplication.shared.isIdleTimerDisabled = false
-                Task {
-                    await RecordingLiveActivityManager.shared.endRecordingActivity()
-                }
-            }
-            .store(in: &cancellables)
-    }
-    
-    func startRecording() {
-        audioRecorder.requestPermission { [weak self] granted in
-            guard let self = self else { return }
-            if granted {
-                DispatchQueue.main.async {
-                    do {
-                        try self.audioRecorder.startRecording()
-                        self.transcriptionResult = ""
-                        self.transcriptionSegments = []
-                        self.errorMessage = nil
-                        self.transcriptionProgress = 0
-                        Task {
-                            await RecordingLiveActivityManager.shared.startRecordingActivity()
-                        }
-                        
-                        if self.settings.keepScreenOn {
-                            UIApplication.shared.isIdleTimerDisabled = true
-                        }
-                    } catch {
-                        self.setError(error.localizedDescription)
-                    }
-                }
-            } else {
-                self.setError(String(localized: "Microphone permission is required"))
-            }
-        }
-    }
-    
-    func stopRecordingAndTranscribe(modelContext: ModelContext) {
+    func stopRecordingAndTranscribe(recordingService: RecordingService, modelContext: ModelContext) {
         Task {
-            await stopRecordingAndTranscribeAsync(modelContext: modelContext)
+            await stopRecordingAndTranscribeAsync(recordingService: recordingService, modelContext: modelContext)
         }
     }
 
-    private func stopRecordingAndTranscribeAsync(modelContext: ModelContext) async {
+    func transcribeInterruptedRecording(recordingService: RecordingService, modelContext: ModelContext) {
+        Task {
+            await transcribeInterruptedRecordingAsync(recordingService: recordingService, modelContext: modelContext)
+        }
+    }
+
+    private func stopRecordingAndTranscribeAsync(recordingService: RecordingService, modelContext: ModelContext) async {
         let recordingURL: URL
         do {
-            recordingURL = try await audioRecorder.stopRecording()
+            recordingURL = try await recordingService.stopRecording()
         } catch {
             setError(error.localizedDescription)
-            isRecording = false
-            Task {
-                await RecordingLiveActivityManager.shared.endRecordingActivity()
-            }
-            return
-        }
-
-        isRecording = false
-        recordingDuration = audioRecorder.currentTime
-        Task {
-            await RecordingLiveActivityManager.shared.endRecordingActivity()
-        }
-        if let recordingError = audioRecorder.recordingError {
-            setError(recordingError)
             return
         }
         
         Task {
             await transcribeAudio(url: recordingURL, sourceType: .recording, modelContext: modelContext)
         }
+    }
+
+    private func transcribeInterruptedRecordingAsync(recordingService: RecordingService, modelContext: ModelContext) async {
+        let recordingURL: URL
+        do {
+            recordingURL = try await recordingService.consumeInterruptedRecording()
+        } catch {
+            setError(error.localizedDescription)
+            return
+        }
+
+        await transcribeAudio(url: recordingURL, sourceType: .recording, modelContext: modelContext)
     }
     
     func transcribeFile(url: URL, modelContext: ModelContext, cleanupAfterProcessing: Bool = false) {
@@ -127,6 +82,11 @@ class TranscribeViewModel: ObservableObject {
         modelContext: ModelContext,
         cleanupAfterProcessing: Bool = false
     ) async {
+        errorMessage = nil
+        transcriptionResult = ""
+        transcriptionSegments = []
+        transcriptionLanguage = nil
+
         guard modelManager.isModelReady else {
             if cleanupAfterProcessing {
                 removeTemporaryInput(url: url)
@@ -156,7 +116,7 @@ class TranscribeViewModel: ObservableObject {
                 context: "TranscribeViewModel"
             )
 
-            if whisperContext.isModelLoaded == false {
+            if !whisperContext.isLoaded(path: modelManager.modelPath, useFlashAttention: settings.useFlashAttention) {
                 AppLogger.info("Loading Whisper model...", context: "TranscribeViewModel")
                 let loaded = await loadModelAsync()
                 guard loaded else {

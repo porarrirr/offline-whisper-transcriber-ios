@@ -9,6 +9,7 @@ struct TranscribeView: View {
     @State private var selectedFileURL: URL?
     @State private var selectedVideoItem: PhotosPickerItem?
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var recordingService: RecordingService
     
     var body: some View {
         ZStack {
@@ -34,12 +35,12 @@ struct TranscribeView: View {
                 ScrollView {
                     VStack(spacing: 24) {
                         VStack(spacing: 20) {
-                            if viewModel.isRecording {
-                                WaveformView(audioLevel: viewModel.audioLevel)
+                            if recordingService.isRecording {
+                                WaveformView(audioLevel: recordingService.audioLevel)
                                     .frame(height: 100)
                                     .padding(.horizontal)
                                 
-                                Text(formatTime(viewModel.recordingDuration))
+                                Text(formatTime(recordingService.currentTime))
                                     .font(AppFonts.title2)
                                     .foregroundColor(AppColors.accent)
                                     .monospacedDigit()
@@ -50,16 +51,16 @@ struct TranscribeView: View {
                                     .foregroundColor(AppColors.accent.opacity(0.5))
                             }
                             
-                            RecordingButton(isRecording: $viewModel.isRecording) {
-                                if viewModel.isRecording {
-                                    viewModel.stopRecordingAndTranscribe(modelContext: modelContext)
+                            RecordingButton(isRecording: $recordingService.isRecording) {
+                                if recordingService.isRecording {
+                                    viewModel.stopRecordingAndTranscribe(recordingService: recordingService, modelContext: modelContext)
                                 } else {
-                                    viewModel.startRecording()
+                                    viewModel.startRecording(recordingService: recordingService)
                                 }
                             }
                             .disabled(viewModel.isProcessing)
                             
-                            Text(viewModel.isRecording ? LocalizedStringKey("Tap to Stop") : LocalizedStringKey("Tap to Start Recording"))
+                            Text(recordingService.isRecording ? LocalizedStringKey("Tap to Stop") : LocalizedStringKey("Tap to Start Recording"))
                                 .font(AppFonts.callout)
                                 .foregroundColor(AppColors.textSecondary)
                         }
@@ -98,8 +99,8 @@ struct TranscribeView: View {
                             .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
                         }
                         .padding(.horizontal)
-                        .disabled(viewModel.isRecording || viewModel.isProcessing)
-                        .opacity(viewModel.isRecording || viewModel.isProcessing ? 0.5 : 1)
+                        .disabled(recordingService.isRecording || viewModel.isProcessing)
+                        .opacity(recordingService.isRecording || viewModel.isProcessing ? 0.5 : 1)
 
                         PhotosPicker(
                             selection: $selectedVideoItem,
@@ -132,10 +133,10 @@ struct TranscribeView: View {
                             .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
                         }
                         .padding(.horizontal)
-                        .disabled(viewModel.isRecording || viewModel.isProcessing)
-                        .opacity(viewModel.isRecording || viewModel.isProcessing ? 0.5 : 1)
+                        .disabled(recordingService.isRecording || viewModel.isProcessing)
+                        .opacity(recordingService.isRecording || viewModel.isProcessing ? 0.5 : 1)
                         
-                        if let error = viewModel.errorMessage {
+                        if let error = displayedError {
                             HStack {
                                 Image(systemName: "exclamationmark.triangle.fill")
                                     .foregroundColor(AppColors.warning)
@@ -147,6 +148,40 @@ struct TranscribeView: View {
                             .background(AppColors.warning.opacity(0.1))
                             .cornerRadius(12)
                             .padding(.horizontal)
+                        }
+
+                        if recordingService.hasInterruptedRecording {
+                            Button(action: {
+                                viewModel.transcribeInterruptedRecording(recordingService: recordingService, modelContext: modelContext)
+                            }) {
+                                HStack {
+                                    Image(systemName: "waveform.badge.magnifyingglass")
+                                        .font(.title2)
+                                        .foregroundColor(AppColors.accent)
+
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("Transcribe Interrupted Recording")
+                                            .font(AppFonts.headline)
+                                            .foregroundColor(AppColors.textPrimary)
+
+                                        Text("Use the saved partial recording")
+                                            .font(AppFonts.caption)
+                                            .foregroundColor(AppColors.textSecondary)
+                                    }
+
+                                    Spacer()
+
+                                    Image(systemName: "chevron.right")
+                                        .foregroundColor(AppColors.textSecondary)
+                                }
+                                .padding()
+                                .background(.regularMaterial)
+                                .clipShape(RoundedRectangle(cornerRadius: 16))
+                                .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
+                            }
+                            .padding(.horizontal)
+                            .disabled(viewModel.isProcessing)
+                            .opacity(viewModel.isProcessing ? 0.5 : 1)
                         }
                         
                         if viewModel.isProcessing {
@@ -184,7 +219,11 @@ struct TranscribeView: View {
             FileImporter(selectedURL: $selectedFileURL, isPresented: $showFileImporter) { result in
                 switch result {
                 case .success(let url):
-                    viewModel.transcribeFile(url: url, modelContext: modelContext)
+                    viewModel.transcribeFile(
+                        url: url,
+                        modelContext: modelContext,
+                        cleanupAfterProcessing: true
+                    )
                 case .failure(let error):
                     viewModel.setError(String(localized: "File selection error") + ": \(error.localizedDescription)")
                 }
@@ -202,6 +241,10 @@ struct TranscribeView: View {
         let minutes = (Int(time) % 3600) / 60
         let seconds = Int(time) % 60
         return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+    }
+
+    private var displayedError: String? {
+        viewModel.errorMessage ?? recordingService.interruptionMessage ?? recordingService.errorMessage
     }
 
     @MainActor

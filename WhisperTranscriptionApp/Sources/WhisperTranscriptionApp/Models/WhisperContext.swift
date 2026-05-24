@@ -15,12 +15,26 @@ class WhisperContext: ObservableObject {
     @Published var errorMessage: String?
     
     private var whisperContext: OpaquePointer?
+    private(set) var loadedModelPath: String?
+    private(set) var loadedUseFlashAttention = false
+
+    func isLoaded(path: String, useFlashAttention: Bool) -> Bool {
+        isModelLoaded && loadedModelPath == path && loadedUseFlashAttention == useFlashAttention
+    }
+
     func loadModel(path: String, useFlashAttention: Bool = false) {
         guard FileManager.default.fileExists(atPath: path) else {
             errorMessage = "モデルファイルが見つかりません"
             AppLogger.error("モデルファイルが見つかりません", context: "WhisperContext")
             return
         }
+
+        if isLoaded(path: path, useFlashAttention: useFlashAttention) {
+            return
+        }
+
+        unloadModel()
+        errorMessage = nil
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             var params = whisper_context_default_params()
@@ -32,6 +46,8 @@ class WhisperContext: ObservableObject {
             DispatchQueue.main.async {
                 if let context = context {
                     self?.whisperContext = context
+                    self?.loadedModelPath = path
+                    self?.loadedUseFlashAttention = useFlashAttention
                     self?.isModelLoaded = true
                     self?.errorMessage = nil
                 } else {
@@ -413,6 +429,8 @@ class WhisperContext: ObservableObject {
             whisperContext = nil
         }
         isModelLoaded = false
+        loadedModelPath = nil
+        loadedUseFlashAttention = false
     }
 
     private func setErrorOnMain(_ message: String) {

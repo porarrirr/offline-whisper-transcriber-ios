@@ -6,12 +6,23 @@ class AudioRecorder: NSObject, ObservableObject {
     @Published var currentTime: TimeInterval = 0
     @Published var audioLevel: Float = 0.0
     @Published var recordingError: String?
+    @Published var interruptionMessage: String?
+    @Published var interruptedRecordingURL: URL?
 
     private var audioRecorder: AVAudioRecorder?
     private var timer: Timer?
     private var recordingURL: URL?
     private var stopContinuation: CheckedContinuation<URL, Error>?
     private var stopDuration: TimeInterval = 0
+
+    override init() {
+        super.init()
+        observeAudioSessionNotifications()
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
 
     var currentRecordingURL: URL? {
         recordingURL
@@ -47,6 +58,8 @@ class AudioRecorder: NSObject, ObservableObject {
         audioRecorder = recorder
         recordingURL = audioFilename
         recordingError = nil
+        interruptionMessage = nil
+        interruptedRecordingURL = nil
         isRecording = true
         currentTime = 0
 
@@ -57,6 +70,11 @@ class AudioRecorder: NSObject, ObservableObject {
 
     func stopRecording() async throws -> URL {
         guard let recorder = audioRecorder, let recordingURL else {
+            if let interruptedRecordingURL {
+                let validatedURL = try validateRecordingFile(at: interruptedRecordingURL)
+                self.interruptedRecordingURL = nil
+                return validatedURL
+            }
             throw AudioRecorderError.noActiveRecording
         }
         guard stopContinuation == nil else {
@@ -69,16 +87,10 @@ class AudioRecorder: NSObject, ObservableObject {
             recorder.stop()
         }
 
-        guard stoppedURL == recordingURL, FileManager.default.fileExists(atPath: stoppedURL.path) else {
+        guard stoppedURL == recordingURL else {
             throw AudioRecorderError.recordingFileMissing
         }
-        let attributes = try FileManager.default.attributesOfItem(atPath: stoppedURL.path)
-        let fileSize = attributes[.size] as? NSNumber
-        guard fileSize?.int64Value ?? 0 > 0 else {
-            throw AudioRecorderError.recordingFileEmpty
-        }
-
-        return stoppedURL
+        return try validateRecordingFile(at: stoppedURL)
     }
 
     private func updateRecordingState() {
@@ -94,6 +106,8 @@ class AudioRecorder: NSObject, ObservableObject {
         isRecording = false
         audioLevel = 0
         currentTime = stopDuration
+        audioRecorder = nil
+        recordingURL = nil
         do {
             try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         } catch {
@@ -105,6 +119,18 @@ class AudioRecorder: NSObject, ObservableObject {
         guard let continuation = stopContinuation else { return }
         stopContinuation = nil
         continuation.resume(with: result)
+    }
+
+    private func validateRecordingFile(at url: URL) throws -> URL {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            throw AudioRecorderError.recordingFileMissing
+        }
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let fileSize = attributes[.size] as? NSNumber
+        guard fileSize?.int64Value ?? 0 > 0 else {
+            throw AudioRecorderError.recordingFileEmpty
+        }
+        return url
     }
 
     func requestPermission(completion: @escaping (Bool) -> Void) {
@@ -129,6 +155,59 @@ class AudioRecorder: NSObject, ObservableObject {
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: ".", with: "-")
         return recordingsDirectory.appendingPathComponent("recording_\(timestamp).m4a")
+    }
+
+    private func observeAudioSessionNotifications() {
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioSessionInterruption),
+            name: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioRouteChange),
+            name: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance()
+        )
+    }
+
+    @objc private func handleAudioSessionInterruption(_ notification: Notification) {
+        guard let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: rawType) else {
+            return
+        }
+
+        switch type {
+        case .began:
+            handleRecordingInterruptionBegan()
+        case .ended:
+            AppLogger.info("Audio session interruption ended; recording will not auto-resume", context: "AudioRecorder")
+        @unknown default:
+            AppLogger.info("Unknown audio session interruption received", context: "AudioRecorder")
+        }
+    }
+
+    private func handleRecordingInterruptionBegan() {
+        guard let recorder = audioRecorder, isRecording else { return }
+
+        stopDuration = recorder.currentTime
+        let interruptedURL = recorder.url
+        let message = String(localized: "Recording was interrupted. A partial recording may be available for transcription.")
+        interruptionMessage = message
+        recordingError = message
+        AppLogger.error(message, context: "AudioRecorder")
+
+        recorder.stop()
+        if FileManager.default.fileExists(atPath: interruptedURL.path) {
+            interruptedRecordingURL = interruptedURL
+        }
+    }
+
+    @objc private func handleAudioRouteChange(_ notification: Notification) {
+        guard isRecording else { return }
+        let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
+        AppLogger.info("Audio route changed while recording: reason=\(reasonValue)", context: "AudioRecorder")
     }
 }
 
