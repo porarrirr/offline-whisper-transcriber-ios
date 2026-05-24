@@ -43,7 +43,7 @@ class AppSettings: ObservableObject {
     private init() {
         let defaults = UserDefaults.standard
         self.selectedModelSize = ModelSize(rawValue: defaults.string(forKey: "selectedModelSize") ?? "") ?? .base
-        self.selectedLanguage = defaults.string(forKey: "selectedLanguage") ?? "auto"
+        self.selectedLanguage = defaults.string(forKey: "selectedLanguage") ?? Self.defaultTranscriptionLanguage
         self.translateToEnglish = defaults.bool(forKey: "translateToEnglish")
         self.promptText = defaults.string(forKey: "promptText") ?? ""
         self.useFlashAttention = defaults.bool(forKey: "useFlashAttention")
@@ -105,10 +105,16 @@ class AppSettings: ObservableObject {
              }
          }
      }
+
+     private static var defaultTranscriptionLanguage: String {
+         let preferredLanguage = Locale.preferredLanguages.first ?? Locale.current.identifier
+         let languageCode = Locale(identifier: preferredLanguage).language.languageCode?.identifier
+         return languageCode == "ja" ? "ja" : "auto"
+     }
      
      static let supportedLanguages: [(code: String, name: String)] = [
-         ("auto", "Auto-Detect"),
          ("ja", "Japanese"),
+         ("auto", "Auto-Detect"),
          ("en", "English"),
          ("zh", "Chinese"),
          ("ko", "Korean"),
