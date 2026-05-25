@@ -135,7 +135,11 @@ struct HistoryDetailView: View {
                         .disabled(transcribeViewModel.isProcessing)
 
                         if transcribeViewModel.isProcessing {
-                            ProgressView(value: transcribeViewModel.transcriptionProgress)
+                            if transcribeViewModel.usesDeterminateProgress {
+                                ProgressView(value: transcribeViewModel.transcriptionProgress)
+                            } else {
+                                ProgressView()
+                            }
                             Text(transcribeViewModel.processingStatusText.isEmpty ? LocalizedStringKey("Preparing audio") : LocalizedStringKey(transcribeViewModel.processingStatusText))
                                 .font(AppFonts.caption)
                                 .foregroundColor(AppColors.textSecondary)

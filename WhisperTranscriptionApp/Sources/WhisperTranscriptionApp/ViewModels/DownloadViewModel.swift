@@ -13,7 +13,6 @@ class DownloadViewModel: ObservableObject {
     
     private var modelManager = ModelManager.shared
     private var cancellables = Set<AnyCancellable>()
-    private var timer: Timer?
     
     init() {
         setupBindings()
@@ -24,6 +23,37 @@ class DownloadViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isReady in
                 self?.isModelAvailable = isReady
+                if isReady {
+                    self?.isComplete = true
+                    self?.isDownloading = false
+                    self?.statusText = "Ready!"
+                }
+            }
+            .store(in: &cancellables)
+
+        modelManager.$isDownloading
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isDownloading in
+                self?.isDownloading = isDownloading
+                if isDownloading {
+                    self?.statusText = AppSettings.shared.usesAppleSpeechBackend
+                        ? "Preparing speech model..."
+                        : "Downloading model..."
+                }
+            }
+            .store(in: &cancellables)
+
+        modelManager.$downloadProgress
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] progress in
+                self?.progress = progress
+            }
+            .store(in: &cancellables)
+
+        modelManager.$downloadError
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] error in
+                self?.errorMessage = error
             }
             .store(in: &cancellables)
     }
@@ -33,31 +63,8 @@ class DownloadViewModel: ObservableObject {
         
         isDownloading = true
         statusText = "Downloading model..."
-        
+
         modelManager.downloadModel()
-        
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
-            guard let self = self else {
-                timer.invalidate()
-                return
-            }
-            
-            self.progress = self.modelManager.downloadProgress
-            
-            if self.modelManager.isModelReady {
-                self.isComplete = true
-                self.isDownloading = false
-                self.statusText = "Ready!"
-                timer.invalidate()
-            }
-            
-            if let error = self.modelManager.downloadError {
-                self.errorMessage = error
-                self.isDownloading = false
-                timer.invalidate()
-            }
-        }
     }
     
     func checkAvailability() {
@@ -65,10 +72,10 @@ class DownloadViewModel: ObservableObject {
         if modelManager.isModelReady {
             isComplete = true
             statusText = "Model is already prepared"
+        } else if AppSettings.shared.usesAppleSpeechBackend {
+            modelManager.ensureModelAvailability()
+            isDownloading = modelManager.isDownloading
+            statusText = "Preparing speech model..."
         }
-    }
-    
-    deinit {
-        timer?.invalidate()
     }
 }

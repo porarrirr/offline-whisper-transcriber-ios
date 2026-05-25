@@ -38,6 +38,7 @@ struct TranscribeView: View {
                             TranscriptionProgressPanel(
                                 progress: viewModel.transcriptionProgress,
                                 statusText: viewModel.processingStatusText,
+                                usesDeterminateProgress: viewModel.usesDeterminateProgress,
                                 onCancel: {
                                     viewModel.cancelTranscription()
                                 }
@@ -276,6 +277,7 @@ struct TranscribeView: View {
 private struct TranscriptionProgressPanel: View {
     let progress: Double
     let statusText: String
+    let usesDeterminateProgress: Bool
     let onCancel: () -> Void
 
     private var clampedProgress: Double {
@@ -301,7 +303,7 @@ private struct TranscriptionProgressPanel: View {
                     Image(systemName: "waveform.and.magnifyingglass")
                         .font(.system(size: 26, weight: .semibold))
                         .foregroundColor(AppColors.accent)
-                        .symbolEffect(.pulse, options: .repeating, value: percentText)
+                        .symbolEffect(.pulse, options: .repeating, value: animationValue)
                 }
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -318,11 +320,18 @@ private struct TranscriptionProgressPanel: View {
                 Spacer(minLength: 8)
 
                 VStack(alignment: .trailing, spacing: 8) {
-                    Text(percentText)
-                        .font(.title2.weight(.bold).monospacedDigit())
-                        .foregroundColor(AppColors.accent)
-                        .accessibilityLabel(Text("Transcription progress"))
-                        .accessibilityValue(Text(percentText))
+                    if usesDeterminateProgress {
+                        Text(percentText)
+                            .font(.title2.weight(.bold).monospacedDigit())
+                            .foregroundColor(AppColors.accent)
+                            .accessibilityLabel(Text("Transcription progress"))
+                            .accessibilityValue(Text(percentText))
+                    } else {
+                        ProgressView()
+                            .tint(AppColors.accent)
+                            .controlSize(.regular)
+                            .accessibilityLabel(Text("Transcription in progress"))
+                    }
 
                     Button(role: .cancel, action: onCancel) {
                         Label("Cancel", systemImage: "xmark.circle")
@@ -333,10 +342,22 @@ private struct TranscriptionProgressPanel: View {
                 }
             }
 
-            ProgressView(value: clampedProgress)
-                .tint(AppColors.accent)
-                .scaleEffect(x: 1, y: 2.4)
+            if usesDeterminateProgress {
+                ProgressView(value: clampedProgress)
+                    .tint(AppColors.accent)
+                    .scaleEffect(x: 1, y: 2.4)
+                    .padding(.vertical, 4)
+            } else {
+                HStack(spacing: 10) {
+                    Image(systemName: "cpu")
+                        .foregroundColor(AppColors.accent)
+                    Text("Apple SpeechTranscriber is processing on device.")
+                        .font(AppFonts.callout)
+                        .foregroundColor(AppColors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 .padding(.vertical, 4)
+            }
 
             Text("Please keep the app open until this finishes.")
                 .font(AppFonts.callout)
@@ -351,6 +372,10 @@ private struct TranscriptionProgressPanel: View {
                 .stroke(AppColors.accent.opacity(0.25), lineWidth: 1)
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private var animationValue: String {
+        usesDeterminateProgress ? percentText : statusText
     }
 }
 

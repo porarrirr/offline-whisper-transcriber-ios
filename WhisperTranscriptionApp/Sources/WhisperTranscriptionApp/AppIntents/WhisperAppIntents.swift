@@ -69,52 +69,31 @@ struct TranscribeAudioIntent: AppIntent {
         guard modelManager.isModelReady else {
             throw IntentError.modelNotReady
         }
-        
-        let whisperContext = WhisperContext()
-        let modelPath = modelManager.modelPath
-        
-        await withCheckedContinuation { continuation in
-            whisperContext.loadModel(path: modelPath, useFlashAttention: settings.useFlashAttention)
-            Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
-                if whisperContext.isModelLoaded || whisperContext.errorMessage != nil {
-                    timer.invalidate()
-                    continuation.resume()
-                }
-            }
-        }
-        
-        guard whisperContext.isModelLoaded else {
-            throw IntentError.modelLoadFailed
-        }
-        
+
         guard let audioFile else {
             throw IntentError.noAudioFile
         }
 
         let transcriptionText = try await audioFile.withFile(contentType: .audiovisualContent, allowOpenInPlace: true) { audioURL, _ in
-            let selectedLanguage = language ?? settings.selectedLanguage
-            if settings.useVAD && !modelManager.isVADModelReady {
-                throw IntentError.vadModelNotReady
-            }
-
-            do {
-                let processor = TranscriptionChunkProcessor()
-                let result = try await processor.transcribe(
-                    inputURL: audioURL,
-                    whisperContext: whisperContext,
-                    language: selectedLanguage == "auto" ? "" : selectedLanguage,
-                    translate: settings.translateToEnglish,
-                    prompt: settings.promptText,
-                    useVAD: settings.useVAD,
-                    vadModelPath: settings.useVAD ? modelManager.vadModelPath : nil
+            switch settings.selectedTranscriptionModel.backend {
+            case .whisper:
+                return try await transcribeWithWhisperIntent(
+                    audioURL: audioURL,
+                    modelManager: modelManager,
+                    settings: settings,
+                    languageOverride: language
                 )
+            case .appleSpeech(let locale):
+                guard #available(iOS 26.0, *) else {
+                    throw IntentError.transcriptionFailed
+                }
+                let service = AppleSpeechTranscriptionService()
+                let result = try await service.transcribe(
+                    inputURL: audioURL,
+                    locale: locale,
+                    includeTimestamps: settings.includeTimestamps
+                ) { _ in }
                 return result.text
-            } catch is AudioConverter.AudioConverterError {
-                throw IntentError.conversionFailed
-            } catch is CancellationError {
-                throw IntentError.transcriptionFailed
-            } catch {
-                throw IntentError.transcriptionFailed
             }
         }
 
@@ -184,6 +163,56 @@ struct WhisperShortcuts: AppShortcutsProvider {
             shortTitle: "History",
             systemImageName: "clock.arrow.circlepath"
         )
+    }
+}
+
+@MainActor
+private func transcribeWithWhisperIntent(
+    audioURL: URL,
+    modelManager: ModelManager,
+    settings: AppSettings,
+    languageOverride: String?
+) async throws -> String {
+    let whisperContext = WhisperContext()
+    let modelPath = modelManager.modelPath
+
+    await withCheckedContinuation { continuation in
+        whisperContext.loadModel(path: modelPath, useFlashAttention: settings.useFlashAttention)
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
+            if whisperContext.isModelLoaded || whisperContext.errorMessage != nil {
+                timer.invalidate()
+                continuation.resume()
+            }
+        }
+    }
+
+    guard whisperContext.isModelLoaded else {
+        throw IntentError.modelLoadFailed
+    }
+
+    let selectedLanguage = languageOverride ?? settings.selectedLanguage
+    if settings.useVAD && !modelManager.isVADModelReady {
+        throw IntentError.vadModelNotReady
+    }
+
+    do {
+        let processor = TranscriptionChunkProcessor()
+        let result = try await processor.transcribe(
+            inputURL: audioURL,
+            whisperContext: whisperContext,
+            language: selectedLanguage == "auto" ? "" : selectedLanguage,
+            translate: settings.translateToEnglish,
+            prompt: settings.promptText,
+            useVAD: settings.useVAD,
+            vadModelPath: settings.useVAD ? modelManager.vadModelPath : nil
+        )
+        return result.text
+    } catch is AudioConverter.AudioConverterError {
+        throw IntentError.conversionFailed
+    } catch is CancellationError {
+        throw IntentError.transcriptionFailed
+    } catch {
+        throw IntentError.transcriptionFailed
     }
 }
 

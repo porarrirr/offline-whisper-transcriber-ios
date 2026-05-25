@@ -42,6 +42,7 @@ targets:
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         NSMicrophoneUsageDescription: "Microphone access is required to record audio for transcription."
+        NSSpeechRecognitionUsageDescription: "Speech recognition is required to transcribe audio on device."
         NSSupportsLiveActivities: true
         UIBackgroundModes:
           - audio
@@ -63,6 +64,7 @@ targets:
       - sdk: PhotosUI.framework
       - sdk: AppIntents.framework
       - sdk: ActivityKit.framework
+      - sdk: Speech.framework
       - target: RecordingActivityWidget
         embed: true
     scheme:

@@ -80,6 +80,7 @@ struct TranscriptionChunkProcessor {
         ) { chunk in
             try Task.checkCancellation()
             let chunkPrompt = makeChunkPrompt(basePrompt: basePrompt, recentContext: recentPromptContext)
+            let chunkStartedAt = Date()
             let result = await whisperContext.transcribeChunk(
                 samples: chunk.samples,
                 startOffset: chunk.startTime,
@@ -99,6 +100,8 @@ struct TranscriptionChunkProcessor {
             guard let result else {
                 throw TranscriptionProcessingError.whisperFailed(whisperContext.errorMessage)
             }
+
+            logChunkCompletion(chunk: chunk, startedAt: chunkStartedAt)
 
             let acceptedStart = chunk.index == 0 ? chunk.startTime : chunk.startTime + min(config.overlapDuration, chunk.duration)
             let acceptedSegments = result.segments
@@ -139,6 +142,23 @@ struct TranscriptionChunkProcessor {
             language: detectedLanguage,
             processedDuration: processedAudioDuration
         )
+    }
+
+    private func logChunkCompletion(chunk: WhisperAudioChunk, startedAt: Date) {
+        let elapsed = max(0, Date().timeIntervalSince(startedAt))
+        let realtimeFactor = chunk.duration > 0 ? elapsed / chunk.duration : 0
+        AppLogger.info(
+            "Transcription chunk completed: index=\(chunk.index), start=\(formatSeconds(chunk.startTime)), duration=\(formatSeconds(chunk.duration)), elapsed=\(formatSeconds(elapsed)), rtf=\(formatNumber(realtimeFactor))",
+            context: "TranscriptionChunkProcessor"
+        )
+    }
+
+    private func formatSeconds(_ seconds: TimeInterval) -> String {
+        String(format: "%.2fs", seconds)
+    }
+
+    private func formatNumber(_ value: Double) -> String {
+        String(format: "%.2f", value)
     }
 
     private func makeChunkPrompt(basePrompt: String, recentContext: String) -> String {

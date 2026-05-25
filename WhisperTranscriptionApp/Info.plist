@@ -24,6 +24,8 @@
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone access is required to record audio for transcription.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Speech recognition is required to transcribe audio on device.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIBackgroundModes</key>

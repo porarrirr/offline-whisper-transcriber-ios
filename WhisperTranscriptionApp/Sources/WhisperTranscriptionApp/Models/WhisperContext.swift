@@ -316,7 +316,13 @@ class WhisperContext: ObservableObject {
         params.print_timestamps = false
         params.translate = translate
         params.no_timestamps = false
-        params.token_timestamps = true
+        params.token_timestamps = false
+        // Keep decoding stable on long audio while allowing whisper.cpp to recover from repetition loops.
+        params.temperature = 0.0
+        params.temperature_inc = 0.2
+        params.greedy.best_of = 1
+        params.suppress_nst = true
+        params.max_tokens = 96
         // `detect_language` は言語検出のみで終了するモード。自動言語の文字起こしでは false のまま language を "auto" にする。
         params.detect_language = false
         let whisperLanguage = (language.isEmpty || language == "auto") ? "auto" : language

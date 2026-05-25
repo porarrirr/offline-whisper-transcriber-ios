@@ -14,6 +14,12 @@ struct WhisperAudioChunk {
     }
 }
 
+struct PreparedSpeechAudioFile {
+    let url: URL
+    let duration: TimeInterval
+    let requiresCleanup: Bool
+}
+
 private final class AudioConverterInputState: @unchecked Sendable {
     var reachedEndOfInput = false
     var inputReadError: Error?
@@ -510,6 +516,85 @@ class AudioConverter {
         let asset = AVURLAsset(url: url)
         let duration = Self.seconds(from: try await asset.load(.duration))
         return duration
+    }
+
+    func prepareAudioFileForSpeechTranscriber(inputURL: URL, sampleRate: Double = 16000) async throws -> PreparedSpeechAudioFile {
+        if Self.isVideoFile(inputURL) {
+            return try await extractVideoAudioForSpeechTranscriber(inputURL: inputURL, sampleRate: sampleRate)
+        }
+
+        let inputFile = try AVAudioFile(forReading: inputURL)
+        return PreparedSpeechAudioFile(
+            url: inputURL,
+            duration: durationForAudioFile(inputFile, inputFormat: inputFile.processingFormat),
+            requiresCleanup: false
+        )
+    }
+
+    private func extractVideoAudioForSpeechTranscriber(inputURL: URL, sampleRate: Double) async throws -> PreparedSpeechAudioFile {
+        guard let outputFormat = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: false
+        ) else {
+            throw AudioConverterError.outputFormatCreationFailed
+        }
+
+        let outputURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("speech-audio-\(UUID().uuidString)")
+            .appendingPathExtension("caf")
+        let outputFile = try AVAudioFile(
+            forWriting: outputURL,
+            settings: outputFormat.settings,
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
+
+        var writtenSampleCount = 0
+        do {
+            try await convertToWhisperChunks(
+                inputURL: inputURL,
+                sampleRate: sampleRate,
+                chunkDuration: 300,
+                chunkOverlapDuration: 0
+            ) { chunk in
+                try Self.write(samples: chunk.samples, format: outputFormat, to: outputFile)
+                writtenSampleCount += chunk.samples.count
+            }
+        } catch {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw error
+        }
+
+        guard writtenSampleCount > 0 else {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw AudioConverterError.emptyAudioFile
+        }
+
+        return PreparedSpeechAudioFile(
+            url: outputURL,
+            duration: Double(writtenSampleCount) / sampleRate,
+            requiresCleanup: true
+        )
+    }
+
+    private static func write(samples: [Float], format: AVAudioFormat, to outputFile: AVAudioFile) throws {
+        guard !samples.isEmpty else { return }
+        guard let buffer = AVAudioPCMBuffer(
+            pcmFormat: format,
+            frameCapacity: AVAudioFrameCount(samples.count)
+        ) else {
+            throw AudioConverterError.bufferCreationFailed
+        }
+        buffer.frameLength = AVAudioFrameCount(samples.count)
+        guard let channelData = buffer.floatChannelData?[0] else {
+            throw AudioConverterError.unsupportedPCMFormat
+        }
+        samples.withUnsafeBufferPointer { pointer in
+            channelData.update(from: pointer.baseAddress!, count: samples.count)
+        }
+        try outputFile.write(from: buffer)
     }
 
     private static func seconds(from time: CMTime) -> Double {

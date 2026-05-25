@@ -115,31 +115,47 @@ struct ModelDownloadView: View {
             }
         } else {
             VStack(spacing: 16) {
-                if !viewModel.isModelAvailable {
+                if !viewModel.isModelAvailable && settings.usesWhisperBackend {
                     VStack(spacing: 12) {
-                        Text("Select Model Size")
+                        Text("Select Model")
                             .font(AppFonts.headline)
                             .foregroundColor(AppColors.textPrimary)
 
-                        Picker("Model Size", selection: $settings.selectedModelSize) {
-                            ForEach(AppSettings.ModelSize.allCases) { size in
-                                Text(size.displayName).tag(size)
+                        Picker("Model", selection: $settings.selectedTranscriptionModel) {
+                            ForEach(TranscriptionModel.pickerOptions) { model in
+                                Text(model.displayName).tag(model)
                             }
                         }
                         .pickerStyle(.menu)
-                        .onChange(of: settings.selectedModelSize) { _, newValue in
-                            ModelManager.shared.switchModel(size: newValue)
+                        .onChange(of: settings.selectedTranscriptionModel) { _, newValue in
+                            ModelManager.shared.switchModel(model: newValue)
                             viewModel.checkAvailability()
                         }
 
                         HStack {
                             Image(systemName: "info.circle.fill")
                                 .foregroundColor(AppColors.accent)
-                            Text(settings.selectedModelSize.approximateSize)
+                            Text(settings.selectedTranscriptionModel.approximateSize)
                                 .font(AppFonts.caption)
                                 .foregroundColor(AppColors.textSecondary)
                             Spacer()
                         }
+                    }
+                    .padding()
+                    .background(AppColors.cardBackground)
+                    .cornerRadius(16)
+                } else if settings.usesAppleSpeechBackend {
+                    VStack(spacing: 12) {
+                        Text("iOS SpeechTranscriber (Japanese)")
+                            .font(AppFonts.headline)
+                            .foregroundColor(AppColors.textPrimary)
+
+                        ProgressView()
+                            .tint(AppColors.accent)
+
+                        Text("Preparing speech model...")
+                            .font(AppFonts.caption)
+                            .foregroundColor(AppColors.textSecondary)
                     }
                     .padding()
                     .background(AppColors.cardBackground)
@@ -153,27 +169,31 @@ struct ModelDownloadView: View {
                         .multilineTextAlignment(.center)
                 }
 
-                Button(action: {
-                    viewModel.startDownload()
-                }) {
-                    HStack {
-                        Image(systemName: "arrow.down.circle.fill")
-                        Text(viewModel.isModelAvailable ? LocalizedStringKey("Update Model") : LocalizedStringKey("Download Model"))
+                if settings.usesWhisperBackend {
+                    Button(action: {
+                        viewModel.startDownload()
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.down.circle.fill")
+                            Text(viewModel.isModelAvailable ? LocalizedStringKey("Update Model") : LocalizedStringKey("Download Model"))
+                        }
+                        .font(AppFonts.button)
+                        .foregroundColor(AppColors.textOnAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(AppColors.accent)
+                        .cornerRadius(16)
                     }
-                    .font(AppFonts.button)
-                    .foregroundColor(AppColors.textOnAccent)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(AppColors.accent)
-                    .cornerRadius(16)
+                    .padding(.top, 8)
                 }
-                .padding(.top, 8)
 
-                Text("Will download \(settings.selectedModelSize.approximateSize) for the first time.\nWi-Fi connection is recommended.")
-                    .font(AppFonts.caption)
-                    .foregroundColor(AppColors.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
+                if settings.usesWhisperBackend {
+                    Text("Will download \(settings.selectedTranscriptionModel.approximateSize) for the first time.\nWi-Fi connection is recommended.")
+                        .font(AppFonts.caption)
+                        .foregroundColor(AppColors.textSecondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }

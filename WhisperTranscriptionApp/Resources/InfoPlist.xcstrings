@@ -94,6 +94,23 @@
           }
         }
       }
+    },
+    "NSSpeechRecognitionUsageDescription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speech recognition is required to transcribe audio on device."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "端末上で音声を文字起こしするために音声認識へのアクセスが必要です。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

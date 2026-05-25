@@ -5,133 +5,157 @@ struct SettingsView: View {
     @StateObject private var settings = AppSettings.shared
     @StateObject private var modelManager = ModelManager.shared
     @StateObject private var logger = AppLogger.shared
-    
+
     @State private var showModelDownload = false
     @State private var showDeleteConfirmation = false
     @State private var showLanguagePicker = false
     @State private var showLogCopiedConfirmation = false
     @FocusState private var isPromptEditorFocused: Bool
-    
+
     var body: some View {
         Form {
             Section(header: Text("Model Settings")) {
-                Picker("Model Size", selection: $settings.selectedModelSize) {
-                    ForEach(AppSettings.ModelSize.allCases) { size in
-                        Text(size.displayName).tag(size)
+                Picker("Model", selection: $settings.selectedTranscriptionModel) {
+                    ForEach(TranscriptionModel.pickerOptions) { model in
+                        Text(model.displayName).tag(model)
                     }
                 }
-                .onChange(of: settings.selectedModelSize) { _, newValue in
-                    modelManager.switchModel(size: newValue)
+                .onChange(of: settings.selectedTranscriptionModel) { _, newValue in
+                    modelManager.switchModel(model: newValue)
                 }
-                
+
                 HStack {
                     Image(systemName: modelManager.isModelReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                         .foregroundColor(modelManager.isModelReady ? AppColors.accent : AppColors.warning)
-                    Text(modelManager.isModelReady ? LocalizedStringKey("Model Ready") : LocalizedStringKey("Please download model"))
+                    Text(modelStatusText)
                     Spacer()
                     if let size = modelManager.getModelSize() {
                         Text(size)
                             .foregroundColor(.secondary)
                     }
                 }
-                
-                if !modelManager.isModelReady {
-                    Button(action: { showModelDownload = true }) {
-                        Label("Download \(settings.selectedModelSize.approximateSize)", systemImage: "arrow.down.circle.fill")
-                    }
-                }
-                
-                Button(action: { showDeleteConfirmation = true }) {
-                    Label("Delete Model", systemImage: "trash.fill")
-                        .foregroundColor(.red)
-                }
-            }
-            
-            Section(header: Text("Language Settings")) {
-                Button(action: { showLanguagePicker = true }) {
-                    HStack {
-                        Text("Transcription Language")
-                            .foregroundColor(.primary)
-                        Spacer()
-                        if let language = AppSettings.supportedLanguages.first(where: { $0.code == settings.selectedLanguage }) {
-                            Text(LocalizedStringKey(language.name))
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                }
-                
-                Toggle(isOn: $settings.translateToEnglish) {
-                    VStack(alignment: .leading) {
-                        Text("Translate to English")
-                        Text("Translate transcription results to English")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .tint(AppColors.accent)
-            }
-            
-            Section(header: Text("Prompt"), footer: Text("Example: \"Hello, today we will talk about technology.\"")) {
-                TextEditor(text: $settings.promptText)
-                    .frame(minHeight: 80)
-                    .focused($isPromptEditorFocused)
-            }
-            
-            Section(header: Text("Advanced Settings")) {
-                Toggle(isOn: $settings.useFlashAttention) {
-                    VStack(alignment: .leading) {
-                        Text("Flash Attention")
-                        Text("Optimize processing speed and memory usage")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .tint(AppColors.accent)
-                
-                Toggle(isOn: $settings.useVAD) {
-                    VStack(alignment: .leading) {
-                        Text("Skip Silence (VAD)")
-                        Text("Automatically skip portions with no audio")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .tint(AppColors.accent)
 
-                if settings.useVAD {
-                    HStack {
-                        Image(systemName: modelManager.isVADModelReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                            .foregroundColor(modelManager.isVADModelReady ? AppColors.accent : AppColors.warning)
-                        Text(modelManager.isVADModelReady ? LocalizedStringKey("VAD Model Ready") : LocalizedStringKey("Please download VAD model"))
-                    }
-
-                    if modelManager.isVADDownloading {
-                        HStack {
-                            ProgressView(value: modelManager.vadDownloadProgress)
-                                .tint(AppColors.accent)
-                            Button(action: { modelManager.cancelVADDownload() }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.red)
-                            }
-                        }
-                    } else if !modelManager.isVADModelReady {
-                        Button(action: { modelManager.downloadVADModel() }) {
-                            Label("Download VAD Model", systemImage: "arrow.down.circle.fill")
-                        }
-                    } else {
-                        Button(action: { modelManager.deleteVADModel() }) {
-                            Label("Delete VAD Model", systemImage: "trash")
+                if modelManager.isDownloading {
+                    ProgressView(value: modelManager.downloadProgress)
+                        .tint(AppColors.accent)
+                    if settings.usesWhisperBackend {
+                        Button(action: { modelManager.cancelDownload() }) {
+                            Label("Cancel Download", systemImage: "xmark.circle.fill")
                                 .foregroundColor(.red)
                         }
                     }
+                } else if !modelManager.isModelReady && settings.usesWhisperBackend {
+                    Button(action: { modelManager.downloadModel() }) {
+                        Label(
+                            "Download \(settings.selectedTranscriptionModel.approximateSize)",
+                            systemImage: "arrow.down.circle.fill"
+                        )
+                    }
+                }
 
-                    if let error = modelManager.vadDownloadError {
-                        Text(error)
-                            .font(.caption)
+                if let error = modelManager.downloadError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundColor(.red)
+                }
+
+                if settings.usesWhisperBackend {
+                    Button(action: { showDeleteConfirmation = true }) {
+                        Label("Delete Model", systemImage: "trash.fill")
                             .foregroundColor(.red)
                     }
                 }
-                
+            }
+
+            if settings.usesWhisperBackend {
+                Section(header: Text("Language Settings")) {
+                    Button(action: { showLanguagePicker = true }) {
+                        HStack {
+                            Text("Transcription Language")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            if let language = AppSettings.supportedLanguages.first(where: { $0.code == settings.selectedLanguage }) {
+                                Text(LocalizedStringKey(language.name))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    Toggle(isOn: $settings.translateToEnglish) {
+                        VStack(alignment: .leading) {
+                            Text("Translate to English")
+                            Text("Translate transcription results to English")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(AppColors.accent)
+                }
+
+                Section(header: Text("Prompt"), footer: Text("Example: \"Hello, today we will talk about technology.\"")) {
+                    TextEditor(text: $settings.promptText)
+                        .frame(minHeight: 80)
+                        .focused($isPromptEditorFocused)
+                }
+            }
+
+            Section(header: Text("Advanced Settings")) {
+                if settings.usesWhisperBackend {
+                    Toggle(isOn: $settings.useFlashAttention) {
+                        VStack(alignment: .leading) {
+                            Text("Flash Attention")
+                            Text("Optimize processing speed and memory usage")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(AppColors.accent)
+
+                    Toggle(isOn: $settings.useVAD) {
+                        VStack(alignment: .leading) {
+                            Text("Skip Silence (VAD)")
+                            Text("Automatically skip portions with no audio")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .tint(AppColors.accent)
+
+                    if settings.useVAD {
+                        HStack {
+                            Image(systemName: modelManager.isVADModelReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
+                                .foregroundColor(modelManager.isVADModelReady ? AppColors.accent : AppColors.warning)
+                            Text(modelManager.isVADModelReady ? LocalizedStringKey("VAD Model Ready") : LocalizedStringKey("Please download VAD model"))
+                        }
+
+                        if modelManager.isVADDownloading {
+                            HStack {
+                                ProgressView(value: modelManager.vadDownloadProgress)
+                                    .tint(AppColors.accent)
+                                Button(action: { modelManager.cancelVADDownload() }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.red)
+                                }
+                            }
+                        } else if !modelManager.isVADModelReady {
+                            Button(action: { modelManager.downloadVADModel() }) {
+                                Label("Download VAD Model", systemImage: "arrow.down.circle.fill")
+                            }
+                        } else {
+                            Button(action: { modelManager.deleteVADModel() }) {
+                                Label("Delete VAD Model", systemImage: "trash")
+                                    .foregroundColor(.red)
+                            }
+                        }
+
+                        if let error = modelManager.vadDownloadError {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
+
                 Toggle(isOn: $settings.includeTimestamps) {
                     VStack(alignment: .leading) {
                         Text("Include Timestamps")
@@ -141,7 +165,7 @@ struct SettingsView: View {
                     }
                 }
                 .tint(AppColors.accent)
-                
+
                 Toggle(isOn: $settings.keepScreenOn) {
                     VStack(alignment: .leading) {
                         Text("Keep Screen On")
@@ -151,7 +175,7 @@ struct SettingsView: View {
                     }
                 }
                 .tint(AppColors.accent)
-                
+
                 Toggle(isOn: $settings.autoDeleteRecordings) {
                     VStack(alignment: .leading) {
                         Text("Auto-Delete Recordings")
@@ -162,7 +186,7 @@ struct SettingsView: View {
                 }
                 .tint(AppColors.accent)
             }
-            
+
             Section(header: Text("Logs")) {
                 if logger.entries.isEmpty {
                     Text("No logs yet")
@@ -194,7 +218,7 @@ struct SettingsView: View {
                     }
                 }
             }
-            
+
             Section(header: Text("Support & Policies"), footer: LegalDisclaimerFootnote()) {
                 Link("About App", destination: AppLegalURLs.marketing)
                 Link("Support", destination: AppLegalURLs.support)
@@ -204,6 +228,9 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            modelManager.ensureModelAvailability()
+        }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -230,12 +257,22 @@ struct SettingsView: View {
             LanguagePickerView(selectedLanguage: $settings.selectedLanguage, isPresented: $showLanguagePicker)
         }
     }
+
+    private var modelStatusText: LocalizedStringKey {
+        if modelManager.isModelReady {
+            return LocalizedStringKey("Model Ready")
+        }
+        if settings.usesAppleSpeechBackend {
+            return LocalizedStringKey("Preparing speech model...")
+        }
+        return LocalizedStringKey("Please download model")
+    }
 }
 
 struct LanguagePickerView: View {
     @Binding var selectedLanguage: String
     @Binding var isPresented: Bool
-    
+
     var body: some View {
         NavigationStack {
             List {

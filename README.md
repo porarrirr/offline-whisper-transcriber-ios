@@ -30,7 +30,7 @@ iPhone上でAI音声文字起こしを行うアプリ。OpenAI Whisperモデル 
 
 - macOS 14.0 Sonoma 以降
 - Xcode 15.0 以降
-- iOS 17.0 以降の実機（Simulator非対応）
+- iOS 17.0 以降の実機（Whisper は実機推奨。iOS SpeechTranscriber は iOS 26.0 以降で利用可）
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen)（`brew install xcodegen`）
 
 ## クイックスタート

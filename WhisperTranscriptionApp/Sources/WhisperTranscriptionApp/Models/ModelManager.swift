@@ -1,41 +1,55 @@
 import Foundation
+import Speech
 import SwiftData
 import UIKit
 
 @MainActor
 class ModelManager: NSObject, ObservableObject {
     static let shared = ModelManager()
-    
+
     @Published var isModelReady = false
     @Published var downloadProgress: Double = 0
     @Published var isDownloading = false
     @Published var downloadError: String?
-    @Published var currentModelSize: AppSettings.ModelSize = .largeV3TurboQ5_0
+    @Published var currentTranscriptionModel: TranscriptionModel = .whisper(.largeV3TurboQ5_0)
     @Published var isVADModelReady = false
     @Published var vadDownloadProgress: Double = 0
     @Published var isVADDownloading = false
     @Published var vadDownloadError: String?
-    
+
     private var downloadTask: URLSessionDownloadTask?
     private var vadDownloadTask: URLSessionDownloadTask?
     private var modelDownloadSession: URLSession?
     private var vadDownloadSession: URLSession?
+    private var activeWhisperDownloadSize: WhisperModelSize?
+    private var speechAssetDownloadTask: Task<Void, Never>?
     private let vadModelFileName = "ggml-silero-v6.2.0.bin"
     private let vadModelURL = URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin")!
-    
+
     var modelPath: String {
-        modelURL.path
+        whisperModelURL.path
     }
 
     var vadModelPath: String {
         vadModelFileURL.path
     }
-    
-    private var modelURL: URL {
+
+    var usesWhisperBackend: Bool {
+        currentTranscriptionModel.backend.isWhisper
+    }
+
+    var usesAppleSpeechBackend: Bool {
+        currentTranscriptionModel.backend.isAppleSpeech
+    }
+
+    private var whisperModelURL: URL {
+        guard let size = currentTranscriptionModel.whisperModelSize else {
+            preconditionFailure("Whisper model path requested for non-Whisper selection")
+        }
         guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             preconditionFailure("Documents directory is unavailable")
         }
-        return documentsPath.appendingPathComponent(currentModelSize.fileName)
+        return documentsPath.appendingPathComponent(size.fileName)
     }
 
     private var vadModelFileURL: URL {
@@ -44,58 +58,129 @@ class ModelManager: NSObject, ObservableObject {
         }
         return documentsPath.appendingPathComponent(vadModelFileName)
     }
-    
+
     private override init() {
-        currentModelSize = AppSettings.shared.selectedModelSize
+        currentTranscriptionModel = AppSettings.shared.selectedTranscriptionModel
         super.init()
-        checkModelAvailability()
+        ensureModelAvailability()
         checkVADModelAvailability()
     }
-    
+
     func checkModelAvailability() {
-        let exists = FileManager.default.fileExists(atPath: modelPath)
-        DispatchQueue.main.async {
-            self.isModelReady = exists
+        ensureModelAvailability()
+    }
+
+    func ensureModelAvailability() {
+        Task { @MainActor in
+            await refreshModelReadyState(autoInstallSystemAssets: true)
+        }
+    }
+
+    func refreshModelReadyState(autoInstallSystemAssets: Bool = false) async {
+        switch currentTranscriptionModel.backend {
+        case .whisper:
+            let exists = FileManager.default.fileExists(atPath: whisperModelURL.path)
+            isModelReady = exists
+        case .appleSpeech(let locale):
+            guard #available(iOS 26.0, *) else {
+                isModelReady = false
+                return
+            }
+            let installed = await AppleSpeechTranscriptionService().assetsInstalled(for: locale)
+            isModelReady = installed
+            if !installed && autoInstallSystemAssets {
+                downloadAppleSpeechAssets(locale: locale)
+            }
         }
     }
 
     func checkVADModelAvailability() {
         let exists = FileManager.default.fileExists(atPath: vadModelPath)
-        DispatchQueue.main.async {
-            self.isVADModelReady = exists
+        isVADModelReady = exists
+    }
+
+    func switchModel(model: TranscriptionModel) {
+        downloadTask?.cancel()
+        downloadTask = nil
+        activeWhisperDownloadSize = nil
+        speechAssetDownloadTask?.cancel()
+        speechAssetDownloadTask = nil
+        currentTranscriptionModel = model
+        AppSettings.shared.selectedTranscriptionModel = model
+        isDownloading = false
+        downloadProgress = 0
+        downloadError = nil
+        Task { @MainActor in
+            await refreshModelReadyState(autoInstallSystemAssets: true)
         }
     }
-    
-    func switchModel(size: AppSettings.ModelSize) {
-        currentModelSize = size
-        AppSettings.shared.selectedModelSize = size
-        checkModelAvailability()
-    }
-    
-    func downloadModel(size: AppSettings.ModelSize? = nil) {
-        let targetSize = size ?? currentModelSize
-        if let size = size, size != currentModelSize {
-            currentModelSize = size
-            AppSettings.shared.selectedModelSize = size
+
+    func downloadModel(model: TranscriptionModel? = nil) {
+        let targetModel = model ?? currentTranscriptionModel
+        if let model, model != currentTranscriptionModel {
+            cancelDownload()
+            currentTranscriptionModel = model
+            AppSettings.shared.selectedTranscriptionModel = model
         }
-        
+
+        switch targetModel.backend {
+        case .whisper:
+            guard let size = targetModel.whisperModelSize else { return }
+            downloadWhisperModel(size: size)
+        case .appleSpeech(let locale):
+            downloadAppleSpeechAssets(locale: locale)
+        }
+    }
+
+    private func downloadWhisperModel(size: WhisperModelSize) {
         guard !isDownloading else { return }
-        guard let url = targetSize.downloadURL else {
+        guard let url = size.downloadURL else {
             setDownloadError("ダウンロードURLが無効です")
             return
         }
-        
+
         isDownloading = true
         downloadProgress = 0
         downloadError = nil
-        
+        activeWhisperDownloadSize = size
+
         let configuration = URLSessionConfiguration.default
         let session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
         modelDownloadSession = session
-        
+
         downloadTask = session.downloadTask(with: url)
         downloadTask?.taskDescription = "mainModel"
         downloadTask?.resume()
+    }
+
+    private func downloadAppleSpeechAssets(locale: AppleSpeechLocale) {
+        guard !isDownloading else { return }
+        guard #available(iOS 26.0, *) else {
+            setDownloadError(AppleSpeechTranscriptionError.transcriptionUnavailable.localizedDescription)
+            return
+        }
+
+        isDownloading = true
+        downloadProgress = 0
+        downloadError = nil
+        speechAssetDownloadTask?.cancel()
+
+        speechAssetDownloadTask = Task { @MainActor in
+            do {
+                try await AppleSpeechTranscriptionService().ensureAssetsInstalled(for: locale) { [weak self] progress in
+                    self?.downloadProgress = progress
+                }
+                self.isModelReady = true
+                self.isDownloading = false
+                self.downloadProgress = 1
+                self.downloadError = nil
+            } catch {
+                self.setDownloadError(error.localizedDescription)
+                self.isDownloading = false
+                await self.refreshModelReadyState(autoInstallSystemAssets: false)
+            }
+            self.speechAssetDownloadTask = nil
+        }
     }
 
     func downloadVADModel() {
@@ -113,10 +198,13 @@ class ModelManager: NSObject, ObservableObject {
         vadDownloadTask?.taskDescription = "vadModel"
         vadDownloadTask?.resume()
     }
-    
+
     func cancelDownload() {
         downloadTask?.cancel()
         downloadTask = nil
+        activeWhisperDownloadSize = nil
+        speechAssetDownloadTask?.cancel()
+        speechAssetDownloadTask = nil
         isDownloading = false
         downloadProgress = 0
     }
@@ -127,30 +215,45 @@ class ModelManager: NSObject, ObservableObject {
         isVADDownloading = false
         vadDownloadProgress = 0
     }
-    
+
     func getModelSize() -> String? {
-        guard FileManager.default.fileExists(atPath: modelPath) else { return nil }
-        do {
-            let attributes = try FileManager.default.attributesOfItem(atPath: modelPath)
-            if let size = attributes[.size] as? Int64 {
-                let formatter = ByteCountFormatter()
-                formatter.countStyle = .file
-                return formatter.string(fromByteCount: size)
-            }
-        } catch {
-            setDownloadError(String(localized: "Failed to get model size") + ": \(error.localizedDescription)")
-        }
-        return nil
-    }
-    
-    func deleteCurrentModel() {
-        if FileManager.default.fileExists(atPath: modelPath) {
+        switch currentTranscriptionModel.backend {
+        case .whisper:
+            guard FileManager.default.fileExists(atPath: whisperModelURL.path) else { return nil }
             do {
-                try FileManager.default.removeItem(atPath: modelPath)
-                isModelReady = false
-                downloadError = nil
+                let attributes = try FileManager.default.attributesOfItem(atPath: whisperModelURL.path)
+                if let size = attributes[.size] as? Int64 {
+                    let formatter = ByteCountFormatter()
+                    formatter.countStyle = .file
+                    return formatter.string(fromByteCount: size)
+                }
             } catch {
-                setDownloadError(String(localized: "Error deleting model") + ": \(error.localizedDescription)")
+                setDownloadError(String(localized: "Failed to get model size") + ": \(error.localizedDescription)")
+            }
+            return nil
+        case .appleSpeech:
+            return nil
+        }
+    }
+
+    func deleteCurrentModel() {
+        switch currentTranscriptionModel.backend {
+        case .whisper:
+            if FileManager.default.fileExists(atPath: whisperModelURL.path) {
+                do {
+                    try FileManager.default.removeItem(atPath: whisperModelURL.path)
+                    isModelReady = false
+                    downloadError = nil
+                } catch {
+                    setDownloadError(String(localized: "Error deleting model") + ": \(error.localizedDescription)")
+                }
+            }
+        case .appleSpeech(let locale):
+            if #available(iOS 26.0, *) {
+                Task { @MainActor in
+                    _ = await AssetInventory.release(reservedLocale: locale.locale)
+                    await refreshModelReadyState(autoInstallSystemAssets: false)
+                }
             }
         }
     }
@@ -166,13 +269,13 @@ class ModelManager: NSObject, ObservableObject {
             }
         }
     }
-    
+
     func deleteAllModels() {
         guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             setDownloadError(String(localized: "Could not retrieve documents directory for saving models."))
             return
         }
-        for size in AppSettings.ModelSize.allCases {
+        for size in WhisperModelSize.allCases {
             let path = documentsPath.appendingPathComponent(size.fileName).path
             if FileManager.default.fileExists(atPath: path) {
                 do {
@@ -207,11 +310,24 @@ extension ModelManager: URLSessionDownloadDelegate {
             downloadProgress = progress
         }
     }
-    
+
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         do {
             let isVADModelDownload = downloadTask.taskDescription == "vadModel"
-            let destinationURL = isVADModelDownload ? vadModelFileURL : URL(fileURLWithPath: modelPath)
+            let destinationURL: URL
+            if isVADModelDownload {
+                destinationURL = vadModelFileURL
+            } else {
+                guard let whisperSize = activeWhisperDownloadSize else {
+                    setDownloadError(String(localized: "Downloaded model target was lost. Please download the model again."))
+                    isDownloading = false
+                    return
+                }
+                guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+                    preconditionFailure("Documents directory is unavailable")
+                }
+                destinationURL = documentsPath.appendingPathComponent(whisperSize.fileName)
+            }
             if FileManager.default.fileExists(atPath: destinationURL.path) {
                 try FileManager.default.removeItem(at: destinationURL)
             }
@@ -226,6 +342,7 @@ extension ModelManager: URLSessionDownloadDelegate {
                 isDownloading = false
                 downloadProgress = 1.0
                 self.downloadTask = nil
+                activeWhisperDownloadSize = nil
             }
         } catch {
             if downloadTask.taskDescription == "vadModel" {
@@ -234,12 +351,24 @@ extension ModelManager: URLSessionDownloadDelegate {
             } else {
                 setDownloadError(String(localized: "Error saving model file") + ": \(error.localizedDescription)")
                 isDownloading = false
+                activeWhisperDownloadSize = nil
             }
         }
     }
-    
+
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         if let error = error {
+            if (error as NSError).code == NSURLErrorCancelled {
+                if task.taskDescription == "vadModel" {
+                    vadDownloadTask = nil
+                    isVADDownloading = false
+                } else {
+                    downloadTask = nil
+                    activeWhisperDownloadSize = nil
+                    isDownloading = false
+                }
+                return
+            }
             if task.taskDescription == "vadModel" {
                 setVADDownloadError(String(localized: "Error downloading VAD model") + ": \(error.localizedDescription)")
                 isVADDownloading = false
@@ -248,6 +377,7 @@ extension ModelManager: URLSessionDownloadDelegate {
                 setDownloadError(String(localized: "Download error") + ": \(error.localizedDescription)")
                 isDownloading = false
                 downloadTask = nil
+                activeWhisperDownloadSize = nil
             }
         }
     }

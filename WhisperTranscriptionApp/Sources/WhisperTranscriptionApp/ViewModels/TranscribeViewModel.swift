@@ -12,6 +12,7 @@ class TranscribeViewModel: ObservableObject {
     @Published var showResult = false
     @Published var transcriptionProgress: Double = 0
     @Published var processingStatusText: String = ""
+    @Published var usesDeterminateProgress = true
     
     private let whisperContext = WhisperContext()
     private let modelManager = ModelManager.shared
@@ -142,62 +143,39 @@ class TranscribeViewModel: ObservableObject {
         isProcessing = true
         showResult = false
         transcriptionProgress = 0
-        processingStatusText = String(localized: "Converting...")
+        usesDeterminateProgress = settings.usesWhisperBackend
+        processingStatusText = settings.usesAppleSpeechBackend
+            ? String(localized: "Preparing speech model...")
+            : String(localized: "Converting...")
         UIApplication.shared.isIdleTimerDisabled = settings.keepScreenOn
         defer {
             isProcessing = false
             transcriptionProgress = 0
+            usesDeterminateProgress = true
             processingStatusText = ""
             UIApplication.shared.isIdleTimerDisabled = false
-            releaseWhisperModel(reason: "transcription finished")
+            if settings.usesWhisperBackend {
+                releaseWhisperModel(reason: "transcription finished")
+            }
             if cleanupAfterProcessing {
                 removeTemporaryInput(url: url)
             }
         }
-        
+
         do {
             AppLogger.info(
-                "Transcription started: source=\(sourceType), file=\(url.lastPathComponent), language=\(settings.selectedLanguage), translate=\(settings.translateToEnglish), useVAD=\(settings.useVAD)",
+                "Transcription started: source=\(sourceType), file=\(url.lastPathComponent), model=\(settings.selectedTranscriptionModel.storageKey), language=\(settings.selectedLanguage), translate=\(settings.translateToEnglish), useVAD=\(settings.useVAD)",
                 context: "TranscribeViewModel"
             )
 
-            if !whisperContext.isLoaded(path: modelManager.modelPath, useFlashAttention: settings.useFlashAttention) {
-                AppLogger.info("Loading Whisper model...", context: "TranscribeViewModel")
-                let loaded = try await loadModelAsync()
-                guard loaded else {
-                    setError(whisperContext.errorMessage ?? String(localized: "Failed to load model"))
-                    return
-                }
-                AppLogger.info("Whisper model load completed", context: "TranscribeViewModel")
-            }
-            
-            let language = settings.selectedLanguage == "auto" ? "" : settings.selectedLanguage
-            let prompt = settings.promptText
-            let useVAD = settings.useVAD
-            if useVAD && !modelManager.isVADModelReady {
-                setError(String(localized: "VAD model is not ready. Please download the VAD model from settings."))
-                return
-            }
-
             let duration = try await AudioConverter.shared.getAudioDuration(url: url)
-            let processor = TranscriptionChunkProcessor()
-            let result = try await processor.transcribe(
-                inputURL: url,
-                whisperContext: whisperContext,
-                language: language,
-                translate: settings.translateToEnglish,
-                prompt: prompt,
-                useVAD: useVAD,
-                vadModelPath: useVAD ? modelManager.vadModelPath : nil
-            ) { [weak self] chunk, progress in
-                let totalDuration = chunk.totalDuration > 0 ? chunk.totalDuration : max(duration, chunk.startTime + chunk.duration)
-                let progressStart = totalDuration > 0 ? min(chunk.startTime / totalDuration, 0.99) : 0
-                let progressSpan = totalDuration > 0 ? max(chunk.duration / totalDuration, 0.01) : 0.01
+            let result: ChunkedTranscriptionResult
 
-                Task { @MainActor in
-                    self?.processingStatusText = String(localized: "Transcribing...")
-                    self?.transcriptionProgress = min(progressStart + progress * progressSpan, 0.99)
-                }
+            switch settings.selectedTranscriptionModel.backend {
+            case .whisper:
+                result = try await transcribeWithWhisper(url: url, duration: duration)
+            case .appleSpeech(let locale):
+                result = try await transcribeWithAppleSpeech(url: url, locale: locale)
             }
 
             AppLogger.info(
@@ -239,6 +217,8 @@ class TranscribeViewModel: ObservableObject {
             if settings.autoDeleteRecordings && sourceType == .recording {
                 scheduleRecordingDeletion(url: url)
             }
+        } catch is TranscriptionAborted {
+            return
         } catch is CancellationError {
             AppLogger.info(
                 "文字起こしがキャンセルされました: file=\(url.lastPathComponent), source=\(sourceType)",
@@ -254,6 +234,65 @@ class TranscribeViewModel: ObservableObject {
         }
     }
     
+    private func transcribeWithWhisper(url: URL, duration: TimeInterval) async throws -> ChunkedTranscriptionResult {
+        if !whisperContext.isLoaded(path: modelManager.modelPath, useFlashAttention: settings.useFlashAttention) {
+            AppLogger.info("Loading Whisper model...", context: "TranscribeViewModel")
+            let loaded = try await loadModelAsync()
+            guard loaded else {
+                setError(whisperContext.errorMessage ?? String(localized: "Failed to load model"))
+                throw TranscriptionAborted()
+            }
+            AppLogger.info("Whisper model load completed", context: "TranscribeViewModel")
+        }
+
+        let language = settings.selectedLanguage == "auto" ? "" : settings.selectedLanguage
+        let useVAD = settings.useVAD
+        if useVAD && !modelManager.isVADModelReady {
+            setError(String(localized: "VAD model is not ready. Please download the VAD model from settings."))
+            throw TranscriptionAborted()
+        }
+
+        let processor = TranscriptionChunkProcessor()
+        return try await processor.transcribe(
+            inputURL: url,
+            whisperContext: whisperContext,
+            language: language,
+            translate: settings.translateToEnglish,
+            prompt: settings.promptText,
+            useVAD: useVAD,
+            vadModelPath: useVAD ? modelManager.vadModelPath : nil
+        ) { [weak self] chunk, progress in
+            let totalDuration = chunk.totalDuration > 0 ? chunk.totalDuration : max(duration, chunk.startTime + chunk.duration)
+            let progressStart = totalDuration > 0 ? min(chunk.startTime / totalDuration, 0.99) : 0
+            let progressSpan = totalDuration > 0 ? max(chunk.duration / totalDuration, 0.01) : 0.01
+
+            Task { @MainActor in
+                self?.processingStatusText = String(localized: "Transcribing...")
+                guard let self else { return }
+                let nextProgress = min(progressStart + progress * progressSpan, 0.99)
+                self.transcriptionProgress = max(self.transcriptionProgress, nextProgress)
+            }
+        }
+    }
+
+    private func transcribeWithAppleSpeech(url: URL, locale: AppleSpeechLocale) async throws -> ChunkedTranscriptionResult {
+        guard #available(iOS 26.0, *) else {
+            throw AppleSpeechTranscriptionError.transcriptionUnavailable
+        }
+
+        processingStatusText = String(localized: "Preparing speech model...")
+        return try await AppleSpeechTranscriptionService().transcribe(
+            inputURL: url,
+            locale: locale,
+            includeTimestamps: settings.includeTimestamps
+        ) { [weak self] progress in
+            Task { @MainActor in
+                self?.processingStatusText = String(localized: "Transcribing...")
+                self?.transcriptionProgress = max(self?.transcriptionProgress ?? 0, min(progress, 0.99))
+            }
+        }
+    }
+
     private func loadModelAsync() async throws -> Bool {
         whisperContext.loadModel(
             path: modelManager.modelPath,
@@ -307,6 +346,7 @@ class TranscribeViewModel: ObservableObject {
         showResult = false
         errorMessage = nil
         transcriptionProgress = 0
+        usesDeterminateProgress = true
         processingStatusText = ""
     }
 
@@ -343,6 +383,8 @@ class TranscribeViewModel: ObservableObject {
         }
     }
 }
+
+private struct TranscriptionAborted: Error {}
 
 private enum TranscriptionPipelineError: LocalizedError {
     case historySaveFailed(String)
