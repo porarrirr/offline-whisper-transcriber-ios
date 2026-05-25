@@ -156,15 +156,17 @@ struct SettingsView: View {
                     }
                 }
 
-                Toggle(isOn: $settings.includeTimestamps) {
-                    VStack(alignment: .leading) {
-                        Text("Include Timestamps")
-                        Text("Include timestamps in the transcription result")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                if settings.usesWhisperBackend {
+                    Toggle(isOn: $settings.includeTimestamps) {
+                        VStack(alignment: .leading) {
+                            Text("Include Timestamps")
+                            Text("Include timestamps in the transcription result")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
+                    .tint(AppColors.accent)
                 }
-                .tint(AppColors.accent)
 
                 Toggle(isOn: $settings.keepScreenOn) {
                     VStack(alignment: .leading) {

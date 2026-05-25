@@ -351,7 +351,7 @@ private struct TranscriptionProgressPanel: View {
                 HStack(spacing: 10) {
                     Image(systemName: "cpu")
                         .foregroundColor(AppColors.accent)
-                    Text("Apple SpeechTranscriber is processing on device.")
+                    Text("On-device speech recognition is processing.")
                         .font(AppFonts.callout)
                         .foregroundColor(AppColors.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -383,15 +383,23 @@ private struct PickedVideoFile: Transferable {
     let url: URL
 
     static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(importedContentType: .movie) { receivedFile in
-            let sourceURL = receivedFile.file
-            let fileExtension = sourceURL.pathExtension.isEmpty ? "mov" : sourceURL.pathExtension
-            let destinationURL = FileManager.default.temporaryDirectory
-                .appendingPathComponent("picked-video-\(UUID().uuidString)")
-                .appendingPathExtension(fileExtension)
-
-            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
-            return PickedVideoFile(url: destinationURL)
+        FileRepresentation(importedContentType: .video) { receivedFile in
+            try Self.copyReceivedVideo(receivedFile)
         }
+
+        FileRepresentation(importedContentType: .movie) { receivedFile in
+            try Self.copyReceivedVideo(receivedFile)
+        }
+    }
+
+    private static func copyReceivedVideo(_ receivedFile: ReceivedTransferredFile) throws -> PickedVideoFile {
+        let sourceURL = receivedFile.file
+        let fileExtension = sourceURL.pathExtension.isEmpty ? "mov" : sourceURL.pathExtension
+        let destinationURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("picked-video-\(UUID().uuidString)")
+            .appendingPathExtension(fileExtension)
+
+        try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+        return PickedVideoFile(url: destinationURL)
     }
 }

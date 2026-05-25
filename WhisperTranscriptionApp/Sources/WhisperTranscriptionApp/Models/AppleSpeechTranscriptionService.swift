@@ -11,9 +11,9 @@ enum AppleSpeechTranscriptionError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .localeNotSupported:
-            return String(localized: "This language is not supported by iOS SpeechTranscriber.")
+            return String(localized: "This language is not supported by on-device speech recognition.")
         case .assetsNotReady:
-            return String(localized: "Speech model is not ready. Please download it from settings.")
+            return String(localized: "Speech model could not be prepared automatically.")
         case .transcriptionUnavailable:
             return String(localized: "Speech transcription is not available on this device.")
         case .emptyTranscription:
@@ -89,8 +89,24 @@ struct AppleSpeechTranscriptionService {
             onProgress(progress * 0.2)
         }
 
-        let transcriber = try await makeTranscriber(locale: locale, includeTimestamps: includeTimestamps)
-        let preparedAudio = try await AudioConverter.shared.prepareAudioFileForSpeechTranscriber(inputURL: inputURL)
+        let transcriber = try await makeTranscriber(locale: locale, includeTimestamps: false)
+        let naturalFormat = try await AudioConverter.shared.naturalAudioFormatForSpeechInput(inputURL: inputURL)
+        guard let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
+            compatibleWith: [transcriber],
+            considering: naturalFormat
+        ) else {
+            throw AudioConverter.AudioConverterError.outputFormatCreationFailed
+        }
+        AppLogger.info(
+            "Apple SpeechTranscriber compatible format selected: source=\(inputURL.lastPathComponent), natural=\(Self.formatDescription(naturalFormat)), compatible=\(Self.formatDescription(compatibleFormat))",
+            context: "AppleSpeechTranscriptionService"
+        )
+
+        await MainActor.run { onProgress(0.22) }
+        let preparedAudio = try await AudioConverter.shared.prepareAudioFileForSpeechTranscriber(
+            inputURL: inputURL,
+            compatibleFormat: compatibleFormat
+        )
         defer {
             if preparedAudio.requiresCleanup {
                 try? FileManager.default.removeItem(at: preparedAudio.url)
@@ -103,19 +119,36 @@ struct AppleSpeechTranscriptionService {
             context: "AppleSpeechTranscriptionService"
         )
 
-        await MainActor.run { onProgress(0.25) }
+        await MainActor.run { onProgress(0.4) }
 
-        let collector = ResultCollector(includeTimestamps: includeTimestamps)
+        let collector = ResultCollector(includeTimestamps: false)
         let resultsTask = Task {
             try await collector.collect(from: transcriber.results)
         }
 
         let analyzer = SpeechAnalyzer(modules: [transcriber])
-        let lastSampleTime = try await analyzer.analyzeSequence(from: audioFile)
-        if let lastSampleTime {
-            try await analyzer.finalizeAndFinish(through: lastSampleTime)
-        } else {
+        do {
+            try await analyzer.prepareToAnalyze(in: audioFile.processingFormat)
+            AppLogger.info(
+                "Apple SpeechTranscriber analyzer started: audio=\(preparedAudio.url.lastPathComponent), format=\(Self.formatDescription(audioFile.processingFormat))",
+                context: "AppleSpeechTranscriptionService"
+            )
+            await MainActor.run { onProgress(0.5) }
+
+            let lastSampleTime = try await analyzer.analyzeSequence(from: audioFile)
+            if let lastSampleTime {
+                try await analyzer.finalizeAndFinish(through: lastSampleTime)
+            } else {
+                await analyzer.cancelAndFinishNow()
+            }
+            AppLogger.info(
+                "Apple SpeechTranscriber analyzer finished: audio=\(preparedAudio.url.lastPathComponent)",
+                context: "AppleSpeechTranscriptionService"
+            )
+        } catch {
+            resultsTask.cancel()
             await analyzer.cancelAndFinishNow()
+            throw error
         }
 
         let collected = try await resultsTask.value
@@ -151,6 +184,11 @@ struct AppleSpeechTranscriptionService {
         }
         return SpeechTranscriber(locale: supported, preset: .transcription)
     }
+
+    private static func formatDescription(_ format: AVAudioFormat?) -> String {
+        guard let format else { return "unknown" }
+        return "\(Int(format.sampleRate))Hz/\(format.channelCount)ch/\(format.commonFormat)"
+    }
 }
 
 private struct CollectedSpeechResult {
@@ -180,10 +218,8 @@ private final class ResultCollector: @unchecked Sendable {
         let segments: [TranscriptionSegment]
         if includeTimestamps {
             segments = Self.segments(from: attributed)
-        } else if plainText.isEmpty {
-            segments = []
         } else {
-            segments = [TranscriptionSegment(id: 0, start: 0, end: 0, text: plainText)]
+            segments = []
         }
 
         return CollectedSpeechResult(text: plainText, segments: segments)

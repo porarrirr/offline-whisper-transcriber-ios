@@ -2,6 +2,9 @@ import Foundation
 import AVFoundation
 
 class AudioRecorder: NSObject, ObservableObject {
+    private static let recordingSampleRate = 48_000.0
+    private static let recordingBitRate = 128_000
+
     @Published var isRecording = false
     @Published var currentTime: TimeInterval = 0
     @Published var audioLevel: Float = 0.0
@@ -31,7 +34,9 @@ class AudioRecorder: NSObject, ObservableObject {
     private func setupSession() throws {
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
+        try session.setPreferredSampleRate(Self.recordingSampleRate)
         try session.setActive(true)
+        logCurrentAudioRoute(session: session, event: "Recording audio session activated")
     }
 
     func startRecording() throws {
@@ -43,9 +48,10 @@ class AudioRecorder: NSObject, ObservableObject {
 
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44100,
+            AVSampleRateKey: Self.recordingSampleRate,
             AVNumberOfChannelsKey: 1,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            AVEncoderBitRateKey: Self.recordingBitRate,
+            AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue
         ]
 
         let recorder = try AVAudioRecorder(url: audioFilename, settings: settings)
@@ -208,6 +214,23 @@ class AudioRecorder: NSObject, ObservableObject {
         guard isRecording else { return }
         let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
         AppLogger.info("Audio route changed while recording: reason=\(reasonValue)", context: "AudioRecorder")
+        logCurrentAudioRoute(session: AVAudioSession.sharedInstance(), event: "Recording audio route changed")
+    }
+
+    private func logCurrentAudioRoute(session: AVAudioSession, event: String) {
+        let inputs = session.currentRoute.inputs.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ", ")
+        let outputs = session.currentRoute.outputs.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ", ")
+        AppLogger.info(
+            "\(event): sampleRate=\(session.sampleRate), preferredSampleRate=\(session.preferredSampleRate), inputs=[\(inputs)], outputs=[\(outputs)]",
+            context: "AudioRecorder"
+        )
+
+        if session.currentRoute.inputs.contains(where: { $0.portType == .bluetoothHFP }) {
+            AppLogger.info(
+                "Bluetooth HFP microphone is active; recording is preserved, but the input route can be limited to call-quality audio.",
+                context: "AudioRecorder"
+            )
+        }
     }
 }
 

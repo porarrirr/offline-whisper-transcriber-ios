@@ -518,83 +518,194 @@ class AudioConverter {
         return duration
     }
 
-    func prepareAudioFileForSpeechTranscriber(inputURL: URL, sampleRate: Double = 16000) async throws -> PreparedSpeechAudioFile {
-        if Self.isVideoFile(inputURL) {
-            return try await extractVideoAudioForSpeechTranscriber(inputURL: inputURL, sampleRate: sampleRate)
+    func naturalAudioFormatForSpeechInput(inputURL: URL) async throws -> AVAudioFormat? {
+        let asset = AVURLAsset(url: inputURL)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        guard let audioTrack = audioTracks.first else {
+            return nil
         }
-
-        let inputFile = try AVAudioFile(forReading: inputURL)
-        return PreparedSpeechAudioFile(
-            url: inputURL,
-            duration: durationForAudioFile(inputFile, inputFormat: inputFile.processingFormat),
-            requiresCleanup: false
-        )
+        let formatDescriptions = try await audioTrack.load(.formatDescriptions)
+        for formatDescription in formatDescriptions {
+            guard let streamDescription = CMAudioFormatDescriptionGetStreamBasicDescription(formatDescription) else {
+                continue
+            }
+            return AVAudioFormat(streamDescription: streamDescription)
+        }
+        return nil
     }
 
-    private func extractVideoAudioForSpeechTranscriber(inputURL: URL, sampleRate: Double) async throws -> PreparedSpeechAudioFile {
-        guard let outputFormat = AVAudioFormat(
-            commonFormat: .pcmFormatFloat32,
-            sampleRate: sampleRate,
-            channels: 1,
-            interleaved: false
-        ) else {
+    func prepareAudioFileForSpeechTranscriber(inputURL: URL, compatibleFormat: AVAudioFormat) async throws -> PreparedSpeechAudioFile {
+        guard compatibleFormat.commonFormat != .otherFormat else {
             throw AudioConverterError.outputFormatCreationFailed
         }
 
+        let asset = AVURLAsset(url: inputURL)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        let videoTracks = try await asset.loadTracks(withMediaType: .video)
+        guard let audioTrack = audioTracks.first else {
+            AppLogger.error(
+                "Apple SpeechTranscriber入力に音声トラックがありません: file=\(inputURL.lastPathComponent), videoTracks=\(videoTracks.count)",
+                context: "AudioConverter"
+            )
+            throw AudioConverterError.missingAudioTrack
+        }
+
+        AppLogger.info(
+            "Apple SpeechTranscriber音声準備を開始しました: file=\(inputURL.lastPathComponent), audioTracks=\(audioTracks.count), videoTracks=\(videoTracks.count), output=\(Self.formatDescription(compatibleFormat))",
+            context: "AudioConverter"
+        )
+
+        return try await extractAssetAudioForSpeechTranscriber(
+            asset: asset,
+            audioTrack: audioTrack,
+            inputURL: inputURL,
+            outputFormat: compatibleFormat
+        )
+    }
+
+    private func extractAssetAudioForSpeechTranscriber(
+        asset: AVURLAsset,
+        audioTrack: AVAssetTrack,
+        inputURL: URL,
+        outputFormat: AVAudioFormat
+    ) async throws -> PreparedSpeechAudioFile {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("speech-audio-\(UUID().uuidString)")
             .appendingPathExtension("caf")
         let outputFile = try AVAudioFile(
             forWriting: outputURL,
             settings: outputFormat.settings,
-            commonFormat: .pcmFormatFloat32,
-            interleaved: false
+            commonFormat: outputFormat.commonFormat,
+            interleaved: outputFormat.isInterleaved
         )
 
-        var writtenSampleCount = 0
+        let outputSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVLinearPCMBitDepthKey: 32,
+            AVLinearPCMIsFloatKey: true,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: true
+        ]
+
+        let reader = try AVAssetReader(asset: asset)
+        let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: outputSettings)
+        output.alwaysCopiesSampleData = false
+        guard reader.canAdd(output) else {
+            throw AudioConverterError.readerOutputCreationFailed
+        }
+        reader.add(output)
+
+        guard reader.startReading() else {
+            throw AudioConverterError.readerFailed(reader.error)
+        }
+
+        var writtenFrameCount = 0
         do {
-            try await convertToWhisperChunks(
-                inputURL: inputURL,
-                sampleRate: sampleRate,
-                chunkDuration: 300,
-                chunkOverlapDuration: 0
-            ) { chunk in
-                try Self.write(samples: chunk.samples, format: outputFormat, to: outputFile)
-                writtenSampleCount += chunk.samples.count
+            while reader.status == .reading {
+                try Task.checkCancellation()
+                guard let sampleBuffer = output.copyNextSampleBuffer() else {
+                    break
+                }
+                guard let inputBuffer = try makePCMBuffer(from: sampleBuffer) else {
+                    continue
+                }
+                writtenFrameCount += try Self.writeConverted(
+                    inputBuffer: inputBuffer,
+                    outputFormat: outputFormat,
+                    outputFile: outputFile
+                )
+            }
+
+            switch reader.status {
+            case .completed:
+                break
+            case .failed:
+                throw AudioConverterError.readerFailed(reader.error)
+            case .cancelled:
+                throw AudioConverterError.readerCancelled
+            default:
+                throw AudioConverterError.conversionEndedUnexpectedly
             }
         } catch {
             try? FileManager.default.removeItem(at: outputURL)
             throw error
         }
 
-        guard writtenSampleCount > 0 else {
+        guard writtenFrameCount > 0 else {
             try? FileManager.default.removeItem(at: outputURL)
             throw AudioConverterError.emptyAudioFile
         }
 
+        let preparedFile = try AVAudioFile(forReading: outputURL)
+        guard preparedFile.length > 0 else {
+            try? FileManager.default.removeItem(at: outputURL)
+            throw AudioConverterError.emptyAudioFile
+        }
+
+        AppLogger.info(
+            "Apple SpeechTranscriber用音声を書き出しました: source=\(inputURL.lastPathComponent), output=\(outputURL.lastPathComponent), frames=\(preparedFile.length), format=\(Self.formatDescription(preparedFile.processingFormat))",
+            context: "AudioConverter"
+        )
+
         return PreparedSpeechAudioFile(
             url: outputURL,
-            duration: Double(writtenSampleCount) / sampleRate,
+            duration: durationForAudioFile(preparedFile, inputFormat: preparedFile.processingFormat),
             requiresCleanup: true
         )
     }
 
-    private static func write(samples: [Float], format: AVAudioFormat, to outputFile: AVAudioFile) throws {
-        guard !samples.isEmpty else { return }
-        guard let buffer = AVAudioPCMBuffer(
-            pcmFormat: format,
-            frameCapacity: AVAudioFrameCount(samples.count)
-        ) else {
-            throw AudioConverterError.bufferCreationFailed
+    private static func writeConverted(
+        inputBuffer: AVAudioPCMBuffer,
+        outputFormat: AVAudioFormat,
+        outputFile: AVAudioFile
+    ) throws -> Int {
+        guard inputBuffer.frameLength > 0 else { return 0 }
+        guard let converter = AVAudioConverter(from: inputBuffer.format, to: outputFormat) else {
+            throw AudioConverterError.converterCreationFailed
         }
-        buffer.frameLength = AVAudioFrameCount(samples.count)
-        guard let channelData = buffer.floatChannelData?[0] else {
-            throw AudioConverterError.unsupportedPCMFormat
+
+        let outputCapacity = AVAudioFrameCount(
+            max(
+                1024,
+                ceil(Double(inputBuffer.frameLength) * outputFormat.sampleRate / inputBuffer.format.sampleRate) + 16
+            )
+        )
+        var hasProvidedInput = false
+        var writtenFrameCount = 0
+
+        while true {
+            guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: outputCapacity) else {
+                throw AudioConverterError.bufferCreationFailed
+            }
+
+            var error: NSError?
+            let status = converter.convert(to: outputBuffer, error: &error) { _, outStatus in
+                if hasProvidedInput {
+                    outStatus.pointee = .endOfStream
+                    return nil
+                }
+
+                hasProvidedInput = true
+                outStatus.pointee = .haveData
+                return inputBuffer
+            }
+
+            if outputBuffer.frameLength > 0 {
+                try outputFile.write(from: outputBuffer)
+                writtenFrameCount += Int(outputBuffer.frameLength)
+            }
+
+            switch status {
+            case .haveData:
+                continue
+            case .inputRanDry, .endOfStream:
+                return writtenFrameCount
+            case .error:
+                throw AudioConverterError.conversionFailed(error ?? AudioConverterError.conversionEndedUnexpectedly)
+            @unknown default:
+                throw AudioConverterError.conversionEndedUnexpectedly
+            }
         }
-        samples.withUnsafeBufferPointer { pointer in
-            channelData.update(from: pointer.baseAddress!, count: samples.count)
-        }
-        try outputFile.write(from: buffer)
     }
 
     private static func seconds(from time: CMTime) -> Double {

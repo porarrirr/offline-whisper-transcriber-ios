@@ -146,7 +146,7 @@ struct ModelDownloadView: View {
                     .cornerRadius(16)
                 } else if settings.usesAppleSpeechBackend {
                     VStack(spacing: 12) {
-                        Text("iOS SpeechTranscriber (Japanese)")
+                        Text("超高速な基本モデル")
                             .font(AppFonts.headline)
                             .foregroundColor(AppColors.textPrimary)
 

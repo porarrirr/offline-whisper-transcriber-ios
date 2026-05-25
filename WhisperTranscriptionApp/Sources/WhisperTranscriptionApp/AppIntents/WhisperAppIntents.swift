@@ -91,7 +91,7 @@ struct TranscribeAudioIntent: AppIntent {
                 let result = try await service.transcribe(
                     inputURL: audioURL,
                     locale: locale,
-                    includeTimestamps: settings.includeTimestamps
+                    includeTimestamps: false
                 ) { _ in }
                 return result.text
             }

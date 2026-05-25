@@ -132,14 +132,6 @@ class TranscribeViewModel: ObservableObject {
         transcriptionSegments = []
         transcriptionLanguage = nil
 
-        guard modelManager.isModelReady else {
-            if cleanupAfterProcessing {
-                removeTemporaryInput(url: url)
-            }
-            setError(String(localized: "Model is not ready"))
-            return
-        }
-        
         isProcessing = true
         showResult = false
         transcriptionProgress = 0
@@ -173,6 +165,10 @@ class TranscribeViewModel: ObservableObject {
 
             switch settings.selectedTranscriptionModel.backend {
             case .whisper:
+                guard modelManager.isModelReady else {
+                    setError(String(localized: "Model is not ready"))
+                    throw TranscriptionAborted()
+                }
                 result = try await transcribeWithWhisper(url: url, duration: duration)
             case .appleSpeech(let locale):
                 result = try await transcribeWithAppleSpeech(url: url, locale: locale)
@@ -284,10 +280,16 @@ class TranscribeViewModel: ObservableObject {
         return try await AppleSpeechTranscriptionService().transcribe(
             inputURL: url,
             locale: locale,
-            includeTimestamps: settings.includeTimestamps
+            includeTimestamps: false
         ) { [weak self] progress in
             Task { @MainActor in
-                self?.processingStatusText = String(localized: "Transcribing...")
+                if progress < 0.21 {
+                    self?.processingStatusText = String(localized: "Preparing speech model...")
+                } else if progress < 0.41 {
+                    self?.processingStatusText = String(localized: "Converting audio...")
+                } else {
+                    self?.processingStatusText = String(localized: "Transcribing...")
+                }
                 self?.transcriptionProgress = max(self?.transcriptionProgress ?? 0, min(progress, 0.99))
             }
         }

@@ -57,14 +57,15 @@ class AppSettings: ObservableObject {
     private static let selectedTranscriptionModelKey = "selectedTranscriptionModel"
     private static let legacySelectedModelSizeKey = "selectedModelSize"
     private static let defaultsMigrationVersionKey = "appSettingsDefaultsMigrationVersion"
-    private static let currentDefaultsMigrationVersion = 4
+    private static let currentDefaultsMigrationVersion = 5
 
     private init() {
         Self.migrateDefaultsIfNeeded()
 
         let defaults = UserDefaults.standard
         if let key = defaults.string(forKey: Self.selectedTranscriptionModelKey),
-           let model = TranscriptionModel(storageKey: key) {
+           let model = TranscriptionModel(storageKey: key),
+           TranscriptionModel.pickerOptions.contains(model) {
             self.selectedTranscriptionModel = model
         } else {
             self.selectedTranscriptionModel = Self.preferredDefaultTranscriptionModel
@@ -99,6 +100,9 @@ class AppSettings: ObservableObject {
         if appliedVersion < 4 {
             migrateDefaultsToVersion4(defaults: defaults)
         }
+        if appliedVersion < 5 {
+            migrateDefaultsToVersion5(defaults: defaults)
+        }
 
         defaults.set(currentDefaultsMigrationVersion, forKey: defaultsMigrationVersionKey)
     }
@@ -131,6 +135,11 @@ class AppSettings: ObservableObject {
     }
 
     private static func migrateDefaultsToVersion4(defaults: UserDefaults) {
+        defaults.set(preferredDefaultTranscriptionModel.storageKey, forKey: selectedTranscriptionModelKey)
+        defaults.set(defaultTranscriptionLanguage, forKey: "selectedLanguage")
+    }
+
+    private static func migrateDefaultsToVersion5(defaults: UserDefaults) {
         defaults.set(preferredDefaultTranscriptionModel.storageKey, forKey: selectedTranscriptionModelKey)
         defaults.set(defaultTranscriptionLanguage, forKey: "selectedLanguage")
     }
