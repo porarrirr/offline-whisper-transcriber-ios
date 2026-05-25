@@ -22,6 +22,12 @@
             "value" : "Transcripteur Whisper"
           }
         },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whisper文字起こし"
+          }
+        },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
@@ -44,6 +50,12 @@
           "stringUnit" : {
             "state" : "new",
             "value" : "WhisperTranscriptionApp"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whisper文字起こし"
           }
         }
       }

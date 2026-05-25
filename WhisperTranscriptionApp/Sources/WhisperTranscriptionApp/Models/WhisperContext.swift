@@ -64,6 +64,7 @@ class WhisperContext: ObservableObject {
         prompt: String = "",
         useVAD: Bool = false,
         vadModelPath: String? = nil,
+        cancellationToken: WhisperCancellationToken? = nil,
         onProgress: ((Double) -> Void)? = nil
     ) async -> TranscriptionResult? {
         guard let context = whisperContext else {
@@ -95,6 +96,7 @@ class WhisperContext: ObservableObject {
                     prompt: prompt,
                     useVAD: useVAD,
                     vadModelPath: vadModelPath,
+                    cancellationToken: cancellationToken,
                     onProgress: onProgress
                 )
                 
@@ -117,6 +119,7 @@ class WhisperContext: ObservableObject {
         prompt: String = "",
         useVAD: Bool = false,
         vadModelPath: String? = nil,
+        cancellationToken: WhisperCancellationToken? = nil,
         onProgress: ((Double) -> Void)? = nil
     ) async -> TranscriptionResult? {
         guard let context = whisperContext else {
@@ -156,6 +159,7 @@ class WhisperContext: ObservableObject {
                     prompt: prompt,
                     useVAD: useVAD,
                     vadModelPath: vadModelPath,
+                    cancellationToken: cancellationToken,
                     onProgress: onProgress
                 )
 
@@ -180,6 +184,7 @@ class WhisperContext: ObservableObject {
         prompt: String = "",
         useVAD: Bool = false,
         vadModelPath: String? = nil,
+        cancellationToken: WhisperCancellationToken? = nil,
         onProgress: ((Double) -> Void)? = nil
     ) async -> TranscriptionResult? {
         guard let result = await transcribe(
@@ -189,6 +194,7 @@ class WhisperContext: ObservableObject {
             prompt: prompt,
             useVAD: useVAD,
             vadModelPath: vadModelPath,
+            cancellationToken: cancellationToken,
             onProgress: onProgress
         ) else {
             return nil
@@ -218,6 +224,7 @@ class WhisperContext: ObservableObject {
         prompt: String,
         useVAD: Bool,
         vadModelPath: String?,
+        cancellationToken: WhisperCancellationToken?,
         onProgress: ((Double) -> Void)?
     ) -> TranscriptionResult? {
         do {
@@ -230,6 +237,7 @@ class WhisperContext: ObservableObject {
                 prompt: prompt,
                 useVAD: useVAD,
                 vadModelPath: vadModelPath,
+                cancellationToken: cancellationToken,
                 onProgress: onProgress
             )
         } catch {
@@ -297,6 +305,7 @@ class WhisperContext: ObservableObject {
         prompt: String,
         useVAD: Bool,
         vadModelPath: String?,
+        cancellationToken: WhisperCancellationToken?,
         onProgress: ((Double) -> Void)?
     ) -> TranscriptionResult? {
         guard !samples.isEmpty else { return nil }
@@ -364,12 +373,20 @@ class WhisperContext: ObservableObject {
             params.progress_callback = whisperProgressCallback
             params.progress_callback_user_data = UnsafeMutableRawPointer(progressPointer)
         }
+
+        if let cancellationToken {
+            params.abort_callback = whisperAbortCallback
+            params.abort_callback_user_data = Unmanaged.passUnretained(cancellationToken).toOpaque()
+        }
         
         let ret = samples.withUnsafeBufferPointer { buffer in
             whisper_full(context, params, buffer.baseAddress, Int32(buffer.count))
         }
         
         guard ret == 0 else {
+            if cancellationToken?.isCancelled == true {
+                return nil
+            }
             DispatchQueue.main.async { [weak self] in
                 self?.setErrorOnMain("Whisperの文字起こし処理に失敗しました（code: \(ret)）")
             }
@@ -443,6 +460,23 @@ class WhisperContext: ObservableObject {
     }
 }
 
+final class WhisperCancellationToken: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return cancelled
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        lock.unlock()
+    }
+}
+
 private struct WhisperProgressCallbackData {
     var callback: ((Double) -> Void)?
 }
@@ -454,6 +488,12 @@ private func whisperProgressCallback(_: OpaquePointer?, _: OpaquePointer?, progr
     DispatchQueue.main.async {
         data.callback?(progressValue)
     }
+}
+
+private func whisperAbortCallback(userData: UnsafeMutableRawPointer?) -> Bool {
+    guard let userData else { return false }
+    let token = Unmanaged<WhisperCancellationToken>.fromOpaque(userData).takeUnretainedValue()
+    return token.isCancelled
 }
 
 enum WhisperContextError: LocalizedError {

@@ -4,6 +4,7 @@ struct MainTabView: View {
     @Environment(\.openURL) private var openURL
     @State private var selectedTab = 0
     @State private var availableUpdate: AppUpdateInfo?
+    @AppStorage(WhisperAppDestination.pendingDestinationKey) private var pendingDestination = ""
     
     var body: some View {
         TabView(selection: $selectedTab) {
@@ -38,6 +39,12 @@ struct MainTabView: View {
         .task {
             await checkForAppStoreUpdate()
         }
+        .onAppear {
+            applyPendingDestination()
+        }
+        .onChange(of: pendingDestination) { _, _ in
+            applyPendingDestination()
+        }
         .alert("Update Available", isPresented: updateAlertBinding, presenting: availableUpdate) { update in
             Button("Later", role: .cancel) {}
             Button("Open App Store") {
@@ -46,6 +53,12 @@ struct MainTabView: View {
         } message: { update in
             Text("Version \(update.remoteVersion) is available on the App Store.")
         }
+    }
+
+    private func applyPendingDestination() {
+        guard let destination = WhisperAppDestination(rawValue: pendingDestination) else { return }
+        pendingDestination = ""
+        selectedTab = destination.tabIndex
     }
 
     private var updateAlertBinding: Binding<Bool> {

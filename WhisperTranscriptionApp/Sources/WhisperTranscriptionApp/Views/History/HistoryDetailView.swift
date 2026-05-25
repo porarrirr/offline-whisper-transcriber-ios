@@ -74,7 +74,7 @@ struct HistoryDetailView: View {
             if let audioURL {
                 Section {
                     VStack(alignment: .leading, spacing: 12) {
-                        HStack {
+                        HStack(spacing: 32) {
                             Button {
                                 if audioPlayer.isPlaying {
                                     audioPlayer.pause()
@@ -82,20 +82,28 @@ struct HistoryDetailView: View {
                                     audioPlayer.play()
                                 }
                             } label: {
-                                Label(audioPlayer.isPlaying ? "Pause Audio" : "Play Audio", systemImage: audioPlayer.isPlaying ? "pause.fill" : "play.fill")
+                                AudioPlaybackControlLabel(
+                                    title: audioPlayer.isPlaying ? "Pause Audio" : "Play Audio",
+                                    systemImage: audioPlayer.isPlaying ? "pause.fill" : "play.fill",
+                                    isPrimary: true
+                                )
                             }
-                            .buttonStyle(.borderedProminent)
+                            .buttonStyle(.plain)
 
                             Button {
                                 audioPlayer.stop()
                             } label: {
-                                Label("Stop Audio", systemImage: "stop.fill")
+                                AudioPlaybackControlLabel(
+                                    title: "Stop Audio",
+                                    systemImage: "stop.fill",
+                                    isPrimary: false
+                                )
                             }
-                            .buttonStyle(.bordered)
+                            .buttonStyle(.plain)
                             .disabled(audioPlayer.currentTime == 0 && !audioPlayer.isPlaying)
-
-                            Spacer()
                         }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
 
                         if audioPlayer.duration > 0 {
                             Slider(value: Binding(
@@ -284,6 +292,30 @@ struct HistoryDetailView: View {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
+private struct AudioPlaybackControlLabel: View {
+    let title: LocalizedStringKey
+    let systemImage: String
+    let isPrimary: Bool
+
+    @Environment(\.isEnabled) private var isEnabled
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Image(systemName: systemImage)
+                .font(.system(size: 22, weight: .semibold))
+                .foregroundStyle(isPrimary ? AppColors.textOnAccent : AppColors.textPrimary)
+                .frame(width: 52, height: 52)
+                .background(isPrimary ? AppColors.accent : AppColors.surface, in: Circle())
+                .opacity(isEnabled ? 1 : 0.4)
+
+            Text(title)
+                .font(AppFonts.caption)
+                .foregroundColor(isEnabled ? AppColors.textSecondary : AppColors.textSecondary.opacity(0.5))
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

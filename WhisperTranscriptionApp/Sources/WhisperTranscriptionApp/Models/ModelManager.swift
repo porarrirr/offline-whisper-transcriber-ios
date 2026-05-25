@@ -10,7 +10,7 @@ class ModelManager: NSObject, ObservableObject {
     @Published var downloadProgress: Double = 0
     @Published var isDownloading = false
     @Published var downloadError: String?
-    @Published var currentModelSize: AppSettings.ModelSize = .base
+    @Published var currentModelSize: AppSettings.ModelSize = .largeV3TurboQ5_0
     @Published var isVADModelReady = false
     @Published var vadDownloadProgress: Double = 0
     @Published var isVADDownloading = false

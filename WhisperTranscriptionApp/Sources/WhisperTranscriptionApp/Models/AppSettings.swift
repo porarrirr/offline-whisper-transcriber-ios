@@ -40,18 +40,65 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(includeTimestamps, forKey: "includeTimestamps") }
     }
     
+    private static let defaultsMigrationVersionKey = "appSettingsDefaultsMigrationVersion"
+    private static let currentDefaultsMigrationVersion = 2
+
     private init() {
+        Self.migrateDefaultsIfNeeded()
+
         let defaults = UserDefaults.standard
-        self.selectedModelSize = ModelSize(rawValue: defaults.string(forKey: "selectedModelSize") ?? "") ?? .base
+        self.selectedModelSize = ModelSize(rawValue: defaults.string(forKey: "selectedModelSize") ?? "") ?? .largeV3TurboQ5_0
         self.selectedLanguage = defaults.string(forKey: "selectedLanguage") ?? Self.defaultTranscriptionLanguage
         self.translateToEnglish = defaults.bool(forKey: "translateToEnglish")
         self.promptText = defaults.string(forKey: "promptText") ?? ""
         self.useFlashAttention = defaults.bool(forKey: "useFlashAttention")
         self.useVAD = defaults.bool(forKey: "useVAD")
-        self.keepScreenOn = defaults.bool(forKey: "keepScreenOn")
+        self.keepScreenOn = defaults.object(forKey: "keepScreenOn") == nil
+            ? true
+            : defaults.bool(forKey: "keepScreenOn")
         self.autoDeleteRecordings = defaults.bool(forKey: "autoDeleteRecordings")
         self.includeTimestamps = defaults.bool(forKey: "includeTimestamps")
      }
+
+    /// アップデート時に旧デフォルトだけ新デフォルトへ移行する（ユーザーが明示変更した値は維持）
+    private static func migrateDefaultsIfNeeded() {
+        let defaults = UserDefaults.standard
+        let appliedVersion = defaults.integer(forKey: defaultsMigrationVersionKey)
+        guard appliedVersion < currentDefaultsMigrationVersion else { return }
+
+        if appliedVersion < 1 {
+            migrateDefaultsToVersion1(defaults: defaults)
+        }
+        if appliedVersion < 2 {
+            migrateDefaultsToVersion2(defaults: defaults)
+        }
+
+        defaults.set(currentDefaultsMigrationVersion, forKey: defaultsMigrationVersionKey)
+    }
+
+    private static func migrateDefaultsToVersion1(defaults: UserDefaults) {
+        if defaults.object(forKey: "keepScreenOn") == nil {
+            defaults.set(true, forKey: "keepScreenOn")
+        }
+    }
+
+    private static func migrateDefaultsToVersion2(defaults: UserDefaults) {
+        guard defaults.object(forKey: "selectedModelSize") == nil else { return }
+
+        if modelFileExists(for: .base) {
+            defaults.set(ModelSize.base.rawValue, forKey: "selectedModelSize")
+        } else {
+            defaults.set(ModelSize.largeV3TurboQ5_0.rawValue, forKey: "selectedModelSize")
+        }
+    }
+
+    private static func modelFileExists(for size: ModelSize) -> Bool {
+        guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return false
+        }
+        let modelURL = documentsPath.appendingPathComponent(size.fileName)
+        return FileManager.default.fileExists(atPath: modelURL.path)
+    }
      
      enum ModelSize: String, CaseIterable, Identifiable {
          case tiny = "tiny"

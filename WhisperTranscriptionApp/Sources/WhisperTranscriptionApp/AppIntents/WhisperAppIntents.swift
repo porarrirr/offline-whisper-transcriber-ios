@@ -3,6 +3,53 @@ import AppIntents
 import SwiftData
 import UniformTypeIdentifiers
 
+enum WhisperAppDestination: String {
+    case transcribe
+    case history
+
+    static let pendingDestinationKey = "WhisperAppIntentPendingDestination"
+
+    var tabIndex: Int {
+        switch self {
+        case .transcribe:
+            return 0
+        case .history:
+            return 1
+        }
+    }
+
+    @MainActor
+    func requestOpen() {
+        UserDefaults.standard.set(rawValue, forKey: Self.pendingDestinationKey)
+    }
+}
+
+@available(iOS 18.0, *)
+struct OpenTranscriptionIntent: AppIntent {
+    static var title: LocalizedStringResource = "Open Whisper Transcriber"
+    static var description = IntentDescription("Opens the app for recording or file transcription")
+    static var openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        WhisperAppDestination.transcribe.requestOpen()
+        return .result()
+    }
+}
+
+@available(iOS 18.0, *)
+struct OpenTranscriptionHistoryIntent: AppIntent {
+    static var title: LocalizedStringResource = "Open Transcription History"
+    static var description = IntentDescription("Opens saved transcription history")
+    static var openAppWhenRun = true
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        WhisperAppDestination.history.requestOpen()
+        return .result()
+    }
+}
+
 @available(iOS 18.0, *)
 struct TranscribeAudioIntent: AppIntent {
     static var title: LocalizedStringResource = "Transcribe Media"
@@ -45,33 +92,32 @@ struct TranscribeAudioIntent: AppIntent {
         }
 
         let transcriptionText = try await audioFile.withFile(contentType: .audiovisualContent, allowOpenInPlace: true) { audioURL, _ in
-            let samples: [Float]
-            do {
-                samples = try await AudioConverter.shared.convertToWhisperSamples(inputURL: audioURL)
-            } catch {
-                throw IntentError.conversionFailed
-            }
-
             let selectedLanguage = language ?? settings.selectedLanguage
             if settings.useVAD && !modelManager.isVADModelReady {
                 throw IntentError.vadModelNotReady
             }
-            let result = await whisperContext.transcribe(
-                samples: samples,
-                language: selectedLanguage,
-                translate: settings.translateToEnglish,
-                prompt: settings.promptText,
-                useVAD: settings.useVAD,
-                vadModelPath: settings.useVAD ? modelManager.vadModelPath : nil
-            )
 
-            guard let transcriptionResult = result else {
+            do {
+                let processor = TranscriptionChunkProcessor()
+                let result = try await processor.transcribe(
+                    inputURL: audioURL,
+                    whisperContext: whisperContext,
+                    language: selectedLanguage == "auto" ? "" : selectedLanguage,
+                    translate: settings.translateToEnglish,
+                    prompt: settings.promptText,
+                    useVAD: settings.useVAD,
+                    vadModelPath: settings.useVAD ? modelManager.vadModelPath : nil
+                )
+                return result.text
+            } catch is AudioConverter.AudioConverterError {
+                throw IntentError.conversionFailed
+            } catch is CancellationError {
+                throw IntentError.transcriptionFailed
+            } catch {
                 throw IntentError.transcriptionFailed
             }
-
-            return transcriptionResult.text
         }
-        
+
         return .result(value: transcriptionText)
     }
 }
@@ -103,19 +149,40 @@ struct GetTranscriptionHistoryIntent: AppIntent {
         return .result(value: result)
     }
 }
-
 @available(iOS 18.0, *)
 struct WhisperShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
+            intent: OpenTranscriptionIntent(),
+            phrases: [
+                "Open \(.applicationName)",
+                "Start transcription with \(.applicationName)",
+                "Open recorder with \(.applicationName)",
+                "Open audio transcription with \(.applicationName)"
+            ],
+            shortTitle: "Open Transcriber",
+            systemImageName: "mic.circle"
+        )
+        AppShortcut(
             intent: TranscribeAudioIntent(),
             phrases: [
                 "Transcribe with \(.applicationName)",
+                "Transcribe audio with \(.applicationName)",
                 "Transcribe media with \(.applicationName)",
                 "Transcribe file with \(.applicationName)"
             ],
-            shortTitle: "Transcribe",
+            shortTitle: "Transcribe File",
             systemImageName: "waveform"
+        )
+        AppShortcut(
+            intent: OpenTranscriptionHistoryIntent(),
+            phrases: [
+                "Open history in \(.applicationName)",
+                "Show transcription history in \(.applicationName)",
+                "Find transcripts in \(.applicationName)"
+            ],
+            shortTitle: "History",
+            systemImageName: "clock.arrow.circlepath"
         )
     }
 }

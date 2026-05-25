@@ -37,7 +37,10 @@ struct TranscribeView: View {
                         if viewModel.isProcessing {
                             TranscriptionProgressPanel(
                                 progress: viewModel.transcriptionProgress,
-                                statusText: viewModel.processingStatusText
+                                statusText: viewModel.processingStatusText,
+                                onCancel: {
+                                    viewModel.cancelTranscription()
+                                }
                             )
                             .padding(.horizontal)
                             .padding(.top, 8)
@@ -273,6 +276,7 @@ struct TranscribeView: View {
 private struct TranscriptionProgressPanel: View {
     let progress: Double
     let statusText: String
+    let onCancel: () -> Void
 
     private var clampedProgress: Double {
         min(max(progress, 0), 1)
@@ -313,11 +317,20 @@ private struct TranscriptionProgressPanel: View {
 
                 Spacer(minLength: 8)
 
-                Text(percentText)
-                    .font(.title2.weight(.bold).monospacedDigit())
-                    .foregroundColor(AppColors.accent)
-                    .accessibilityLabel(Text("Transcription progress"))
-                    .accessibilityValue(Text(percentText))
+                VStack(alignment: .trailing, spacing: 8) {
+                    Text(percentText)
+                        .font(.title2.weight(.bold).monospacedDigit())
+                        .foregroundColor(AppColors.accent)
+                        .accessibilityLabel(Text("Transcription progress"))
+                        .accessibilityValue(Text(percentText))
+
+                    Button(role: .cancel, action: onCancel) {
+                        Label("Cancel", systemImage: "xmark.circle")
+                    }
+                    .font(AppFonts.callout)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
             }
 
             ProgressView(value: clampedProgress)

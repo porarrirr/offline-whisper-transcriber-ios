@@ -27,7 +27,7 @@ class AudioConverter {
 
     func convertToWhisperSamples(inputURL: URL, sampleRate: Double = 16000) async throws -> [Float] {
         var allSamples: [Float] = []
-        try await convertToWhisperChunks(inputURL: inputURL, sampleRate: sampleRate, chunkDuration: .greatestFiniteMagnitude) { chunk in
+        try await convertToWhisperChunks(inputURL: inputURL, sampleRate: sampleRate, chunkDuration: .greatestFiniteMagnitude, chunkOverlapDuration: 0) { chunk in
             allSamples.append(contentsOf: chunk.samples)
         }
         return allSamples
@@ -37,9 +37,10 @@ class AudioConverter {
         inputURL: URL,
         sampleRate: Double = 16000,
         chunkDuration: TimeInterval = 300,
+        chunkOverlapDuration: TimeInterval = 0,
         onChunk: (WhisperAudioChunk) async throws -> Void
     ) async throws {
-        guard sampleRate > 0, chunkDuration > 0 else {
+        guard sampleRate > 0, chunkDuration > 0, chunkOverlapDuration >= 0, chunkOverlapDuration < chunkDuration else {
             throw AudioConverterError.invalidAudioFile
         }
 
@@ -48,6 +49,7 @@ class AudioConverter {
                 inputURL: inputURL,
                 sampleRate: sampleRate,
                 chunkDuration: chunkDuration,
+                chunkOverlapDuration: chunkOverlapDuration,
                 onChunk: onChunk
             )
             return
@@ -57,6 +59,7 @@ class AudioConverter {
             inputURL: inputURL,
             sampleRate: sampleRate,
             chunkDuration: chunkDuration,
+            chunkOverlapDuration: chunkOverlapDuration,
             onChunk: onChunk
         )
     }
@@ -65,6 +68,7 @@ class AudioConverter {
         inputURL: URL,
         sampleRate: Double,
         chunkDuration: TimeInterval,
+        chunkOverlapDuration: TimeInterval,
         onChunk: (WhisperAudioChunk) async throws -> Void
     ) async throws {
         let inputFile = try AVAudioFile(forReading: inputURL)
@@ -97,12 +101,13 @@ class AudioConverter {
 
         let totalDuration = durationForAudioFile(inputFile, inputFormat: inputFormat)
         let chunkSampleCount = sampleCount(for: chunkDuration, sampleRate: sampleRate)
+        let chunkOverlapSampleCount = sampleCount(for: chunkOverlapDuration, sampleRate: sampleRate)
         var pendingSamples: [Float] = []
         if chunkSampleCount < Int.max {
             pendingSamples.reserveCapacity(min(chunkSampleCount + Int(outputCapacity), chunkSampleCount * 2))
         }
         var chunkIndex = 0
-        var nextChunkStartTime: TimeInterval = 0
+        var nextChunkStartSample = 0
         var producedSamples = 0
         let inputState = AudioConverterInputState()
         inputState.inputReadPosition = inputFile.framePosition
@@ -148,6 +153,7 @@ class AudioConverter {
         }
 
         while true {
+            try Task.checkCancellation()
             if let inputReadError = inputState.inputReadError {
                 throw AudioConverterError.conversionFailed(inputReadError)
             }
@@ -166,9 +172,10 @@ class AudioConverter {
             try await emitReadyChunks(
                 from: &pendingSamples,
                 chunkSampleCount: chunkSampleCount,
+                chunkOverlapSampleCount: chunkOverlapSampleCount,
                 sampleRate: sampleRate,
                 totalDuration: totalDuration,
-                nextChunkStartTime: &nextChunkStartTime,
+                nextChunkStartSample: &nextChunkStartSample,
                 chunkIndex: &chunkIndex,
                 producedSamples: &producedSamples,
                 includeFinalPartialChunk: false,
@@ -182,9 +189,10 @@ class AudioConverter {
                 if inputState.reachedEndOfInput && outputBuffer.frameLength == 0 {
                     try await emitFinalChunkOrFail(
                         from: &pendingSamples,
+                        chunkOverlapSampleCount: chunkOverlapSampleCount,
                         sampleRate: sampleRate,
                         totalDuration: totalDuration,
-                        nextChunkStartTime: &nextChunkStartTime,
+                        nextChunkStartSample: &nextChunkStartSample,
                         chunkIndex: &chunkIndex,
                         producedSamples: &producedSamples,
                         conversionDetails: conversionDetails,
@@ -196,9 +204,10 @@ class AudioConverter {
             case .endOfStream:
                 try await emitFinalChunkOrFail(
                     from: &pendingSamples,
+                    chunkOverlapSampleCount: chunkOverlapSampleCount,
                     sampleRate: sampleRate,
                     totalDuration: totalDuration,
-                    nextChunkStartTime: &nextChunkStartTime,
+                    nextChunkStartSample: &nextChunkStartSample,
                     chunkIndex: &chunkIndex,
                     producedSamples: &producedSamples,
                     conversionDetails: conversionDetails,
@@ -217,6 +226,7 @@ class AudioConverter {
         inputURL: URL,
         sampleRate: Double,
         chunkDuration: TimeInterval,
+        chunkOverlapDuration: TimeInterval,
         onChunk: (WhisperAudioChunk) async throws -> Void
     ) async throws {
         let asset = AVURLAsset(url: inputURL)
@@ -261,12 +271,13 @@ class AudioConverter {
         let assetDuration = try await asset.load(.duration)
         let totalDuration = Self.seconds(from: assetDuration)
         let chunkSampleCount = sampleCount(for: chunkDuration, sampleRate: sampleRate)
+        let chunkOverlapSampleCount = sampleCount(for: chunkOverlapDuration, sampleRate: sampleRate)
         var pendingSamples: [Float] = []
         if chunkSampleCount < Int.max {
             pendingSamples.reserveCapacity(chunkSampleCount)
         }
         var chunkIndex = 0
-        var nextChunkStartTime: TimeInterval = 0
+        var nextChunkStartSample = 0
         var producedSamples = 0
 
         AppLogger.info(
@@ -275,6 +286,7 @@ class AudioConverter {
         )
 
         while reader.status == .reading {
+            try Task.checkCancellation()
             guard let sampleBuffer = output.copyNextSampleBuffer() else {
                 break
             }
@@ -289,9 +301,10 @@ class AudioConverter {
             try await emitReadyChunks(
                 from: &pendingSamples,
                 chunkSampleCount: chunkSampleCount,
+                chunkOverlapSampleCount: chunkOverlapSampleCount,
                 sampleRate: sampleRate,
                 totalDuration: totalDuration,
-                nextChunkStartTime: &nextChunkStartTime,
+                nextChunkStartSample: &nextChunkStartSample,
                 chunkIndex: &chunkIndex,
                 producedSamples: &producedSamples,
                 includeFinalPartialChunk: false,
@@ -303,9 +316,10 @@ class AudioConverter {
         case .completed:
             try await emitFinalChunkOrFail(
                 from: &pendingSamples,
+                chunkOverlapSampleCount: chunkOverlapSampleCount,
                 sampleRate: sampleRate,
                 totalDuration: totalDuration,
-                nextChunkStartTime: &nextChunkStartTime,
+                nextChunkStartSample: &nextChunkStartSample,
                 chunkIndex: &chunkIndex,
                 producedSamples: &producedSamples,
                 conversionDetails: "file=\(inputURL.lastPathComponent)",
@@ -322,20 +336,31 @@ class AudioConverter {
 
     private func emitFinalChunkOrFail(
         from samples: inout [Float],
+        chunkOverlapSampleCount: Int,
         sampleRate: Double,
         totalDuration: TimeInterval,
-        nextChunkStartTime: inout TimeInterval,
+        nextChunkStartSample: inout Int,
         chunkIndex: inout Int,
         producedSamples: inout Int,
         conversionDetails: String,
         onChunk: (WhisperAudioChunk) async throws -> Void
     ) async throws {
+        if chunkIndex > 0 && samples.count <= chunkOverlapSampleCount {
+            samples.removeAll(keepingCapacity: true)
+            AppLogger.info(
+                "音声チャンク変換が完了しました: \(conversionDetails), samples=\(producedSamples), chunks=\(chunkIndex), duration=\(Self.sampleDuration(producedSamples, sampleRate: sampleRate))",
+                context: "AudioConverter"
+            )
+            return
+        }
+
         try await emitReadyChunks(
             from: &samples,
             chunkSampleCount: sampleCount(for: .greatestFiniteMagnitude, sampleRate: sampleRate),
+            chunkOverlapSampleCount: 0,
             sampleRate: sampleRate,
             totalDuration: totalDuration,
-            nextChunkStartTime: &nextChunkStartTime,
+            nextChunkStartSample: &nextChunkStartSample,
             chunkIndex: &chunkIndex,
             producedSamples: &producedSamples,
             includeFinalPartialChunk: true,
@@ -354,9 +379,10 @@ class AudioConverter {
     private func emitReadyChunks(
         from samples: inout [Float],
         chunkSampleCount: Int,
+        chunkOverlapSampleCount: Int,
         sampleRate: Double,
         totalDuration: TimeInterval,
-        nextChunkStartTime: inout TimeInterval,
+        nextChunkStartSample: inout Int,
         chunkIndex: inout Int,
         producedSamples: inout Int,
         includeFinalPartialChunk: Bool,
@@ -365,18 +391,20 @@ class AudioConverter {
         while samples.count >= chunkSampleCount || (includeFinalPartialChunk && !samples.isEmpty) {
             let emittedCount = min(samples.count, chunkSampleCount)
             let chunkSamples = Array(samples.prefix(emittedCount))
-            samples.removeFirst(emittedCount)
             let chunk = WhisperAudioChunk(
                 index: chunkIndex,
-                startTime: nextChunkStartTime,
+                startTime: Double(nextChunkStartSample) / sampleRate,
                 samples: chunkSamples,
                 sampleRate: sampleRate,
                 totalDuration: totalDuration
             )
             try await onChunk(chunk)
+            let retainedCount = includeFinalPartialChunk ? 0 : min(chunkOverlapSampleCount, emittedCount)
+            let removedCount = emittedCount - retainedCount
+            samples.removeFirst(removedCount)
             chunkIndex += 1
-            producedSamples += emittedCount
-            nextChunkStartTime = Double(producedSamples) / sampleRate
+            producedSamples = max(producedSamples, nextChunkStartSample + emittedCount)
+            nextChunkStartSample += removedCount
         }
     }
 
@@ -498,7 +526,7 @@ class AudioConverter {
         if duration == .greatestFiniteMagnitude {
             return Int.max
         }
-        return max(1, Int((duration * sampleRate).rounded(.up)))
+        return max(0, Int((duration * sampleRate).rounded(.up)))
     }
 
     private static func conversionDetails(

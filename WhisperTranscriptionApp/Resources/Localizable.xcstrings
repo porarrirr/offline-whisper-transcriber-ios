@@ -812,6 +812,17 @@
         }
       }
     },
+    "Audio or Video File" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声または動画ファイル"
+          }
+        }
+      }
+    },
     "Audio file to transcribe" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -843,6 +854,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "要轉寫的音訊檔案"
+          }
+        }
+      }
+    },
+    "Audio or video file to transcribe" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしする音声または動画ファイル"
           }
         }
       }
@@ -2888,6 +2910,17 @@
         }
       }
     },
+    "Find transcripts in %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で文字起こし履歴を探す"
+          }
+        }
+      }
+    },
     "File selection error" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4309,6 +4342,17 @@
         }
       }
     },
+    "Open %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@を開く"
+          }
+        }
+      }
+    },
     "Open App Store" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4340,6 +4384,94 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打開 App Store"
+          }
+        }
+      }
+    },
+    "Open audio transcription with %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で音声文字起こしを開く"
+          }
+        }
+      }
+    },
+    "Open history in %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で履歴を開く"
+          }
+        }
+      }
+    },
+    "Open recorder with %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で録音を開く"
+          }
+        }
+      }
+    },
+    "Open Transcriber" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしを開く"
+          }
+        }
+      }
+    },
+    "Open Transcription History" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こし履歴を開く"
+          }
+        }
+      }
+    },
+    "Open Whisper Transcriber" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whisper文字起こしを開く"
+          }
+        }
+      }
+    },
+    "Opens saved transcription history" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みの文字起こし履歴を開きます"
+          }
+        }
+      }
+    },
+    "Opens the app for recording or file transcription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音またはファイル文字起こしの画面を開きます"
           }
         }
       }
@@ -4525,6 +4657,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "葡萄牙語"
+          }
+        }
+      }
+    },
+    "Pause Audio" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一時停止"
+          }
+        }
+      }
+    },
+    "Play Audio" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生"
           }
         }
       }
@@ -5093,6 +5247,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "分享文字"
+          }
+        }
+      }
+    },
+    "Stop Audio" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止"
+          }
+        }
+      }
+    },
+    "Show transcription history in %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で文字起こし履歴を表示"
+          }
+        }
+      }
+    },
+    "Start transcription with %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で文字起こしを始める"
           }
         }
       }
@@ -5740,6 +5927,28 @@
         }
       }
     },
+    "Transcribe File" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ファイルを文字起こし"
+          }
+        }
+      }
+    },
+    "Transcribe Media" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声・動画を文字起こし"
+          }
+        }
+      }
+    },
     "Transcribe Again" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5817,6 +6026,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "用 %@ 轉寫檔案"
+          }
+        }
+      }
+    },
+    "Transcribe media with %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@で音声・動画を文字起こし"
           }
         }
       }
@@ -5933,6 +6153,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "轉寫音訊檔案"
+          }
+        }
+      }
+    },
+    "Transcribes an audio or video file" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声または動画ファイルを文字起こしします"
           }
         }
       }
