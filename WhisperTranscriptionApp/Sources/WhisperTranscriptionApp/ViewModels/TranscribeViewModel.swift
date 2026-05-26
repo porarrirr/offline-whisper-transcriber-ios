@@ -1,4 +1,5 @@
 import Foundation
+import Speech
 import SwiftData
 import UIKit
 
@@ -13,12 +14,20 @@ class TranscribeViewModel: ObservableObject {
     @Published var transcriptionProgress: Double = 0
     @Published var processingStatusText: String = ""
     @Published var usesDeterminateProgress = true
+    @Published var liveState: LiveTranscriptionState = .idle
+    @Published var liveElapsedTime: TimeInterval = 0
+    @Published var liveAudioLevel: Float = -80
+    @Published var liveFinalizedText: String = ""
+    @Published var liveVolatileText: String = ""
+    @Published var liveSegments: [TranscriptionSegment] = []
+    @Published var liveRecordingURL: URL?
     
     private let whisperContext = WhisperContext()
     private let modelManager = ModelManager.shared
     private let settings = AppSettings.shared
     private var transcriptionTask: Task<Void, Never>?
     private var transcriptionTaskID: UUID?
+    private var liveTask: Task<Void, Never>?
 
     func startRecording(recordingService: RecordingService) {
         releaseWhisperModel(reason: "recording started")
@@ -39,6 +48,19 @@ class TranscribeViewModel: ObservableObject {
     func transcribeInterruptedRecording(recordingService: RecordingService, modelContext: ModelContext) {
         startTranscriptionTask {
             await self.transcribeInterruptedRecordingAsync(recordingService: recordingService, modelContext: modelContext)
+        }
+    }
+
+    func startLiveTranscription(recordingService: RecordingService) {
+        guard !isProcessing else { return }
+        releaseWhisperModel(reason: "live transcription started")
+        recordingService.startLiveTranscription()
+    }
+
+    func stopLiveTranscription(recordingService: RecordingService) {
+        liveTask?.cancel()
+        liveTask = Task { @MainActor in
+            await recordingService.stopLiveTranscription()
         }
     }
 
@@ -103,6 +125,13 @@ class TranscribeViewModel: ObservableObject {
 
     func cancelTranscription() {
         transcriptionTask?.cancel()
+    }
+
+    func cancelLiveTranscription(recordingService: RecordingService) {
+        liveTask?.cancel()
+        liveTask = Task { @MainActor in
+            await recordingService.cancelLiveTranscription()
+        }
     }
 
     private func transcribeRecordAsync(_ record: TranscriptionRecord, modelContext: ModelContext) async {
@@ -350,6 +379,73 @@ class TranscribeViewModel: ObservableObject {
         transcriptionProgress = 0
         usesDeterminateProgress = true
         processingStatusText = ""
+    }
+
+    private func applyLiveSnapshot(_ snapshot: LiveTranscriptionSnapshot) {
+        liveState = snapshot.state
+        liveElapsedTime = snapshot.elapsedTime
+        liveAudioLevel = snapshot.audioLevel
+        liveFinalizedText = snapshot.finalizedText
+        liveVolatileText = snapshot.volatileText
+        liveSegments = snapshot.segments
+        liveRecordingURL = snapshot.recordingURL
+        transcriptionResult = snapshot.finalizedText
+        transcriptionSegments = snapshot.segments
+        transcriptionLanguage = snapshot.language
+        if let errorMessage = snapshot.errorMessage {
+            self.errorMessage = errorMessage
+        }
+    }
+
+    private func resetLiveSnapshot() {
+        liveState = .idle
+        liveElapsedTime = 0
+        liveAudioLevel = -80
+        liveFinalizedText = ""
+        liveVolatileText = ""
+        liveSegments = []
+        liveRecordingURL = nil
+        errorMessage = nil
+    }
+
+    private func setLiveFailure(_ message: String) {
+        liveState = .failed
+        errorMessage = message
+        AppLogger.error(message, context: "TranscribeViewModel")
+    }
+
+    private func saveLiveTranscription(_ snapshot: LiveTranscriptionSnapshot, modelContext: ModelContext) throws {
+        guard let recordingURL = snapshot.recordingURL else {
+            throw LiveTranscriptionError.recordingFileMissing
+        }
+
+        let text = snapshot.finalizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            throw LiveTranscriptionError.emptyTranscription
+        }
+
+        let createdAt = Date()
+        let record = TranscriptionRecord(
+            title: TranscriptionRecord.defaultTitle(for: createdAt),
+            text: text,
+            sourceType: .recording,
+            audioFilePath: recordingURL.path,
+            duration: snapshot.elapsedTime,
+            createdAt: createdAt,
+            segments: snapshot.segments,
+            language: snapshot.language
+        )
+        modelContext.insert(record)
+        do {
+            try modelContext.save()
+        } catch {
+            modelContext.delete(record)
+            throw TranscriptionPipelineError.historySaveFailed(error.localizedDescription)
+        }
+
+        if settings.autoDeleteRecordings {
+            scheduleRecordingDeletion(url: recordingURL)
+        }
     }
 
     private func startTranscriptionTask(_ operation: @escaping @MainActor () async -> Void) {

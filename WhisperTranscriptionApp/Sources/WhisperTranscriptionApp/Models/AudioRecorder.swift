@@ -1,7 +1,9 @@
-import Foundation
 import AVFoundation
+import Foundation
 
-class AudioRecorder: NSObject, ObservableObject {
+final class AudioRecorder: NSObject, ObservableObject {
+    typealias AudioBufferHandler = (AVAudioPCMBuffer, AVAudioTime, AVAudioFormat) -> Void
+
     private static let recordingSampleRate = 48_000.0
     private static let recordingBitRate = 128_000
 
@@ -12,11 +14,15 @@ class AudioRecorder: NSObject, ObservableObject {
     @Published var interruptionMessage: String?
     @Published var interruptedRecordingURL: URL?
 
-    private var audioRecorder: AVAudioRecorder?
-    private var timer: Timer?
+    private let audioEngine = AVAudioEngine()
+    private let stateLock = NSLock()
+    private let handlerLock = NSLock()
+    private var recordingFile: AVAudioFile?
     private var recordingURL: URL?
-    private var stopContinuation: CheckedContinuation<URL, Error>?
-    private var stopDuration: TimeInterval = 0
+    private var inputFormat: AVAudioFormat?
+    private var recordedFrames: AVAudioFramePosition = 0
+    private var stopInProgress = false
+    private var audioBufferHandler: AudioBufferHandler?
 
     override init() {
         super.init()
@@ -28,7 +34,104 @@ class AudioRecorder: NSObject, ObservableObject {
     }
 
     var currentRecordingURL: URL? {
-        recordingURL
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return recordingURL
+    }
+
+    var currentInputFormat: AVAudioFormat? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return inputFormat
+    }
+
+    func setAudioBufferHandler(_ handler: AudioBufferHandler?) {
+        handlerLock.lock()
+        audioBufferHandler = handler
+        handlerLock.unlock()
+    }
+
+    func requestPermission(completion: @escaping (Bool) -> Void) {
+        AVAudioApplication.requestRecordPermission { granted in
+            DispatchQueue.main.async {
+                completion(granted)
+            }
+        }
+    }
+
+    func startRecording() throws {
+        stateLock.lock()
+        let busy = isRecording || stopInProgress
+        stateLock.unlock()
+        guard !busy else {
+            throw AudioRecorderError.stopInProgress
+        }
+
+        try setupSession()
+        let url = try makeRecordingURL()
+        let inputNode = audioEngine.inputNode
+        let format = inputNode.outputFormat(forBus: 0)
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            throw AudioRecorderError.recordingStartFailed
+        }
+
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: format.sampleRate,
+            AVNumberOfChannelsKey: Int(format.channelCount),
+            AVEncoderBitRateKey: Self.recordingBitRate,
+            AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue
+        ]
+        let file = try AVAudioFile(forWriting: url, settings: settings)
+
+        inputNode.removeTap(onBus: 0)
+        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, time in
+            self?.handleAudioBuffer(buffer, time: time, format: format)
+        }
+
+        audioEngine.prepare()
+        try audioEngine.start()
+
+        stateLock.lock()
+        recordingFile = file
+        recordingURL = url
+        inputFormat = format
+        recordedFrames = 0
+        stopInProgress = false
+        stateLock.unlock()
+
+        DispatchQueue.main.async {
+            self.recordingError = nil
+            self.interruptionMessage = nil
+            self.interruptedRecordingURL = nil
+            self.currentTime = 0
+            self.audioLevel = 0
+            self.isRecording = true
+        }
+    }
+
+    func stopRecording() async throws -> URL {
+        let url = try recordingURLForStop()
+        finishActiveRecording()
+        return try validateRecordingFile(at: url)
+    }
+
+    private func recordingURLForStop() throws -> URL {
+        stateLock.lock()
+        if let activeURL = recordingURL, audioEngine.isRunning {
+            stopInProgress = true
+            stateLock.unlock()
+            return activeURL
+        } else if let interruptedRecordingURL {
+            stateLock.unlock()
+            DispatchQueue.main.async {
+                self.interruptedRecordingURL = nil
+            }
+            return try validateRecordingFile(at: interruptedRecordingURL)
+        } else {
+            stateLock.unlock()
+            throw AudioRecorderError.noActiveRecording
+        }
     }
 
     private func setupSession() throws {
@@ -39,92 +142,63 @@ class AudioRecorder: NSObject, ObservableObject {
         logCurrentAudioRoute(session: session, event: "Recording audio session activated")
     }
 
-    func startRecording() throws {
-        guard stopContinuation == nil else {
-            throw AudioRecorderError.stopInProgress
-        }
-        try setupSession()
-        let audioFilename = try makeRecordingURL()
+    private func handleAudioBuffer(_ buffer: AVAudioPCMBuffer, time: AVAudioTime, format: AVAudioFormat) {
+        stateLock.lock()
+        let file = recordingFile
+        recordedFrames += AVAudioFramePosition(buffer.frameLength)
+        let elapsedTime = format.sampleRate > 0 ? TimeInterval(recordedFrames) / format.sampleRate : 0
+        stateLock.unlock()
 
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: Self.recordingSampleRate,
-            AVNumberOfChannelsKey: 1,
-            AVEncoderBitRateKey: Self.recordingBitRate,
-            AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue
-        ]
-
-        let recorder = try AVAudioRecorder(url: audioFilename, settings: settings)
-        recorder.delegate = self
-        recorder.isMeteringEnabled = true
-        guard recorder.prepareToRecord(), recorder.record() else {
-            throw AudioRecorderError.recordingStartFailed
-        }
-
-        audioRecorder = recorder
-        recordingURL = audioFilename
-        recordingError = nil
-        interruptionMessage = nil
-        interruptedRecordingURL = nil
-        isRecording = true
-        currentTime = 0
-
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
-            self?.updateRecordingState()
-        }
-    }
-
-    func stopRecording() async throws -> URL {
-        guard let recorder = audioRecorder, let recordingURL else {
-            if let interruptedRecordingURL {
-                let validatedURL = try validateRecordingFile(at: interruptedRecordingURL)
-                self.interruptedRecordingURL = nil
-                return validatedURL
-            }
-            throw AudioRecorderError.noActiveRecording
-        }
-        guard stopContinuation == nil else {
-            throw AudioRecorderError.stopInProgress
-        }
-
-        stopDuration = recorder.currentTime
-        let stoppedURL = try await withCheckedThrowingContinuation { continuation in
-            stopContinuation = continuation
-            recorder.stop()
-        }
-
-        guard stoppedURL == recordingURL else {
-            throw AudioRecorderError.recordingFileMissing
-        }
-        return try validateRecordingFile(at: stoppedURL)
-    }
-
-    private func updateRecordingState() {
-        guard let recorder = audioRecorder else { return }
-        currentTime = recorder.currentTime
-        recorder.updateMeters()
-        audioLevel = recorder.averagePower(forChannel: 0)
-    }
-
-    private func finishRecordingState() {
-        timer?.invalidate()
-        timer = nil
-        isRecording = false
-        audioLevel = 0
-        currentTime = stopDuration
-        audioRecorder = nil
-        recordingURL = nil
         do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            try file?.write(from: buffer)
         } catch {
-            AppLogger.error("Failed to deactivate audio session after recording", context: "AudioRecorder", error: error)
+            reportEncodingFailure(error)
+            return
         }
+
+        let level = averagePower(from: buffer)
+        DispatchQueue.main.async {
+            self.currentTime = elapsedTime
+            self.audioLevel = level
+        }
+
+        handlerLock.lock()
+        let handler = audioBufferHandler
+        handlerLock.unlock()
+        handler?(buffer, time, format)
     }
 
-    private func resumeStopContinuation(with result: Result<URL, Error>) {
-        guard let continuation = stopContinuation else { return }
-        stopContinuation = nil
-        continuation.resume(with: result)
+    private func finishActiveRecording() {
+        audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+
+        stateLock.lock()
+        let duration = inputFormat.map { format in
+            format.sampleRate > 0 ? TimeInterval(recordedFrames) / format.sampleRate : currentTime
+        } ?? currentTime
+        recordingFile = nil
+        recordingURL = nil
+        inputFormat = nil
+        recordedFrames = 0
+        stopInProgress = false
+        stateLock.unlock()
+
+        DispatchQueue.main.async {
+            self.currentTime = duration
+            self.audioLevel = 0
+            self.isRecording = false
+        }
+        deactivateSession()
+    }
+
+    private func reportEncodingFailure(_ error: Error) {
+        let detail = error.localizedDescription
+        let message = String(localized: "Recording encoding failed") + ": \(detail)"
+        AppLogger.error(message, context: "AudioRecorder", error: error)
+        DispatchQueue.main.async {
+            self.recordingError = message
+        }
+        finishActiveRecording()
     }
 
     private func validateRecordingFile(at url: URL) throws -> URL {
@@ -139,12 +213,16 @@ class AudioRecorder: NSObject, ObservableObject {
         return url
     }
 
-    func requestPermission(completion: @escaping (Bool) -> Void) {
-        AVAudioApplication.requestRecordPermission { granted in
-            DispatchQueue.main.async {
-                completion(granted)
-            }
+    private func averagePower(from buffer: AVAudioPCMBuffer) -> Float {
+        guard let channelData = buffer.floatChannelData?[0], buffer.frameLength > 0 else { return -80 }
+        let frameLength = Int(buffer.frameLength)
+        var sum: Float = 0
+        for frame in 0..<frameLength {
+            let sample = channelData[frame]
+            sum += sample * sample
         }
+        let rms = sqrt(sum / Float(frameLength))
+        return 20 * log10(max(rms, 0.000_001))
     }
 
     private func makeRecordingURL() throws -> URL {
@@ -195,18 +273,21 @@ class AudioRecorder: NSObject, ObservableObject {
     }
 
     private func handleRecordingInterruptionBegan() {
-        guard let recorder = audioRecorder, isRecording else { return }
+        stateLock.lock()
+        let url = recordingURL
+        let wasRecording = isRecording || audioEngine.isRunning
+        stateLock.unlock()
+        guard let url, wasRecording else { return }
 
-        stopDuration = recorder.currentTime
-        let interruptedURL = recorder.url
+        finishActiveRecording()
         let message = String(localized: "Recording was interrupted. A partial recording may be available for transcription.")
-        interruptionMessage = message
-        recordingError = message
         AppLogger.error(message, context: "AudioRecorder")
-
-        recorder.stop()
-        if FileManager.default.fileExists(atPath: interruptedURL.path) {
-            interruptedRecordingURL = interruptedURL
+        DispatchQueue.main.async {
+            self.interruptionMessage = message
+            self.recordingError = message
+            if FileManager.default.fileExists(atPath: url.path) {
+                self.interruptedRecordingURL = url
+            }
         }
     }
 
@@ -232,33 +313,13 @@ class AudioRecorder: NSObject, ObservableObject {
             )
         }
     }
-}
 
-extension AudioRecorder: AVAudioRecorderDelegate {
-    func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
-        finishRecordingState()
-        if !flag {
-            let message: String
-            if FileManager.default.fileExists(atPath: recorder.url.path) {
-                message = String(localized: "Recording ended unsuccessfully. A partial recording file was saved.")
-            } else {
-                message = String(localized: "Recording ended unsuccessfully and no recording file was saved.")
-            }
-            recordingError = message
-            AppLogger.error(message, context: "AudioRecorder")
-            resumeStopContinuation(with: .failure(AudioRecorderError.recordingEndedUnsuccessfully(message)))
-            return
+    private func deactivateSession() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        } catch {
+            AppLogger.error("Failed to deactivate audio session after recording", context: "AudioRecorder", error: error)
         }
-        resumeStopContinuation(with: .success(recorder.url))
-    }
-
-    func audioRecorderEncodeErrorDidOccur(_ recorder: AVAudioRecorder, error: Error?) {
-        finishRecordingState()
-        let detail = error?.localizedDescription ?? String(localized: "Unknown encoding error")
-        let message = String(localized: "Recording encoding failed") + ": \(detail)"
-        recordingError = message
-        AppLogger.error(message, context: "AudioRecorder", error: error)
-        resumeStopContinuation(with: .failure(AudioRecorderError.recordingEncodingFailed(message)))
     }
 }
 
@@ -269,7 +330,6 @@ enum AudioRecorderError: LocalizedError {
     case recordingFileMissing
     case recordingFileEmpty
     case stopInProgress
-    case recordingEndedUnsuccessfully(String)
     case recordingEncodingFailed(String)
 
     var errorDescription: String? {
@@ -286,7 +346,7 @@ enum AudioRecorderError: LocalizedError {
             return String(localized: "Recording stopped, but the recording file is empty.")
         case .stopInProgress:
             return String(localized: "Recording is already stopping.")
-        case .recordingEndedUnsuccessfully(let message), .recordingEncodingFailed(let message):
+        case .recordingEncodingFailed(let message):
             return message
         }
     }

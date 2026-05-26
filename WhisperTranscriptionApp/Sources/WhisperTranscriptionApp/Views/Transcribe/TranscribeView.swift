@@ -8,6 +8,7 @@ struct TranscribeView: View {
     @State private var showFileImporter = false
     @State private var selectedFileURL: URL?
     @State private var selectedVideoItem: PhotosPickerItem?
+    @State private var liveTranscriptionRequested = false
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var recordingService: RecordingService
     
@@ -58,6 +59,33 @@ struct TranscribeView: View {
                                     .foregroundColor(AppColors.accent)
                                     .monospacedDigit()
                             }
+
+                            LiveTranscriptionToggle(
+                                isOn: liveTranscriptionBinding,
+                                isAvailable: recordingService.canStartLiveTranscription,
+                                unavailableMessage: recordingService.liveUnavailableMessage,
+                                isRecording: recordingService.isRecording
+                            )
+                            .padding(.horizontal)
+
+                            if shouldShowLivePanel {
+                                LiveTranscriptionPanel(
+                                    elapsedTime: recordingService.liveElapsedTime,
+                                    audioLevel: recordingService.liveAudioLevel,
+                                    finalizedText: recordingService.liveFinalizedText,
+                                    volatileText: recordingService.liveVolatileText,
+                                    state: recordingService.liveState,
+                                    onStop: {
+                                        liveTranscriptionRequested = false
+                                        viewModel.stopLiveTranscription(recordingService: recordingService)
+                                    },
+                                    onCancel: {
+                                        liveTranscriptionRequested = false
+                                        viewModel.cancelLiveTranscription(recordingService: recordingService)
+                                    }
+                                )
+                                .padding(.horizontal)
+                            }
                             
                             RecordingButton(isRecording: $recordingService.isRecording) {
                                 if recordingService.isRecording {
@@ -66,7 +94,7 @@ struct TranscribeView: View {
                                     viewModel.startRecording(recordingService: recordingService)
                                 }
                             }
-                            .disabled(viewModel.isProcessing)
+                            .disabled(viewModel.isProcessing || recordingService.liveState == .preparing || recordingService.liveState == .finalizing)
                             
                             Text(recordingService.isRecording ? LocalizedStringKey("Tap to Stop") : LocalizedStringKey("Tap to Start Recording"))
                                 .font(AppFonts.callout)
@@ -238,6 +266,16 @@ struct TranscribeView: View {
                 await handlePickedVideo(newItem)
             }
         }
+        .onChange(of: recordingService.isRecording) { _, isRecording in
+            if isRecording, liveTranscriptionRequested {
+                viewModel.startLiveTranscription(recordingService: recordingService)
+            }
+        }
+        .onChange(of: recordingService.liveState) { _, state in
+            if recordingService.isRecording, state == .idle, recordingService.liveMessage != nil {
+                liveTranscriptionRequested = false
+            }
+        }
     }
     
     private func formatTime(_ time: TimeInterval) -> String {
@@ -248,7 +286,29 @@ struct TranscribeView: View {
     }
 
     private var displayedError: String? {
-        viewModel.errorMessage ?? recordingService.interruptionMessage ?? recordingService.errorMessage
+        viewModel.errorMessage ?? recordingService.liveMessage ?? recordingService.interruptionMessage ?? recordingService.errorMessage
+    }
+
+    private var shouldShowLivePanel: Bool {
+        recordingService.isLiveTranscriptionActive
+            || !recordingService.liveFinalizedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !recordingService.liveVolatileText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var liveTranscriptionBinding: Binding<Bool> {
+        Binding(
+            get: { liveTranscriptionRequested },
+            set: { newValue in
+                liveTranscriptionRequested = newValue
+                if recordingService.isRecording {
+                    if newValue {
+                        viewModel.startLiveTranscription(recordingService: recordingService)
+                    } else {
+                        viewModel.stopLiveTranscription(recordingService: recordingService)
+                    }
+                }
+            }
+        )
     }
 
     @MainActor
@@ -270,6 +330,176 @@ struct TranscribeView: View {
             )
         } catch {
             viewModel.setError(String(localized: "Video selection error") + ": \(error.localizedDescription)")
+        }
+    }
+}
+
+private struct LiveTranscriptionToggle: View {
+    @Binding var isOn: Bool
+    let isAvailable: Bool
+    let unavailableMessage: String?
+    let isRecording: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle(isOn: $isOn) {
+                Label {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Live Transcribe")
+                            .font(AppFonts.headline)
+                            .foregroundColor(AppColors.textPrimary)
+                        Text(isRecording ? "Toggle live transcription while recording" : "Start recording with live transcription")
+                            .font(AppFonts.caption)
+                            .foregroundColor(AppColors.textSecondary)
+                    }
+                } icon: {
+                    Image(systemName: "quote.bubble.fill")
+                        .foregroundColor(AppColors.accent)
+                }
+            }
+            .toggleStyle(.switch)
+            .disabled(!isAvailable)
+            .opacity(isAvailable ? 1 : 0.55)
+
+            if let unavailableMessage {
+                Text(LocalizedStringKey(unavailableMessage))
+                    .font(AppFonts.caption)
+                    .foregroundColor(AppColors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding()
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+private struct LiveTranscriptionPanel: View {
+    let elapsedTime: TimeInterval
+    let audioLevel: Float
+    let finalizedText: String
+    let volatileText: String
+    let state: LiveTranscriptionState
+    let onStop: () -> Void
+    let onCancel: () -> Void
+
+    private var visibleFinalText: String {
+        let trimmed = finalizedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? String(localized: "Listening...") : trimmed
+    }
+
+    private var formattedElapsedTime: String {
+        let hours = Int(elapsedTime) / 3600
+        let minutes = (Int(elapsedTime) % 3600) / 60
+        let seconds = Int(elapsedTime) % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+    }
+
+    private var statusText: LocalizedStringKey {
+        switch state {
+        case .preparing:
+            return "Preparing live transcription..."
+        case .recording:
+            return "Live Transcribe"
+        case .finalizing:
+            return "Finalizing live transcription..."
+        case .saving:
+            return "Saving live transcription..."
+        case .failed:
+            return "Live transcription failed"
+        case .idle:
+            return "Live Transcribe"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 20) {
+            HStack(spacing: 16) {
+                Button(action: onCancel) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 18, weight: .semibold))
+                        .frame(width: 40, height: 40)
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(AppColors.accent)
+                .accessibilityLabel(Text("Cancel"))
+
+                Spacer()
+
+                Text(statusText)
+                    .font(AppFonts.title2)
+                    .foregroundColor(AppColors.textPrimary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+
+                Spacer()
+
+                Image(systemName: "gearshape")
+                    .font(.system(size: 22, weight: .semibold))
+                    .foregroundColor(AppColors.accent)
+                    .frame(width: 40, height: 40)
+                    .accessibilityHidden(true)
+            }
+
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 12, height: 12)
+                Text(formattedElapsedTime)
+                    .font(.title2.monospacedDigit())
+                    .foregroundColor(AppColors.textPrimary)
+            }
+
+            WaveformView(audioLevel: audioLevel)
+                .frame(height: 82)
+
+            Divider()
+                .background(AppColors.surface)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text(visibleFinalText)
+                        .font(.system(size: 27, weight: .regular, design: .default))
+                        .foregroundColor(finalizedText.isEmpty ? AppColors.textSecondary : AppColors.textPrimary)
+                        .lineSpacing(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+
+                    if !volatileText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text(volatileText)
+                            .font(.system(size: 24, weight: .regular, design: .default))
+                            .foregroundColor(AppColors.textSecondary.opacity(0.72))
+                            .lineSpacing(6)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(.vertical, 4)
+            }
+            .frame(minHeight: 260, maxHeight: 420)
+
+            Button(action: onStop) {
+                ZStack {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 82, height: 82)
+                        .shadow(color: Color.red.opacity(0.26), radius: 16, x: 0, y: 8)
+
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.white)
+                        .frame(width: 26, height: 26)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(state == .finalizing || state == .saving || state == .preparing)
+            .opacity(state == .finalizing || state == .saving || state == .preparing ? 0.55 : 1)
+            .accessibilityLabel(Text("Stop"))
+        }
+        .padding(20)
+        .background(AppColors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(AppColors.accent.opacity(0.24), lineWidth: 1)
         }
     }
 }
