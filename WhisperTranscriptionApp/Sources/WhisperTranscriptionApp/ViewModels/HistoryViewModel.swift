@@ -98,6 +98,10 @@ class HistoryViewModel: ObservableObject {
     func exportRecord(_ record: TranscriptionRecord, format: ExportFormat) -> URL? {
         return TranscriptionExporter.export(record: record, format: format)
     }
+
+    func exportRecordingAudio(_ record: TranscriptionRecord) -> URL? {
+        RecordingAudioExporter.export(record: record)
+    }
     
     func cleanupOldRecordings() {
         guard let modelContext = modelContext else { return }

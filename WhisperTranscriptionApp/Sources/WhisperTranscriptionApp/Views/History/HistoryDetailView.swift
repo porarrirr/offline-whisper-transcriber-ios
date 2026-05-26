@@ -16,6 +16,7 @@ struct HistoryDetailView: View {
     @State private var showEditTitle = false
     @State private var editableTitle = ""
     @State private var shareItems: [Any] = []
+    @State private var showExportAudioError = false
     @State private var cachedSegments: [TranscriptionSegment] = []
     
     private func currentDisplayText() -> String {
@@ -150,6 +151,17 @@ struct HistoryDetailView: View {
                                 .font(AppFonts.caption)
                                 .foregroundColor(AppColors.warning)
                         }
+
+                        Button {
+                            if let url = viewModel.exportRecordingAudio(record) {
+                                shareItems = [url]
+                                showShareSheet = true
+                            } else {
+                                showExportAudioError = true
+                            }
+                        } label: {
+                            Label("Export Audio", systemImage: "square.and.arrow.up")
+                        }
                     }
                     .onAppear {
                         audioPlayer.prepare(url: audioURL)
@@ -251,6 +263,12 @@ struct HistoryDetailView: View {
             Text("Are you sure you want to delete this transcription?")
         }
         .alert("Copied!", isPresented: $showCopyConfirmation) {
+            Button("OK", role: .cancel) {}
+        }
+        .alert(
+            String(localized: "The audio file for this history item could not be found."),
+            isPresented: $showExportAudioError
+        ) {
             Button("OK", role: .cancel) {}
         }
         .alert("Edit Title", isPresented: $showEditTitle) {
