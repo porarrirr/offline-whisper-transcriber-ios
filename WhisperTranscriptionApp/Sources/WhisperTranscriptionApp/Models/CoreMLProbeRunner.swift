@@ -14,11 +14,12 @@ struct CoreMLProbeResult: Sendable {
 enum CoreMLProbeRunner {
     static let slowProbeThresholdMS = 15_000
 
-    static func run(encoderPath: String) async -> CoreMLProbeResult {
+    static func run(encoderPath: String, melBinCount: Int) async -> CoreMLProbeResult {
         let path = encoderPath
+        let nMel = melBinCount
         return await Task.detached(priority: .utility) {
             path.withCString { cPath in
-                let raw = whisper_coreml_probe(cPath)
+                let raw = whisper_coreml_probe(cPath, Int32(nMel))
                 return CoreMLProbeResult(
                     ok: raw.ok != 0,
                     elapsedMS: Int(raw.elapsed_ms),

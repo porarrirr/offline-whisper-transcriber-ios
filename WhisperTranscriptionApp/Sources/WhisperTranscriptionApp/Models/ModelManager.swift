@@ -407,7 +407,8 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     func scheduleWhisperSessionStartIfNeeded() {
-        guard usesWhisperBackend, currentWhisperModelIsReady() else { return }
+        guard usesWhisperBackend, currentWhisperModelIsReady(),
+              let size = currentTranscriptionModel.whisperModelSize else { return }
         let modelPath = modelPath
         let encoderPath = FileManager.default.fileExists(atPath: coreMLEncoderPath) ? coreMLEncoderPath : nil
         let useFlashAttention = AppSettings.shared.useFlashAttention
@@ -415,7 +416,8 @@ class ModelManager: NSObject, ObservableObject {
             await WhisperModelService.shared.startSession(
                 modelPath: modelPath,
                 encoderPath: encoderPath,
-                useFlashAttention: useFlashAttention
+                useFlashAttention: useFlashAttention,
+                coreMLMelBinCount: size.coreMLMelBinCount
             )
         }
     }

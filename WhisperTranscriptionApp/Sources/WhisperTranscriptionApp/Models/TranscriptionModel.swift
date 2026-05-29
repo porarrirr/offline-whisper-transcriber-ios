@@ -64,6 +64,15 @@ enum WhisperModelSize: String, CaseIterable, Identifiable {
         }
     }
 
+    var coreMLMelBinCount: Int {
+        switch self {
+        case .largeV3TurboQ8_0, .largeV3TurboQ5_0:
+            return 128
+        default:
+            return 80
+        }
+    }
+
     /// Headroom for URLSession temp files and filesystem metadata during download/install.
     static let downloadSafetyBufferBytes: Int64 = 64 * 1024 * 1024
 

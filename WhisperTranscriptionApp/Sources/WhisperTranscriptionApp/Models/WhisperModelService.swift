@@ -27,6 +27,7 @@ actor WhisperModelService {
     private var sessionModelPath: String?
     private var sessionEncoderPath: String?
     private var sessionUseFlashAttention = false
+    private var sessionGeneration: UInt64 = 0
     private var warmupTask: Task<Void, Never>?
     private var probeTask: Task<Void, Never>?
     private var loadTask: Task<Void, Error>?
@@ -35,7 +36,9 @@ actor WhisperModelService {
 
     private init() {}
 
-    func startSession(modelPath: String, encoderPath: String?, useFlashAttention: Bool) {
+    func startSession(modelPath: String, encoderPath: String?, useFlashAttention: Bool, coreMLMelBinCount: Int) {
+        sessionGeneration += 1
+        let generation = sessionGeneration
         sessionModelPath = modelPath
         sessionEncoderPath = encoderPath
         sessionUseFlashAttention = useFlashAttention
@@ -44,12 +47,12 @@ actor WhisperModelService {
 
         warmupTask?.cancel()
         warmupTask = Task { [modelPath, useFlashAttention] in
-            await self.scheduleWarmup(modelPath: modelPath, useFlashAttention: useFlashAttention)
+            await self.scheduleWarmup(modelPath: modelPath, useFlashAttention: useFlashAttention, generation: generation)
         }
 
         probeTask?.cancel()
         probeTask = Task {
-            await self.runProbe(encoderPath: encoderPath)
+            await self.runProbe(encoderPath: encoderPath, melBinCount: coreMLMelBinCount, generation: generation)
         }
     }
 
@@ -148,6 +151,7 @@ actor WhisperModelService {
         probeState = .pending
         sessionModelPath = nil
         sessionEncoderPath = nil
+        sessionGeneration += 1
         Task { await publishRuntimeSnapshot(isLoadingModel: false) }
     }
 
@@ -155,13 +159,15 @@ actor WhisperModelService {
         cancelInFlightLoad()
     }
 
-    private func runProbe(encoderPath: String?) async {
+    private func runProbe(encoderPath: String?, melBinCount: Int, generation: UInt64) async {
         guard let encoderPath, FileManager.default.fileExists(atPath: encoderPath) else {
+            guard generation == sessionGeneration else { return }
             await applyProbeResolved(useCoreML: false, summary: "encoder package missing")
             return
         }
 
-        let result = await CoreMLProbeRunner.run(encoderPath: encoderPath)
+        let result = await CoreMLProbeRunner.run(encoderPath: encoderPath, melBinCount: melBinCount)
+        guard !Task.isCancelled, generation == sessionGeneration else { return }
         let useCoreML = result.ok && result.elapsedMS < CoreMLProbeRunner.slowProbeThresholdMS
         let summary = result.summary
 
@@ -187,9 +193,14 @@ actor WhisperModelService {
         await publishRuntimeSnapshot(isLoadingModel: false)
     }
 
-    private func scheduleWarmup(modelPath: String, useFlashAttention: Bool) async {
+    private func scheduleWarmup(modelPath: String, useFlashAttention: Bool, generation: UInt64) async {
+        guard generation == sessionGeneration else { return }
         do {
             try await ensureModelLoaded(path: modelPath, useFlashAttention: useFlashAttention)
+            guard generation == sessionGeneration else {
+                unloadModelIfItDoesNotMatchCurrentSession()
+                return
+            }
         } catch {
             await MainActor.run {
                 AppLogger.error("Whisper warmup failed", context: "WhisperModelService", error: error)
@@ -227,6 +238,19 @@ actor WhisperModelService {
             return false
         case .resolved(let useCoreML, _):
             return useCoreML
+        }
+    }
+
+    private func unloadModelIfItDoesNotMatchCurrentSession() {
+        guard let path = sessionModelPath else {
+            context.unloadModel()
+            return
+        }
+
+        if context.loadedModelPath != path
+            || context.loadedUseFlashAttention != sessionUseFlashAttention
+            || context.loadedUseCoreML != useCoreMLForLoad() {
+            context.unloadModel()
         }
     }
 
