@@ -264,8 +264,22 @@ final class RecordingService: ObservableObject {
         }
 
         do {
-            try audioRecorder.startRecording()
             let startedAt = Date()
+            var requiredLiveActivityStarted = false
+            if requiresLiveActivity {
+                try await RecordingLiveActivityManager.shared.startRequiredRecordingActivity(startedAt: startedAt)
+                requiredLiveActivityStarted = true
+            }
+
+            do {
+                try audioRecorder.startRecording()
+            } catch {
+                if requiredLiveActivityStarted {
+                    await RecordingLiveActivityManager.shared.endRecordingActivity()
+                }
+                throw error
+            }
+
             recordingStartedAt = startedAt
             isRecording = true
             errorMessage = nil
@@ -273,15 +287,7 @@ final class RecordingService: ObservableObject {
             liveMessage = nil
             UIApplication.shared.isIdleTimerDisabled = settings.keepScreenOn
 
-            if requiresLiveActivity {
-                do {
-                    try await RecordingLiveActivityManager.shared.startRequiredRecordingActivity(startedAt: startedAt)
-                } catch {
-                    await stopRecordingAfterFailedIntentStart()
-                    errorMessage = error.localizedDescription
-                    throw error
-                }
-            } else {
+            if !requiresLiveActivity {
                 Task {
                     await RecordingLiveActivityManager.shared.startRecordingActivity(startedAt: startedAt)
                 }
@@ -295,17 +301,6 @@ final class RecordingService: ObservableObject {
             UIApplication.shared.isIdleTimerDisabled = false
             throw error
         }
-    }
-
-    private func stopRecordingAfterFailedIntentStart() async {
-        let url = try? await audioRecorder.stopRecording()
-        if let url {
-            try? FileManager.default.removeItem(at: url)
-        }
-        isRecording = false
-        UIApplication.shared.isIdleTimerDisabled = false
-        await RecordingLiveActivityManager.shared.endRecordingActivity()
-        recordingStartedAt = nil
     }
 
     private func applyLiveSnapshot(_ snapshot: LiveTranscriptionSnapshot) {

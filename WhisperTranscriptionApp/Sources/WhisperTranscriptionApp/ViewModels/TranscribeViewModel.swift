@@ -30,8 +30,8 @@ class TranscribeViewModel: ObservableObject {
     private var transcriptionTaskID: UUID?
     private var liveTask: Task<Void, Never>?
 
-    func startRecording(recordingService: RecordingService) {
-        if let readinessError = modelManager.currentTranscriptionReadinessError() {
+    func startRecording(recordingService: RecordingService, requiresTranscriptionReadiness: Bool = true) {
+        if requiresTranscriptionReadiness, let readinessError = modelManager.currentTranscriptionReadinessError() {
             setError(readinessError)
             return
         }

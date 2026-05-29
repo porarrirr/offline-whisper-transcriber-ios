@@ -10,6 +10,7 @@ struct TranscribeView: View {
     @State private var selectedFileURL: URL?
     @State private var selectedVideoItem: PhotosPickerItem?
     @State private var liveTranscriptionRequested = false
+    @AppStorage(WhisperAppDestination.pendingStartRecordingKey) private var pendingStartRecording = false
     @AppStorage(WhisperAppDestination.pendingLiveRecordingKey) private var pendingLiveRecording = false
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var recordingService: RecordingService
@@ -277,10 +278,13 @@ struct TranscribeView: View {
             }
         }
         .onAppear {
-            applyPendingLiveRecordingRequest()
+            consumePendingIntentRequest()
+        }
+        .onChange(of: pendingStartRecording) { _, _ in
+            consumePendingIntentRequest()
         }
         .onChange(of: pendingLiveRecording) { _, _ in
-            applyPendingLiveRecordingRequest()
+            consumePendingIntentRequest()
         }
         .onChange(of: recordingService.isRecording) { _, isRecording in
             if isRecording, liveTranscriptionRequested {
@@ -358,20 +362,35 @@ struct TranscribeView: View {
         )
     }
 
-    private func applyPendingLiveRecordingRequest() {
-        guard pendingLiveRecording else { return }
+    private func consumePendingIntentRequest() {
+        let shouldStartRecording = pendingStartRecording
+        let shouldStartLiveTranscription = pendingLiveRecording
+
+        guard shouldStartRecording || shouldStartLiveTranscription else { return }
+
+        pendingStartRecording = false
         pendingLiveRecording = false
 
-        guard recordingService.canStartLiveTranscription else {
-            if let message = recordingService.liveUnavailableMessage {
-                viewModel.setError(message)
-            }
-            return
+        if shouldStartLiveTranscription {
+            liveTranscriptionRequested = true
         }
 
-        liveTranscriptionRequested = true
-        if recordingService.isRecording {
-            viewModel.startLiveTranscription(recordingService: recordingService)
+        if shouldStartRecording, !recordingService.isRecording {
+            viewModel.startRecording(recordingService: recordingService, requiresTranscriptionReadiness: false)
+        }
+
+        if shouldStartLiveTranscription {
+            guard recordingService.canStartLiveTranscription else {
+                liveTranscriptionRequested = false
+                if let message = recordingService.liveUnavailableMessage {
+                    viewModel.setError(message)
+                }
+                return
+            }
+
+            if recordingService.isRecording {
+                viewModel.startLiveTranscription(recordingService: recordingService)
+            }
         }
     }
 

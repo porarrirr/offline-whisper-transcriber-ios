@@ -9,6 +9,7 @@ enum WhisperAppDestination: String {
     case history
 
     static let pendingDestinationKey = "WhisperAppIntentPendingDestination"
+    static let pendingStartRecordingKey = "WhisperAppIntentPendingStartRecording"
     static let pendingLiveRecordingKey = "WhisperAppIntentPendingLiveRecording"
 
     var tabIndex: Int {
@@ -21,8 +22,11 @@ enum WhisperAppDestination: String {
     }
 
     @MainActor
-    func requestOpen(liveTranscriptionRequested: Bool = false) {
+    func requestOpen(startRecordingRequested: Bool = false, liveTranscriptionRequested: Bool = false) {
         UserDefaults.standard.set(rawValue, forKey: Self.pendingDestinationKey)
+        if startRecordingRequested {
+            UserDefaults.standard.set(true, forKey: Self.pendingStartRecordingKey)
+        }
         if liveTranscriptionRequested {
             UserDefaults.standard.set(true, forKey: Self.pendingLiveRecordingKey)
         }
@@ -80,15 +84,16 @@ struct StartBackgroundRecordingIntent: AppIntent, AudioRecordingIntent {
         } catch is RecordingLiveActivityError {
             throw IntentError.liveActivityRequired
         } catch {
-            throw IntentError.recordingStartFailed
+            AppLogger.error("Failed to start recording from shortcut", context: "StartBackgroundRecordingIntent", error: error)
+            throw IntentError.recordingStartFailed(error.localizedDescription)
         }
     }
 }
 
 @available(iOS 18.0, *)
 struct OpenLiveRecordingIntent: AppIntent {
-    static var title: LocalizedStringResource = "Open Live Recorder"
-    static var description = IntentDescription("Opens the recorder with live transcription selected")
+    static var title: LocalizedStringResource = "Start Live Recording"
+    static var description = IntentDescription("Opens the app and starts recording with live transcription selected")
     static var openAppWhenRun = true
 
     @available(iOS 26.0, *)
@@ -96,7 +101,7 @@ struct OpenLiveRecordingIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        WhisperAppDestination.transcribe.requestOpen(liveTranscriptionRequested: true)
+        WhisperAppDestination.transcribe.requestOpen(startRecordingRequested: true, liveTranscriptionRequested: true)
         return .result()
     }
 }
@@ -314,7 +319,7 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case speechLocaleNotSupported
     case microphonePermissionRequired
     case recordingBusy
-    case recordingStartFailed
+    case recordingStartFailed(String)
     case liveActivityRequired
     
     var localizedStringResource: LocalizedStringResource {
@@ -341,8 +346,8 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
             return "Microphone permission is required. Please allow microphone access in Settings."
         case .recordingBusy:
             return "Recording is already starting or stopping."
-        case .recordingStartFailed:
-            return "Failed to start recording."
+        case .recordingStartFailed(let detail):
+            return "Failed to start recording: \(detail)"
         case .liveActivityRequired:
             return "Live Activities must be enabled to start recording from a shortcut."
         }
