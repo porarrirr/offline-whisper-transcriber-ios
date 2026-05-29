@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct RecordingButton: View {
-    @Binding var isRecording: Bool
+    let isRecording: Bool
     let action: () -> Void
     
     @State private var animationScale: CGFloat = 1.0

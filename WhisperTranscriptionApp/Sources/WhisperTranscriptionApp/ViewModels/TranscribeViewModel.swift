@@ -31,9 +31,22 @@ class TranscribeViewModel: ObservableObject {
     private var liveTask: Task<Void, Never>?
 
     func startRecording(recordingService: RecordingService, requiresTranscriptionReadiness: Bool = true) {
+        Task {
+            await startRecordingAsync(
+                recordingService: recordingService,
+                requiresTranscriptionReadiness: requiresTranscriptionReadiness
+            )
+        }
+    }
+
+    @discardableResult
+    func startRecordingAsync(
+        recordingService: RecordingService,
+        requiresTranscriptionReadiness: Bool = true
+    ) async -> RecordingStartResult? {
         if requiresTranscriptionReadiness, let readinessError = modelManager.currentTranscriptionReadinessError() {
             setError(readinessError)
-            return
+            return nil
         }
         transcriptionResult = ""
         transcriptionSegments = []
@@ -42,7 +55,12 @@ class TranscribeViewModel: ObservableObject {
         transcriptionDuration = 0
         errorMessage = nil
         transcriptionProgress = 0
-        recordingService.startRecording()
+        do {
+            return try await recordingService.startRecordingFromApp()
+        } catch {
+            setError(error.localizedDescription)
+            return nil
+        }
     }
     
     func stopRecordingAndTranscribe(recordingService: RecordingService, modelContext: ModelContext) {

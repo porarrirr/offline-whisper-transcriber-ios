@@ -106,11 +106,15 @@ final class RecordingService: ObservableObject {
     func startRecording() {
         Task {
             do {
-                _ = try await startRecording(requiresLiveActivity: false, releaseWhisperModel: true)
+                _ = try await startRecordingFromApp()
             } catch {
                 errorMessage = error.localizedDescription
             }
         }
+    }
+
+    func startRecordingFromApp() async throws -> RecordingStartResult {
+        try await startRecording(requiresLiveActivity: false, releaseWhisperModel: true)
     }
 
     func startRecordingFromIntent() async throws -> RecordingStartResult {

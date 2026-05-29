@@ -91,7 +91,7 @@ struct TranscribeView: View {
                                 .padding(.horizontal)
                             }
                             
-                            RecordingButton(isRecording: $recordingService.isRecording) {
+                            RecordingButton(isRecording: recordingService.isRecording) {
                                 if recordingService.isRecording {
                                     viewModel.stopRecordingAndTranscribe(recordingService: recordingService, modelContext: modelContext)
                                 } else {
@@ -375,21 +375,32 @@ struct TranscribeView: View {
             liveTranscriptionRequested = true
         }
 
-        if shouldStartRecording, !recordingService.isRecording {
-            viewModel.startRecording(recordingService: recordingService, requiresTranscriptionReadiness: false)
-        }
-
-        if shouldStartLiveTranscription {
-            guard recordingService.canStartLiveTranscription else {
-                liveTranscriptionRequested = false
-                if let message = recordingService.liveUnavailableMessage {
-                    viewModel.setError(message)
+        Task { @MainActor in
+            if shouldStartRecording, !recordingService.isRecording {
+                let startResult = await viewModel.startRecordingAsync(
+                    recordingService: recordingService,
+                    requiresTranscriptionReadiness: false
+                )
+                guard startResult != nil else {
+                    if shouldStartLiveTranscription {
+                        liveTranscriptionRequested = false
+                    }
+                    return
                 }
-                return
             }
 
-            if recordingService.isRecording {
-                viewModel.startLiveTranscription(recordingService: recordingService)
+            if shouldStartLiveTranscription {
+                guard recordingService.canStartLiveTranscription else {
+                    liveTranscriptionRequested = false
+                    if let message = recordingService.liveUnavailableMessage {
+                        viewModel.setError(message)
+                    }
+                    return
+                }
+
+                if recordingService.isRecording {
+                    viewModel.startLiveTranscription(recordingService: recordingService)
+                }
             }
         }
     }

@@ -71,7 +71,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         try beginStartingState()
 
         do {
-            try setupSession()
+            try await setupSession()
             let url = try makeRecordingURL()
             let inputNode = audioEngine.inputNode
             let format = try await waitForStableInputTapFormat(on: inputNode)
@@ -161,7 +161,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         for attempt in 1...maxAttempts {
             let session = AVAudioSession.sharedInstance()
             let format = inputNode.outputFormat(forBus: 0)
-            if isUsableInputTapFormat(format, session: session) {
+            if isUsableInputTapFormat(format) {
                 if let previousFormat, sameAudioHardwareShape(previousFormat, format) {
                     stableReadCount += 1
                 } else {
@@ -205,17 +205,8 @@ final class AudioRecorder: NSObject, ObservableObject {
         throw AudioRecorderError.recordingStartFailed("input tap format did not stabilize after session activation")
     }
 
-    private func isUsableInputTapFormat(_ format: AVAudioFormat, session: AVAudioSession) -> Bool {
-        guard format.sampleRate > 0, format.channelCount > 0 else {
-            return false
-        }
-
-        let sessionSampleRate = session.sampleRate
-        guard sessionSampleRate > 0 else {
-            return false
-        }
-
-        return abs(format.sampleRate - sessionSampleRate) < 1
+    private func isUsableInputTapFormat(_ format: AVAudioFormat) -> Bool {
+        format.sampleRate > 0 && format.channelCount > 0
     }
 
     private func sameAudioHardwareShape(_ lhs: AVAudioFormat, _ rhs: AVAudioFormat) -> Bool {
@@ -251,17 +242,24 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
-    private func setupSession() throws {
+    private func setupSession() async throws {
         let session = AVAudioSession.sharedInstance()
+        let bluetoothInput = session.availableInputs?.first(where: { $0.portType == .bluetoothHFP })
+        let usesBluetoothHFP = bluetoothInput != nil || session.currentRoute.inputs.contains { $0.portType == .bluetoothHFP }
+        let sessionMode: AVAudioSession.Mode = usesBluetoothHFP ? .voiceChat : .default
+        let categoryOptions: AVAudioSession.CategoryOptions = usesBluetoothHFP
+            ? [.allowBluetoothHFP]
+            : [.defaultToSpeaker, .mixWithOthers]
+
         try performAudioSessionStep("set category") {
             try session.setCategory(
                 .playAndRecord,
-                mode: .default,
-                options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers]
+                mode: sessionMode,
+                options: categoryOptions
             )
         }
 
-        let preferredSampleRate = preferredRecordingSampleRate(for: session)
+        let preferredSampleRate = preferredRecordingSampleRate(usesBluetoothHFP: usesBluetoothHFP)
         try performAudioSessionStep("set preferred sample rate \(preferredSampleRate)") {
             try session.setPreferredSampleRate(preferredSampleRate)
         }
@@ -269,31 +267,65 @@ final class AudioRecorder: NSObject, ObservableObject {
         try performAudioSessionStep("activate session") {
             try session.setActive(true)
         }
-        try selectBluetoothHFPInputIfAvailable(session)
+        if let bluetoothInput {
+            try selectBluetoothHFPInput(bluetoothInput, session: session)
+            try await waitForBluetoothHFPRoute(session: session, preferredInput: bluetoothInput)
+        }
         logCurrentAudioRoute(session: session, event: "Recording audio session activated")
     }
 
-    private func preferredRecordingSampleRate(for session: AVAudioSession) -> Double {
-        if routeCanUseBluetoothHFP(session) {
-            return Self.bluetoothHFPRecordingSampleRate
-        }
-        return Self.recordingSampleRate
+    private func preferredRecordingSampleRate(usesBluetoothHFP: Bool) -> Double {
+        usesBluetoothHFP ? Self.bluetoothHFPRecordingSampleRate : Self.recordingSampleRate
     }
 
-    private func routeCanUseBluetoothHFP(_ session: AVAudioSession) -> Bool {
-        session.currentRoute.inputs.contains { $0.portType == .bluetoothHFP }
-            || session.currentRoute.outputs.contains { $0.portType == .bluetoothHFP }
-            || (session.availableInputs?.contains { $0.portType == .bluetoothHFP } ?? false)
-    }
-
-    private func selectBluetoothHFPInputIfAvailable(_ session: AVAudioSession) throws {
-        guard let bluetoothInput = session.availableInputs?.first(where: { $0.portType == .bluetoothHFP }) else {
-            return
-        }
-
+    private func selectBluetoothHFPInput(_ bluetoothInput: AVAudioSessionPortDescription, session: AVAudioSession) throws {
         try performAudioSessionStep("set Bluetooth HFP preferred input \(bluetoothInput.portName)") {
             try session.setPreferredInput(bluetoothInput)
         }
+    }
+
+    private func waitForBluetoothHFPRoute(
+        session: AVAudioSession,
+        preferredInput: AVAudioSessionPortDescription
+    ) async throws {
+        let maxAttempts = 20
+        let retryDelayNanoseconds: UInt64 = 50_000_000
+        var stableReadCount = 0
+
+        for attempt in 1...maxAttempts {
+            let route = session.currentRoute
+            let usesPreferredInput = route.inputs.contains { input in
+                input.uid == preferredInput.uid
+                    || (input.portType == .bluetoothHFP && input.portName == preferredInput.portName)
+            }
+            let usesA2DPOutput = route.outputs.contains { $0.portType == .bluetoothA2DP }
+
+            if usesPreferredInput, !usesA2DPOutput {
+                stableReadCount += 1
+                if stableReadCount >= 2 {
+                    if attempt > 2 {
+                        AppLogger.info(
+                            "Bluetooth HFP route stabilized after preferred input selection: attempts=\(attempt)",
+                            context: "AudioRecorder"
+                        )
+                    }
+                    return
+                }
+            } else {
+                stableReadCount = 0
+            }
+
+            if attempt < maxAttempts {
+                try await Task.sleep(nanoseconds: retryDelayNanoseconds)
+            }
+        }
+
+        let route = currentRouteDescription(session: session)
+        AppLogger.error(
+            "Bluetooth HFP route did not become active after selecting preferred input: preferredInput=\(preferredInput.portName)(\(preferredInput.portType.rawValue)), sampleRate=\(session.sampleRate), preferredSampleRate=\(session.preferredSampleRate), inputs=[\(route.inputs)], outputs=[\(route.outputs)]",
+            context: "AudioRecorder"
+        )
+        throw AudioRecorderError.recordingStartFailed("Bluetooth HFP route unavailable after selecting preferred input")
     }
 
     private func performAudioSessionStep(_ stage: String, operation: () throws -> Void) throws {
