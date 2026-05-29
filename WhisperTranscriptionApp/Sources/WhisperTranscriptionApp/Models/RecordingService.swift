@@ -5,6 +5,8 @@ import UIKit
 
 @MainActor
 final class RecordingService: ObservableObject {
+    static let shared = RecordingService()
+
     @Published var isRecording = false
     @Published var currentTime: TimeInterval = 0
     @Published var audioLevel: Float = 0
@@ -102,20 +104,17 @@ final class RecordingService: ObservableObject {
     }
 
     func startRecording() {
-        guard !isRecording, !isChangingRecordingState else {
-            errorMessage = AudioRecorderError.stopInProgress.localizedDescription
-            return
-        }
-        isStartingRecording = true
-        audioRecorder.requestPermission { [weak self] granted in
-            guard let self else { return }
-            if granted {
-                self.startRecordingWithPermission()
-            } else {
-                self.errorMessage = String(localized: "Microphone permission is required")
-                self.isStartingRecording = false
+        Task {
+            do {
+                _ = try await startRecording(requiresLiveActivity: false, releaseWhisperModel: false)
+            } catch {
+                errorMessage = error.localizedDescription
             }
         }
+    }
+
+    func startRecordingFromIntent() async throws -> RecordingStartResult {
+        try await startRecording(requiresLiveActivity: true, releaseWhisperModel: true)
     }
 
     func stopRecording() async throws -> URL {
@@ -240,8 +239,30 @@ final class RecordingService: ObservableObject {
         }
     }
 
-    private func startRecordingWithPermission() {
+    private func startRecording(
+        requiresLiveActivity: Bool,
+        releaseWhisperModel: Bool
+    ) async throws -> RecordingStartResult {
+        if isRecording {
+            return .alreadyRecording
+        }
+        guard !isChangingRecordingState else {
+            throw AudioRecorderError.stopInProgress
+        }
+
+        isStartingRecording = true
         defer { isStartingRecording = false }
+
+        if releaseWhisperModel {
+            await WhisperModelService.shared.releaseForRecording()
+        }
+
+        guard await audioRecorder.requestPermission() else {
+            let error = AudioRecorderError.microphonePermissionRequired
+            errorMessage = error.localizedDescription
+            throw error
+        }
+
         do {
             try audioRecorder.startRecording()
             let startedAt = Date()
@@ -251,14 +272,40 @@ final class RecordingService: ObservableObject {
             interruptionMessage = nil
             liveMessage = nil
             UIApplication.shared.isIdleTimerDisabled = settings.keepScreenOn
-            Task {
-                await RecordingLiveActivityManager.shared.startRecordingActivity(startedAt: startedAt)
+
+            if requiresLiveActivity {
+                do {
+                    try await RecordingLiveActivityManager.shared.startRequiredRecordingActivity(startedAt: startedAt)
+                } catch {
+                    await stopRecordingAfterFailedIntentStart()
+                    errorMessage = error.localizedDescription
+                    throw error
+                }
+            } else {
+                Task {
+                    await RecordingLiveActivityManager.shared.startRecordingActivity(startedAt: startedAt)
+                }
             }
+
+            return .started
         } catch {
             errorMessage = error.localizedDescription
             recordingStartedAt = nil
+            isRecording = false
             UIApplication.shared.isIdleTimerDisabled = false
+            throw error
         }
+    }
+
+    private func stopRecordingAfterFailedIntentStart() async {
+        let url = try? await audioRecorder.stopRecording()
+        if let url {
+            try? FileManager.default.removeItem(at: url)
+        }
+        isRecording = false
+        UIApplication.shared.isIdleTimerDisabled = false
+        await RecordingLiveActivityManager.shared.endRecordingActivity()
+        recordingStartedAt = nil
     }
 
     private func applyLiveSnapshot(_ snapshot: LiveTranscriptionSnapshot) {
@@ -294,4 +341,9 @@ final class RecordingService: ObservableObject {
         liveMessage = message
         AppLogger.error(message, context: "RecordingService")
     }
+}
+
+enum RecordingStartResult {
+    case started
+    case alreadyRecording
 }

@@ -5,7 +5,7 @@ import SwiftData
 struct WhisperTranscriptionApp: App {
     private let modelContainer: ModelContainer?
     private let modelContainerErrorMessage: String?
-    @StateObject private var recordingService = RecordingService()
+    @StateObject private var recordingService = RecordingService.shared
     @StateObject private var settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
 

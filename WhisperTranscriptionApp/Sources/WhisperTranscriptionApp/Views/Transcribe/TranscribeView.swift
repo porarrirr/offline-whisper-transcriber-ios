@@ -10,6 +10,7 @@ struct TranscribeView: View {
     @State private var selectedFileURL: URL?
     @State private var selectedVideoItem: PhotosPickerItem?
     @State private var liveTranscriptionRequested = false
+    @AppStorage(WhisperAppDestination.pendingLiveRecordingKey) private var pendingLiveRecording = false
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var recordingService: RecordingService
     
@@ -275,6 +276,12 @@ struct TranscribeView: View {
                 await handlePickedVideo(newItem)
             }
         }
+        .onAppear {
+            applyPendingLiveRecordingRequest()
+        }
+        .onChange(of: pendingLiveRecording) { _, _ in
+            applyPendingLiveRecordingRequest()
+        }
         .onChange(of: recordingService.isRecording) { _, isRecording in
             if isRecording, liveTranscriptionRequested {
                 viewModel.startLiveTranscription(recordingService: recordingService)
@@ -349,6 +356,23 @@ struct TranscribeView: View {
                 }
             }
         )
+    }
+
+    private func applyPendingLiveRecordingRequest() {
+        guard pendingLiveRecording else { return }
+        pendingLiveRecording = false
+
+        guard recordingService.canStartLiveTranscription else {
+            if let message = recordingService.liveUnavailableMessage {
+                viewModel.setError(message)
+            }
+            return
+        }
+
+        liveTranscriptionRequested = true
+        if recordingService.isRecording {
+            viewModel.startLiveTranscription(recordingService: recordingService)
+        }
     }
 
     @MainActor

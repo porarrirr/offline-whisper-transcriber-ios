@@ -10,9 +10,16 @@ final class RecordingLiveActivityManager {
     private init() {}
 
     func startRecordingActivity(startedAt: Date = Date()) async {
+        do {
+            try await startRequiredRecordingActivity(startedAt: startedAt)
+        } catch {
+            AppLogger.error("Failed to start recording Live Activity", context: "RecordingLiveActivity", error: error)
+        }
+    }
+
+    func startRequiredRecordingActivity(startedAt: Date = Date()) async throws {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            AppLogger.info("Live Activities are disabled for this device or app", context: "RecordingLiveActivity")
-            return
+            throw RecordingLiveActivityError.activitiesDisabled
         }
 
         await endRecordingActivity(dismissalPolicy: .immediate)
@@ -23,15 +30,11 @@ final class RecordingLiveActivityManager {
             status: String(localized: "Recording")
         )
 
-        do {
-            activity = try Activity.request(
-                attributes: attributes,
-                content: ActivityContent(state: state, staleDate: nil),
-                pushType: nil
-            )
-        } catch {
-            AppLogger.error("Failed to start recording Live Activity", context: "RecordingLiveActivity", error: error)
-        }
+        activity = try Activity.request(
+            attributes: attributes,
+            content: ActivityContent(state: state, staleDate: nil),
+            pushType: nil
+        )
     }
 
     func endRecordingActivity(dismissalPolicy: ActivityUIDismissalPolicy = .immediate) async {
@@ -48,5 +51,16 @@ final class RecordingLiveActivityManager {
             await activeActivity.end(content, dismissalPolicy: dismissalPolicy)
         }
         activity = nil
+    }
+}
+
+enum RecordingLiveActivityError: LocalizedError {
+    case activitiesDisabled
+
+    var errorDescription: String? {
+        switch self {
+        case .activitiesDisabled:
+            return String(localized: "Live Activities must be enabled to start recording from a shortcut.")
+        }
     }
 }

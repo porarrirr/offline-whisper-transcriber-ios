@@ -58,6 +58,14 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
+    func requestPermission() async -> Bool {
+        await withCheckedContinuation { continuation in
+            requestPermission { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+
     func startRecording() throws {
         stateLock.lock()
         let busy = recordingState != .idle || audioEngine.isRunning
@@ -362,6 +370,7 @@ enum AudioRecorderError: LocalizedError {
     case recordingFileEmpty
     case stopInProgress
     case recordingEncodingFailed(String)
+    case microphonePermissionRequired
 
     var errorDescription: String? {
         switch self {
@@ -379,6 +388,8 @@ enum AudioRecorderError: LocalizedError {
             return String(localized: "Recording is already stopping.")
         case .recordingEncodingFailed(let message):
             return message
+        case .microphonePermissionRequired:
+            return String(localized: "Microphone permission is required")
         }
     }
 }
