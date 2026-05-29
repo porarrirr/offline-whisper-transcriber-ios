@@ -115,51 +115,8 @@ struct ModelDownloadView: View {
             }
         } else {
             VStack(spacing: 16) {
-                if !viewModel.isModelAvailable && settings.usesWhisperBackend {
-                    VStack(spacing: 12) {
-                        Text("Select Model")
-                            .font(AppFonts.headline)
-                            .foregroundColor(AppColors.textPrimary)
-
-                        Picker("Model", selection: $settings.selectedTranscriptionModel) {
-                            ForEach(TranscriptionModel.pickerOptions) { model in
-                                Text(model.displayName).tag(model)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .onChange(of: settings.selectedTranscriptionModel) { _, newValue in
-                            ModelManager.shared.switchModel(model: newValue)
-                            viewModel.checkAvailability()
-                        }
-
-                        HStack {
-                            Image(systemName: "info.circle.fill")
-                                .foregroundColor(AppColors.accent)
-                            Text(settings.selectedTranscriptionModel.approximateSize)
-                                .font(AppFonts.caption)
-                                .foregroundColor(AppColors.textSecondary)
-                            Spacer()
-                        }
-                    }
-                    .padding()
-                    .background(AppColors.cardBackground)
-                    .cornerRadius(16)
-                } else if settings.usesAppleSpeechBackend {
-                    VStack(spacing: 12) {
-                        Text("超高速な基本モデル")
-                            .font(AppFonts.headline)
-                            .foregroundColor(AppColors.textPrimary)
-
-                        ProgressView()
-                            .tint(AppColors.accent)
-
-                        Text("Preparing speech model...")
-                            .font(AppFonts.caption)
-                            .foregroundColor(AppColors.textSecondary)
-                    }
-                    .padding()
-                    .background(AppColors.cardBackground)
-                    .cornerRadius(16)
+                if !viewModel.isModelAvailable {
+                    modelPickerCard
                 }
 
                 if let error = viewModel.errorMessage {
@@ -185,6 +142,22 @@ struct ModelDownloadView: View {
                         .cornerRadius(16)
                     }
                     .padding(.top, 8)
+                } else if settings.usesAppleSpeechBackend {
+                    Button(action: {
+                        viewModel.startDownload()
+                    }) {
+                        HStack {
+                            Image(systemName: "arrow.down.circle.fill")
+                            Text("Prepare Speech Model")
+                        }
+                        .font(AppFonts.button)
+                        .foregroundColor(AppColors.textOnAccent)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(AppColors.accent)
+                        .cornerRadius(16)
+                    }
+                    .padding(.top, 8)
                 }
 
                 if settings.usesWhisperBackend {
@@ -196,5 +169,37 @@ struct ModelDownloadView: View {
                 }
             }
         }
+    }
+
+    private var modelPickerCard: some View {
+        VStack(spacing: 12) {
+            Text("Select Model")
+                .font(AppFonts.headline)
+                .foregroundColor(AppColors.textPrimary)
+
+            Picker("Model", selection: $settings.selectedTranscriptionModel) {
+                ForEach(TranscriptionModel.pickerOptions) { model in
+                    Text(model.displayName).tag(model)
+                }
+            }
+            .pickerStyle(.menu)
+            .onChange(of: settings.selectedTranscriptionModel) { _, newValue in
+                ModelManager.shared.switchModel(model: newValue)
+                viewModel.checkAvailability()
+            }
+
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "info.circle.fill")
+                    .foregroundColor(AppColors.accent)
+                Text(settings.selectedTranscriptionModel.approximateSize)
+                    .font(AppFonts.caption)
+                    .foregroundColor(AppColors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+            }
+        }
+        .padding()
+        .background(AppColors.cardBackground)
+        .cornerRadius(16)
     }
 }

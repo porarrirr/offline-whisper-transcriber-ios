@@ -91,6 +91,31 @@ class ModelManager: NSObject, ObservableObject {
         return String(localized: "Core ML encoder is not available for this model.")
     }
 
+    func currentTranscriptionReadinessError() -> String? {
+        switch currentTranscriptionModel.backend {
+        case .whisper:
+            return currentWhisperModelIsReady() ? nil : whisperReadinessMessage()
+        case .appleSpeech:
+            guard #available(iOS 26.0, *) else {
+                return AppleSpeechTranscriptionError.transcriptionUnavailable.localizedDescription
+            }
+            guard SpeechTranscriber.isAvailable else {
+                return AppleSpeechTranscriptionError.transcriptionUnavailable.localizedDescription
+            }
+            if isModelReady {
+                return nil
+            }
+            if let downloadError {
+                return downloadError
+            }
+            return String(localized: "Preparing speech model...")
+        }
+    }
+
+    func currentTranscriptionModelCanTranscribe() -> Bool {
+        currentTranscriptionReadinessError() == nil
+    }
+
     func currentWhisperModelIsReady() -> Bool {
         guard let size = currentTranscriptionModel.whisperModelSize else { return false }
         return whisperReadiness(for: size).modelExists

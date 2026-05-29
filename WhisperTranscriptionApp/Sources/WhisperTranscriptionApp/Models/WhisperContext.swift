@@ -7,10 +7,15 @@ struct TranscriptionResult {
     let language: String?
 }
 
-final class WhisperContext {
+private struct WhisperContextPointer: @unchecked Sendable {
+    let value: OpaquePointer
+}
+
+final class WhisperContext: @unchecked Sendable {
     private(set) var isModelLoaded = false
     private(set) var errorMessage: String?
 
+    private let workQueue = DispatchQueue(label: "com.porarrirr.whisper-context", qos: .userInitiated)
     private var whisperContext: OpaquePointer?
     private(set) var loadedModelPath: String?
     private(set) var loadedUseFlashAttention = false
@@ -37,7 +42,7 @@ final class WhisperContext {
         errorMessage = nil
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            workQueue.async { [weak self] in
                 guard let self else {
                     continuation.resume(throwing: WhisperModelServiceError.modelLoadFailed)
                     return
@@ -82,16 +87,17 @@ final class WhisperContext {
             }
             return nil
         }
+        let contextPointer = WhisperContextPointer(value: context)
         
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            workQueue.async { [weak self, contextPointer] in
                 guard let self = self else {
                     continuation.resume(returning: nil)
                     return
                 }
                 
                 let result = self.performTranscription(
-                    context: context,
+                    context: contextPointer.value,
                     audioPath: audioPath,
                     language: language,
                     translate: translate,
@@ -130,16 +136,17 @@ final class WhisperContext {
             AppLogger.error(WhisperContextError.emptyAudioFile.localizedDescription, context: "WhisperContext")
             return nil
         }
+        let contextPointer = WhisperContextPointer(value: context)
 
         return await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            workQueue.async { [weak self, contextPointer] in
                 guard let self = self else {
                     continuation.resume(returning: nil)
                     return
                 }
 
                 let result = self.runWhisper(
-                    context: context,
+                    context: contextPointer.value,
                     samples: samples,
                     language: language,
                     translate: translate,

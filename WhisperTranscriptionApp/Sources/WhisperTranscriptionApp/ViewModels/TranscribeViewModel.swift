@@ -9,6 +9,8 @@ class TranscribeViewModel: ObservableObject {
     @Published var transcriptionResult: String = ""
     @Published var transcriptionSegments: [TranscriptionSegment] = []
     @Published var transcriptionLanguage: String?
+    @Published var transcriptionTitle: String = ""
+    @Published var transcriptionDuration: Double = 0
     @Published var errorMessage: String?
     @Published var showResult = false
     @Published var transcriptionProgress: Double = 0
@@ -29,12 +31,18 @@ class TranscribeViewModel: ObservableObject {
     private var liveTask: Task<Void, Never>?
 
     func startRecording(recordingService: RecordingService) {
+        if let readinessError = modelManager.currentTranscriptionReadinessError() {
+            setError(readinessError)
+            return
+        }
         Task {
             await WhisperModelService.shared.releaseForRecording()
         }
         transcriptionResult = ""
         transcriptionSegments = []
         transcriptionLanguage = nil
+        transcriptionTitle = ""
+        transcriptionDuration = 0
         errorMessage = nil
         transcriptionProgress = 0
         recordingService.startRecording()
@@ -54,6 +62,10 @@ class TranscribeViewModel: ObservableObject {
 
     func startLiveTranscription(recordingService: RecordingService) {
         guard !isProcessing else { return }
+        if let readinessError = modelManager.currentTranscriptionReadinessError() {
+            setError(readinessError)
+            return
+        }
         Task {
             await WhisperModelService.shared.releaseForRecording()
         }
@@ -110,6 +122,13 @@ class TranscribeViewModel: ObservableObject {
     }
     
     func transcribeFile(url: URL, modelContext: ModelContext, cleanupAfterProcessing: Bool = false) {
+        if let readinessError = modelManager.currentTranscriptionReadinessError() {
+            setError(readinessError)
+            if cleanupAfterProcessing {
+                removeTemporaryInput(url: url)
+            }
+            return
+        }
         startTranscriptionTask {
             await self.transcribeAudio(
                 url: url,
@@ -166,6 +185,8 @@ class TranscribeViewModel: ObservableObject {
         transcriptionResult = ""
         transcriptionSegments = []
         transcriptionLanguage = nil
+        transcriptionTitle = ""
+        transcriptionDuration = 0
 
         isProcessing = true
         showResult = false
@@ -214,7 +235,6 @@ class TranscribeViewModel: ObservableObject {
             transcriptionResult = result.text
             transcriptionSegments = result.segments
             transcriptionLanguage = result.language
-            showResult = true
 
             let savedDuration = max(duration, result.processedDuration)
             let record = existingRecord ?? TranscriptionRecord(
@@ -233,6 +253,9 @@ class TranscribeViewModel: ObservableObject {
                 segments: result.segments,
                 language: result.language
             )
+            transcriptionTitle = record.displayTitle
+            transcriptionDuration = savedDuration
+            showResult = true
             do {
                 try modelContext.save()
             } catch {
@@ -362,6 +385,8 @@ class TranscribeViewModel: ObservableObject {
         transcriptionResult = ""
         transcriptionSegments = []
         transcriptionLanguage = nil
+        transcriptionTitle = ""
+        transcriptionDuration = 0
         showResult = false
         errorMessage = nil
         transcriptionProgress = 0

@@ -87,6 +87,9 @@ class AppSettings: ObservableObject {
         let defaults = UserDefaults.standard
         let appliedVersion = defaults.integer(forKey: defaultsMigrationVersionKey)
         guard appliedVersion < currentDefaultsMigrationVersion else { return }
+        let hadModelSelection = defaults.string(forKey: selectedTranscriptionModelKey) != nil
+            || defaults.string(forKey: legacySelectedModelSizeKey) != nil
+        let hadLanguageSelection = defaults.string(forKey: "selectedLanguage") != nil
 
         if appliedVersion < 1 {
             migrateDefaultsToVersion1(defaults: defaults)
@@ -98,10 +101,18 @@ class AppSettings: ObservableObject {
             migrateDefaultsToVersion3(defaults: defaults)
         }
         if appliedVersion < 4 {
-            migrateDefaultsToVersion4(defaults: defaults)
+            migrateDefaultsToVersion4(
+                defaults: defaults,
+                hadModelSelection: hadModelSelection,
+                hadLanguageSelection: hadLanguageSelection
+            )
         }
         if appliedVersion < 5 {
-            migrateDefaultsToVersion5(defaults: defaults)
+            migrateDefaultsToVersion5(
+                defaults: defaults,
+                hadModelSelection: hadModelSelection,
+                hadLanguageSelection: hadLanguageSelection
+            )
         }
 
         defaults.set(currentDefaultsMigrationVersion, forKey: defaultsMigrationVersionKey)
@@ -134,13 +145,31 @@ class AppSettings: ObservableObject {
         }
     }
 
-    private static func migrateDefaultsToVersion4(defaults: UserDefaults) {
-        defaults.set(preferredDefaultTranscriptionModel.storageKey, forKey: selectedTranscriptionModelKey)
-        defaults.set(defaultTranscriptionLanguage, forKey: "selectedLanguage")
+    private static func migrateDefaultsToVersion4(
+        defaults: UserDefaults,
+        hadModelSelection: Bool,
+        hadLanguageSelection: Bool
+    ) {
+        applyDefaultModelIfMissing(defaults: defaults, hadModelSelection: hadModelSelection)
+        applyDefaultLanguageIfMissing(defaults: defaults, hadLanguageSelection: hadLanguageSelection)
     }
 
-    private static func migrateDefaultsToVersion5(defaults: UserDefaults) {
+    private static func migrateDefaultsToVersion5(
+        defaults: UserDefaults,
+        hadModelSelection: Bool,
+        hadLanguageSelection: Bool
+    ) {
+        applyDefaultModelIfMissing(defaults: defaults, hadModelSelection: hadModelSelection)
+        applyDefaultLanguageIfMissing(defaults: defaults, hadLanguageSelection: hadLanguageSelection)
+    }
+
+    private static func applyDefaultModelIfMissing(defaults: UserDefaults, hadModelSelection: Bool) {
+        guard !hadModelSelection else { return }
         defaults.set(preferredDefaultTranscriptionModel.storageKey, forKey: selectedTranscriptionModelKey)
+    }
+
+    private static func applyDefaultLanguageIfMissing(defaults: UserDefaults, hadLanguageSelection: Bool) {
+        guard !hadLanguageSelection else { return }
         defaults.set(defaultTranscriptionLanguage, forKey: "selectedLanguage")
     }
 

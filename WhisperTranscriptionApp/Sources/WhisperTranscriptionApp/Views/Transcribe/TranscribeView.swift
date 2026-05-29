@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct TranscribeView: View {
     @StateObject private var viewModel = TranscribeViewModel()
+    @StateObject private var modelManager = ModelManager.shared
     @State private var showFileImporter = false
     @State private var selectedFileURL: URL?
     @State private var selectedVideoItem: PhotosPickerItem?
@@ -48,6 +49,15 @@ struct TranscribeView: View {
                             .padding(.top, 8)
                         }
 
+                        if let readinessError = modelReadinessError {
+                            ModelReadinessPanel(
+                                modelName: modelManager.currentTranscriptionModel.displayName,
+                                message: readinessError
+                            )
+                            .padding(.horizontal)
+                            .padding(.top, 8)
+                        }
+
                         VStack(spacing: 20) {
                             if recordingService.isRecording {
                                 WaveformView(audioLevel: recordingService.audioLevel)
@@ -84,7 +94,8 @@ struct TranscribeView: View {
                                     viewModel.startRecording(recordingService: recordingService)
                                 }
                             }
-                            .disabled(viewModel.isProcessing || recordingService.liveState == .preparing || recordingService.liveState == .finalizing)
+                            .disabled(recordingButtonDisabled)
+                            .opacity(recordingButtonDisabled ? 0.5 : 1)
                             
                             Text(recordingService.isRecording ? LocalizedStringKey("Tap to Stop") : LocalizedStringKey("Tap to Start Recording"))
                                 .font(AppFonts.callout)
@@ -98,7 +109,11 @@ struct TranscribeView: View {
                             .padding(.horizontal)
                         
                         Button(action: {
-                            showFileImporter = true
+                            if let modelReadinessError {
+                                viewModel.setError(modelReadinessError)
+                            } else {
+                                showFileImporter = true
+                            }
                         }) {
                             HStack {
                                 Image(systemName: "doc.text.fill")
@@ -126,8 +141,8 @@ struct TranscribeView: View {
                             .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
                         }
                         .padding(.horizontal)
-                        .disabled(recordingService.isRecording || viewModel.isProcessing)
-                        .opacity(recordingService.isRecording || viewModel.isProcessing ? 0.5 : 1)
+                        .disabled(inputSelectionDisabled)
+                        .opacity(inputSelectionDisabled ? 0.5 : 1)
 
                         PhotosPicker(
                             selection: $selectedVideoItem,
@@ -160,8 +175,8 @@ struct TranscribeView: View {
                             .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
                         }
                         .padding(.horizontal)
-                        .disabled(recordingService.isRecording || viewModel.isProcessing)
-                        .opacity(recordingService.isRecording || viewModel.isProcessing ? 0.5 : 1)
+                        .disabled(inputSelectionDisabled)
+                        .opacity(inputSelectionDisabled ? 0.5 : 1)
                         
                         if let error = displayedError {
                             HStack {
@@ -207,8 +222,8 @@ struct TranscribeView: View {
                                 .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
                             }
                             .padding(.horizontal)
-                            .disabled(viewModel.isProcessing)
-                            .opacity(viewModel.isProcessing ? 0.5 : 1)
+                            .disabled(viewModel.isProcessing || modelReadinessError != nil)
+                            .opacity(viewModel.isProcessing || modelReadinessError != nil ? 0.5 : 1)
                         }
                         
                         if viewModel.isProcessing {
@@ -230,8 +245,10 @@ struct TranscribeView: View {
         }
         .sheet(isPresented: $viewModel.showResult) {
             ResultView(
+                title: viewModel.transcriptionTitle,
                 text: viewModel.transcriptionResult,
                 segments: viewModel.transcriptionSegments,
+                duration: viewModel.transcriptionDuration,
                 language: viewModel.transcriptionLanguage
             ) {
                 viewModel.reset()
@@ -279,6 +296,25 @@ struct TranscribeView: View {
         viewModel.errorMessage ?? recordingService.liveMessage ?? recordingService.interruptionMessage ?? recordingService.errorMessage
     }
 
+    private var modelReadinessError: String? {
+        modelManager.currentTranscriptionReadinessError()
+    }
+
+    private var recordingButtonDisabled: Bool {
+        viewModel.isProcessing
+            || recordingService.isChangingRecordingState
+            || recordingService.liveState == .preparing
+            || recordingService.liveState == .finalizing
+            || (!recordingService.isRecording && modelReadinessError != nil)
+    }
+
+    private var inputSelectionDisabled: Bool {
+        recordingService.isRecording
+            || viewModel.isProcessing
+            || recordingService.isChangingRecordingState
+            || modelReadinessError != nil
+    }
+
     private var shouldShowLivePanel: Bool {
         recordingService.isLiveTranscriptionActive
             || !recordingService.liveFinalizedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -309,6 +345,10 @@ struct TranscribeView: View {
         }
 
         do {
+            if let modelReadinessError {
+                viewModel.setError(modelReadinessError)
+                return
+            }
             guard let pickedVideo = try await item.loadTransferable(type: PickedVideoFile.self) else {
                 viewModel.setError(String(localized: "Video selection error") + ": " + String(localized: "No video file was selected."))
                 return
@@ -321,6 +361,34 @@ struct TranscribeView: View {
         } catch {
             viewModel.setError(String(localized: "Video selection error") + ": \(error.localizedDescription)")
         }
+    }
+}
+
+private struct ModelReadinessPanel: View {
+    let modelName: String
+    let message: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.title3)
+                .foregroundColor(AppColors.warning)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(modelName)
+                    .font(AppFonts.headline)
+                    .foregroundColor(AppColors.textPrimary)
+                Text(message)
+                    .font(AppFonts.callout)
+                    .foregroundColor(AppColors.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding()
+        .background(AppColors.warning.opacity(0.12))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 

@@ -331,8 +331,10 @@ struct HistoryDetailView: View {
         }
         .sheet(isPresented: $transcribeViewModel.showResult) {
             ResultView(
+                title: transcribeViewModel.transcriptionTitle,
                 text: transcribeViewModel.transcriptionResult,
                 segments: transcribeViewModel.transcriptionSegments,
+                duration: transcribeViewModel.transcriptionDuration,
                 language: transcribeViewModel.transcriptionLanguage
             ) {
                 transcribeViewModel.reset()

@@ -19,12 +19,15 @@ final class RecordingService: ObservableObject {
     @Published var liveSegments: [TranscriptionSegment] = []
     @Published var liveRecordingURL: URL?
     @Published var liveMessage: String?
+    @Published var isStartingRecording = false
+    @Published var isStoppingRecording = false
 
     private let audioRecorder = AudioRecorder()
     private let settings = AppSettings.shared
     private var cancellables = Set<AnyCancellable>()
     private var liveService: AnyObject?
     private var liveTask: Task<Void, Never>?
+    private var recordingStartedAt: Date?
 
     var hasInterruptedRecording: Bool {
         interruptedRecordingURL != nil
@@ -32,6 +35,10 @@ final class RecordingService: ObservableObject {
 
     var isLiveTranscriptionActive: Bool {
         liveState.isActive
+    }
+
+    var isChangingRecordingState: Bool {
+        isStartingRecording || isStoppingRecording
     }
 
     var canStartLiveTranscription: Bool {
@@ -83,6 +90,9 @@ final class RecordingService: ObservableObject {
             .sink { [weak self] message in
                 guard let self else { return }
                 self.errorMessage = message
+                self.recordingStartedAt = nil
+                self.isStartingRecording = false
+                self.isStoppingRecording = false
                 UIApplication.shared.isIdleTimerDisabled = false
                 Task {
                     await RecordingLiveActivityManager.shared.endRecordingActivity()
@@ -92,27 +102,42 @@ final class RecordingService: ObservableObject {
     }
 
     func startRecording() {
+        guard !isRecording, !isChangingRecordingState else {
+            errorMessage = AudioRecorderError.stopInProgress.localizedDescription
+            return
+        }
+        isStartingRecording = true
         audioRecorder.requestPermission { [weak self] granted in
             guard let self else { return }
             if granted {
                 self.startRecordingWithPermission()
             } else {
                 self.errorMessage = String(localized: "Microphone permission is required")
+                self.isStartingRecording = false
             }
         }
     }
 
     func stopRecording() async throws -> URL {
+        guard !isStoppingRecording else {
+            throw AudioRecorderError.stopInProgress
+        }
+        isStoppingRecording = true
+        defer { isStoppingRecording = false }
         do {
             await stopLiveTranscription()
             let url = try await audioRecorder.stopRecording()
+            isRecording = false
             UIApplication.shared.isIdleTimerDisabled = false
             await RecordingLiveActivityManager.shared.endRecordingActivity()
+            recordingStartedAt = nil
             return url
         } catch {
             errorMessage = error.localizedDescription
+            isRecording = false
             UIApplication.shared.isIdleTimerDisabled = false
             await RecordingLiveActivityManager.shared.endRecordingActivity()
+            recordingStartedAt = nil
             throw error
         }
     }
@@ -131,7 +156,7 @@ final class RecordingService: ObservableObject {
         case .active:
             AppLogger.info("App became active while recording", context: "RecordingService")
             Task {
-                await RecordingLiveActivityManager.shared.startRecordingActivity()
+                await RecordingLiveActivityManager.shared.startRecordingActivity(startedAt: recordingStartedAt ?? Date())
             }
         case .inactive:
             AppLogger.info("App became inactive while recording; recording continues", context: "RecordingService")
@@ -139,7 +164,7 @@ final class RecordingService: ObservableObject {
             AppLogger.info("App entered background while recording; recording continues", context: "RecordingService")
             Task {
                 await cancelLiveTranscription(message: String(localized: "Live transcription stopped in the background. Recording continues and will be transcribed when stopped."))
-                await RecordingLiveActivityManager.shared.startRecordingActivity()
+                await RecordingLiveActivityManager.shared.startRecordingActivity(startedAt: recordingStartedAt ?? Date())
             }
         @unknown default:
             AppLogger.info("Unknown scene phase while recording", context: "RecordingService")
@@ -216,17 +241,22 @@ final class RecordingService: ObservableObject {
     }
 
     private func startRecordingWithPermission() {
+        defer { isStartingRecording = false }
         do {
             try audioRecorder.startRecording()
+            let startedAt = Date()
+            recordingStartedAt = startedAt
+            isRecording = true
             errorMessage = nil
             interruptionMessage = nil
             liveMessage = nil
             UIApplication.shared.isIdleTimerDisabled = settings.keepScreenOn
             Task {
-                await RecordingLiveActivityManager.shared.startRecordingActivity()
+                await RecordingLiveActivityManager.shared.startRecordingActivity(startedAt: startedAt)
             }
         } catch {
             errorMessage = error.localizedDescription
+            recordingStartedAt = nil
             UIApplication.shared.isIdleTimerDisabled = false
         }
     }

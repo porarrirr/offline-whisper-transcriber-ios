@@ -1,5 +1,6 @@
 import Foundation
 import AppIntents
+import Speech
 import SwiftData
 import UniformTypeIdentifiers
 
@@ -65,10 +66,6 @@ struct TranscribeAudioIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let modelManager = ModelManager.shared
         let settings = AppSettings.shared
-        
-        guard modelManager.isModelReady else {
-            throw IntentError.modelNotReady
-        }
 
         guard let audioFile else {
             throw IntentError.noAudioFile
@@ -84,16 +81,10 @@ struct TranscribeAudioIntent: AppIntent {
                     languageOverride: language
                 )
             case .appleSpeech(let locale):
-                guard #available(iOS 26.0, *) else {
-                    throw IntentError.transcriptionFailed
-                }
-                let service = AppleSpeechTranscriptionService()
-                let result = try await service.transcribe(
+                return try await transcribeWithAppleSpeechIntent(
                     inputURL: audioURL,
-                    locale: locale,
-                    includeTimestamps: false
-                ) { _ in }
-                return result.text
+                    locale: locale
+                )
             }
         }
 
@@ -211,6 +202,36 @@ private func transcribeWithWhisperIntent(
     }
 }
 
+@MainActor
+@available(iOS 18.0, *)
+private func transcribeWithAppleSpeechIntent(inputURL: URL, locale: AppleSpeechLocale) async throws -> String {
+    guard #available(iOS 26.0, *) else {
+        throw IntentError.speechUnavailable
+    }
+    guard SpeechTranscriber.isAvailable else {
+        throw IntentError.speechUnavailable
+    }
+
+    do {
+        let result = try await AppleSpeechTranscriptionService().transcribe(
+            inputURL: inputURL,
+            locale: locale,
+            includeTimestamps: false
+        ) { _ in }
+        return result.text
+    } catch AppleSpeechTranscriptionError.localeNotSupported {
+        throw IntentError.speechLocaleNotSupported
+    } catch AppleSpeechTranscriptionError.transcriptionUnavailable {
+        throw IntentError.speechUnavailable
+    } catch AppleSpeechTranscriptionError.assetsNotReady {
+        throw IntentError.modelNotReady
+    } catch is AudioConverter.AudioConverterError {
+        throw IntentError.conversionFailed
+    } catch {
+        throw IntentError.transcriptionFailed
+    }
+}
+
 enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case modelNotReady
     case modelLoadFailed
@@ -219,6 +240,8 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case transcriptionFailed
     case coreMLEncoderNotReady
     case vadModelNotReady
+    case speechUnavailable
+    case speechLocaleNotSupported
     
     var localizedStringResource: LocalizedStringResource {
         switch self {
@@ -236,6 +259,10 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
             return "Core ML encoder is required. Please open the app and download the additional encoder model."
         case .vadModelNotReady:
             return "VAD model is not ready. Please open the app and download the VAD model from settings."
+        case .speechUnavailable:
+            return "Speech transcription is not available on this device."
+        case .speechLocaleNotSupported:
+            return "This language is not supported by on-device speech recognition."
         }
     }
 }

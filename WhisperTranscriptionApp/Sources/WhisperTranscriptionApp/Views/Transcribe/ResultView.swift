@@ -2,8 +2,10 @@ import SwiftUI
 import UIKit
 
 struct ResultView: View {
+    let title: String
     let text: String
     let segments: [TranscriptionSegment]
+    let duration: Double
     let language: String?
     let onDismiss: () -> Void
     
@@ -14,9 +16,18 @@ struct ResultView: View {
     @State private var shareItems: [Any] = []
     
     @MainActor
-    init(text: String, segments: [TranscriptionSegment], language: String?, onDismiss: @escaping () -> Void) {
+    init(
+        title: String = String(localized: "Export"),
+        text: String,
+        segments: [TranscriptionSegment],
+        duration: Double = 0,
+        language: String?,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.title = title
         self.text = text
         self.segments = segments
+        self.duration = duration
         self.language = language
         self.onDismiss = onDismiss
         _showTimestampView = State(initialValue: AppSettings.shared.includeTimestamps && !segments.isEmpty)
@@ -100,7 +111,13 @@ struct ResultView: View {
                 ShareSheet(activityItems: shareItems)
             }
             .sheet(isPresented: $showExportSheet) {
-                ExportSheetView(text: text, segments: segments) { url in
+                ExportSheetView(
+                    title: title,
+                    text: text,
+                    segments: segments,
+                    duration: duration,
+                    language: language
+                ) { url in
                     if let url = url {
                         shareItems = [url]
                         showShareSheet = true
@@ -112,8 +129,11 @@ struct ResultView: View {
 }
 
 struct ExportSheetView: View {
+    let title: String
     let text: String
     let segments: [TranscriptionSegment]
+    let duration: Double
+    let language: String?
     let onExport: (URL?) -> Void
     
     @Environment(\.dismiss) private var dismiss
@@ -125,11 +145,11 @@ struct ExportSheetView: View {
                     ForEach(ExportFormat.allCases) { format in
                         Button(action: {
                             let url = TranscriptionExporter.export(
-                                title: "Export",
+                                title: title.isEmpty ? String(localized: "Export") : title,
                                 text: text,
-                                duration: 0,
+                                duration: duration,
                                 segments: segments,
-                                language: nil,
+                                language: language,
                                 format: format
                             )
                             dismiss()

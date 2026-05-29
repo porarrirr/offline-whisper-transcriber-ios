@@ -20,7 +20,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     private var recordingURL: URL?
     private var inputFormat: AVAudioFormat?
     private var recordedFrames: AVAudioFramePosition = 0
-    private var stopInProgress = false
+    private var recordingState: RecordingState = .idle
     private var audioBufferHandler: AudioBufferHandler?
 
     override init() {
@@ -60,51 +60,59 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     func startRecording() throws {
         stateLock.lock()
-        let busy = isRecording || stopInProgress
+        let busy = recordingState != .idle || audioEngine.isRunning
+        if !busy {
+            recordingState = .starting
+        }
         stateLock.unlock()
         guard !busy else {
             throw AudioRecorderError.stopInProgress
         }
 
-        try setupSession()
-        let url = try makeRecordingURL()
-        let inputNode = audioEngine.inputNode
-        let format = inputNode.outputFormat(forBus: 0)
-        guard format.sampleRate > 0, format.channelCount > 0 else {
-            throw AudioRecorderError.recordingStartFailed
-        }
+        do {
+            try setupSession()
+            let url = try makeRecordingURL()
+            let inputNode = audioEngine.inputNode
+            let format = inputNode.outputFormat(forBus: 0)
+            guard format.sampleRate > 0, format.channelCount > 0 else {
+                throw AudioRecorderError.recordingStartFailed
+            }
 
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: format.sampleRate,
-            AVNumberOfChannelsKey: Int(format.channelCount),
-            AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue
-        ]
-        let file = try AVAudioFile(forWriting: url, settings: settings)
+            let settings: [String: Any] = [
+                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                AVSampleRateKey: format.sampleRate,
+                AVNumberOfChannelsKey: Int(format.channelCount),
+                AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue
+            ]
+            let file = try AVAudioFile(forWriting: url, settings: settings)
 
-        inputNode.removeTap(onBus: 0)
-        inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, time in
-            self?.handleAudioBuffer(buffer, time: time, format: format)
-        }
+            inputNode.removeTap(onBus: 0)
+            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, time in
+                self?.handleAudioBuffer(buffer, time: time, format: format)
+            }
 
-        audioEngine.prepare()
-        try audioEngine.start()
+            audioEngine.prepare()
+            try audioEngine.start()
 
-        stateLock.lock()
-        recordingFile = file
-        recordingURL = url
-        inputFormat = format
-        recordedFrames = 0
-        stopInProgress = false
-        stateLock.unlock()
+            stateLock.lock()
+            recordingFile = file
+            recordingURL = url
+            inputFormat = format
+            recordedFrames = 0
+            recordingState = .recording
+            stateLock.unlock()
 
-        DispatchQueue.main.async {
-            self.recordingError = nil
-            self.interruptionMessage = nil
-            self.interruptedRecordingURL = nil
-            self.currentTime = 0
-            self.audioLevel = 0
-            self.isRecording = true
+            DispatchQueue.main.async {
+                self.recordingError = nil
+                self.interruptionMessage = nil
+                self.interruptedRecordingURL = nil
+                self.currentTime = 0
+                self.audioLevel = 0
+                self.isRecording = true
+            }
+        } catch {
+            cleanupFailedStart()
+            throw error
         }
     }
 
@@ -116,8 +124,12 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private func recordingURLForStop() throws -> URL {
         stateLock.lock()
-        if let activeURL = recordingURL, audioEngine.isRunning {
-            stopInProgress = true
+        if recordingState == .stopping {
+            stateLock.unlock()
+            throw AudioRecorderError.stopInProgress
+        }
+        if let activeURL = recordingURL, recordingState == .recording, audioEngine.isRunning {
+            recordingState = .stopping
             stateLock.unlock()
             return activeURL
         } else if let interruptedRecordingURL {
@@ -183,7 +195,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         recordingURL = nil
         inputFormat = nil
         recordedFrames = 0
-        stopInProgress = false
+        recordingState = .idle
         stateLock.unlock()
 
         DispatchQueue.main.async {
@@ -202,6 +214,22 @@ final class AudioRecorder: NSObject, ObservableObject {
             self.recordingError = message
         }
         finishActiveRecording()
+    }
+
+    private func cleanupFailedStart() {
+        setAudioBufferHandler(nil)
+        audioEngine.inputNode.removeTap(onBus: 0)
+        if audioEngine.isRunning {
+            audioEngine.stop()
+        }
+        stateLock.lock()
+        recordingFile = nil
+        recordingURL = nil
+        inputFormat = nil
+        recordedFrames = 0
+        recordingState = .idle
+        stateLock.unlock()
+        deactivateSession()
     }
 
     private func validateRecordingFile(at url: URL) throws -> URL {
@@ -278,7 +306,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     private func handleRecordingInterruptionBegan() {
         stateLock.lock()
         let url = recordingURL
-        let wasRecording = isRecording || audioEngine.isRunning
+        let wasRecording = recordingState == .recording || audioEngine.isRunning
         stateLock.unlock()
         guard let url, wasRecording else { return }
 
@@ -353,4 +381,11 @@ enum AudioRecorderError: LocalizedError {
             return message
         }
     }
+}
+
+private enum RecordingState {
+    case idle
+    case starting
+    case recording
+    case stopping
 }
