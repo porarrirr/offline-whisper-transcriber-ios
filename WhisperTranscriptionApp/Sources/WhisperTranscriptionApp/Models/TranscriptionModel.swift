@@ -1,4 +1,5 @@
 import Foundation
+import Speech
 
 enum WhisperModelSize: String, CaseIterable, Identifiable {
     case tiny = "tiny"
@@ -225,6 +226,9 @@ enum TranscriptionModel: Hashable, Identifiable, Equatable {
     static var pickerOptions: [TranscriptionModel] {
         let qualityWhisperOption = TranscriptionModel.whisper(.largeV3TurboQ5_0)
         guard #available(iOS 26.0, *) else {
+            return [.whisper(.tiny), qualityWhisperOption]
+        }
+        guard SpeechTranscriber.isAvailable else {
             return [.whisper(.tiny), qualityWhisperOption]
         }
         return AppleSpeechLocale.pickerCases.map { .appleSpeech($0) } + [qualityWhisperOption]

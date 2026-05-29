@@ -15,13 +15,20 @@ final class AppUpdateChecker {
 
     private let session: URLSession
     private let bundle: Bundle
+    private let defaults: UserDefaults
+    private static let lastCheckDateKey = "AppUpdateChecker.lastCheckDate"
+    private static let minimumCheckInterval: TimeInterval = 24 * 60 * 60
 
-    init(session: URLSession = .shared, bundle: Bundle = .main) {
+    init(session: URLSession = .shared, bundle: Bundle = .main, defaults: UserDefaults = .standard) {
         self.session = session
         self.bundle = bundle
+        self.defaults = defaults
     }
 
     func availableUpdate() async throws -> AppUpdateInfo? {
+        guard shouldCheckNow() else { return nil }
+        defer { recordCheckAttempt() }
+
         let bundleID = try currentBundleID()
         let currentVersion = try currentAppVersion()
         let appStoreApp = try await fetchAppStoreApp(bundleID: bundleID)
@@ -117,6 +124,17 @@ final class AppUpdateChecker {
         }
 
         return numericComponents
+    }
+
+    private func shouldCheckNow() -> Bool {
+        guard let lastCheckDate = defaults.object(forKey: Self.lastCheckDateKey) as? Date else {
+            return true
+        }
+        return Date().timeIntervalSince(lastCheckDate) >= Self.minimumCheckInterval
+    }
+
+    private func recordCheckAttempt() {
+        defaults.set(Date(), forKey: Self.lastCheckDateKey)
     }
 }
 

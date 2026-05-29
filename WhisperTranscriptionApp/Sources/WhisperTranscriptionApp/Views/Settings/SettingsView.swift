@@ -38,11 +38,12 @@ struct SettingsView: View {
                 if modelManager.isDownloading {
                     ProgressView(value: modelManager.downloadProgress)
                         .tint(AppColors.accent)
-                    if settings.usesWhisperBackend {
-                        Button(action: { modelManager.cancelDownload() }) {
-                            Label("Cancel Download", systemImage: "xmark.circle.fill")
-                                .foregroundColor(.red)
-                        }
+                    Text(LocalizedStringKey(modelManager.downloadStatusText))
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    Button(action: { modelManager.cancelDownload() }) {
+                        Label("Cancel Download", systemImage: "xmark.circle.fill")
+                            .foregroundColor(.red)
                     }
                 } else if !modelManager.isModelReady && settings.usesWhisperBackend {
                     Button(action: { modelManager.downloadModel() }) {
@@ -50,6 +51,10 @@ struct SettingsView: View {
                             "Download \(settings.selectedTranscriptionModel.approximateSize)",
                             systemImage: "arrow.down.circle.fill"
                         )
+                    }
+                } else if !modelManager.isModelReady && settings.usesAppleSpeechBackend {
+                    Button(action: { modelManager.downloadModel() }) {
+                        Label("Prepare Speech Model", systemImage: "arrow.down.circle.fill")
                     }
                 }
 

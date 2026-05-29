@@ -75,9 +75,8 @@ struct HistoryListView: View {
                     }
                 }
                 .onDelete { indexSet in
-                    for index in indexSet {
-                        viewModel.deleteRecord(viewModel.records[index])
-                    }
+                    let recordsToDelete = indexSet.map { viewModel.records[$0] }
+                    viewModel.deleteRecords(recordsToDelete)
                 }
             }
         }

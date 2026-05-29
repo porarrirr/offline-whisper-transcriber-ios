@@ -90,6 +90,7 @@ final class LiveTranscriptionService {
     private let lifecycleLock = NSLock()
     private var isStopping = false
     private var needsFinalTranscriptionRecovery = false
+    private let processingQueue = DispatchQueue(label: "com.porarrirr.live-transcription-processing", qos: .userInitiated)
 
     init(locale: AppleSpeechLocale, onSnapshot: @escaping SnapshotHandler) {
         self.locale = locale
@@ -214,12 +215,45 @@ final class LiveTranscriptionService {
         updateAudioLevel(from: buffer)
 
         do {
-            if let converted = try convert(buffer) {
-                inputContinuation?.yield(AnalyzerInput(buffer: converted))
+            let copiedBuffer = try copyBuffer(buffer)
+            processingQueue.async { [weak self, copiedBuffer] in
+                guard let self, !self.isStoppingNow() else { return }
+                do {
+                    if let converted = try self.convert(copiedBuffer), !self.isStoppingNow() {
+                        self.inputContinuation?.yield(AnalyzerInput(buffer: converted))
+                    }
+                } catch {
+                    self.reportRecoverableTranscriptionError(error)
+                }
             }
         } catch {
             reportRecoverableTranscriptionError(error)
         }
+    }
+
+    private func copyBuffer(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+        guard let copiedBuffer = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else {
+            throw LiveTranscriptionError.audioFormatUnavailable
+        }
+        copiedBuffer.frameLength = buffer.frameLength
+
+        let sourceBuffers = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+        let destinationBuffers = UnsafeMutableAudioBufferListPointer(copiedBuffer.mutableAudioBufferList)
+        guard sourceBuffers.count == destinationBuffers.count else {
+            throw LiveTranscriptionError.audioFormatUnavailable
+        }
+
+        for index in 0..<sourceBuffers.count {
+            guard let source = sourceBuffers[index].mData,
+                  let destination = destinationBuffers[index].mData else {
+                continue
+            }
+            let byteCount = Int(sourceBuffers[index].mDataByteSize)
+            memcpy(destination, source, byteCount)
+            destinationBuffers[index].mDataByteSize = sourceBuffers[index].mDataByteSize
+        }
+
+        return copiedBuffer
     }
 
     private func convert(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer? {

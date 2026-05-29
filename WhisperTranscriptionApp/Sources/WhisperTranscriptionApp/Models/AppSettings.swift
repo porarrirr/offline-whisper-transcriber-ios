@@ -186,7 +186,7 @@ class AppSettings: ObservableObject {
     }
 
     static var preferredDefaultTranscriptionModel: TranscriptionModel {
-        if #available(iOS 26.0, *) {
+        if TranscriptionModel.pickerOptions.contains(.appleSpeech(.jaJP)) {
             return .appleSpeech(.jaJP)
         }
         return .whisper(.tiny)

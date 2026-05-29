@@ -5,7 +5,7 @@ struct TranscriptionCard: View {
     let segments: [TranscriptionSegment]
     let showTimestamps: Bool
     let isLoading: Bool
-    @State private var textChunks: [TranscriptionTextChunk]
+    @State private var textChunks: [TranscriptionTextChunk] = []
 
     init(
         text: String,
@@ -17,7 +17,6 @@ struct TranscriptionCard: View {
         self.segments = segments
         self.showTimestamps = showTimestamps
         self.isLoading = isLoading
-        _textChunks = State(initialValue: TranscriptionTextChunk.chunks(from: text))
     }
     
     var body: some View {
@@ -58,6 +57,10 @@ struct TranscriptionCard: View {
                             TranscriptionSegmentRow(segment: segment)
                         }
                     }
+                } else if !text.isEmpty && textChunks.isEmpty {
+                    ProgressView()
+                        .tint(AppColors.accent)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(textChunks) { chunk in
@@ -72,13 +75,26 @@ struct TranscriptionCard: View {
                 }
             }
         }
-        .onChange(of: text) { _, newValue in
-            textChunks = TranscriptionTextChunk.chunks(from: newValue)
+        .task(id: text) {
+            await updateTextChunks(for: text)
         }
         .padding()
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
+    }
+
+    @MainActor
+    private func updateTextChunks(for text: String) async {
+        guard !text.isEmpty else {
+            textChunks = []
+            return
+        }
+        let chunks = await Task.detached(priority: .userInitiated) {
+            TranscriptionTextChunk.chunks(from: text)
+        }.value
+        guard !Task.isCancelled else { return }
+        textChunks = chunks
     }
 }
 
@@ -102,7 +118,7 @@ private struct TranscriptionSegmentRow: View {
     }
 }
 
-private struct TranscriptionTextChunk: Identifiable {
+private struct TranscriptionTextChunk: Identifiable, Sendable {
     let id: Int
     let text: String
 

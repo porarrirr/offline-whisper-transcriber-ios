@@ -67,12 +67,16 @@ class HistoryViewModel: ObservableObject {
     }
     
     func deleteRecord(_ record: TranscriptionRecord) {
+        deleteRecords([record])
+    }
+
+    func deleteRecords(_ recordsToDelete: [TranscriptionRecord]) {
         guard let modelContext = modelContext else { return }
-        let audioFilePath = record.audioFilePath
-        modelContext.delete(record)
+        let audioFilePaths = recordsToDelete.compactMap(\.audioFilePath)
+        recordsToDelete.forEach { modelContext.delete($0) }
         do {
             try modelContext.save()
-            deleteRecordingFileIfNeeded(at: audioFilePath)
+            audioFilePaths.forEach { deleteRecordingFileIfNeeded(at: $0) }
         } catch {
             setError(String(localized: "Failed to delete history") + ": \(error.localizedDescription)")
         }

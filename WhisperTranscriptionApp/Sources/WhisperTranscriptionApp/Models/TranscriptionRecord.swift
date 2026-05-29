@@ -70,11 +70,7 @@ class TranscriptionRecord: Identifiable {
     }
     
     var formattedDate: String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: createdAt)
+        Self.displayDateFormatter.string(from: createdAt)
     }
     
     var displayTitle: String {
@@ -115,11 +111,7 @@ class TranscriptionRecord: Identifiable {
     }
 
     static func defaultTitle(for date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.locale = Locale.current
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: date)
+        displayDateFormatter.string(from: date)
     }
 
     static func normalizedTags(from input: String) -> [String] {
@@ -148,4 +140,12 @@ class TranscriptionRecord: Identifiable {
         }
         return String(data: data, encoding: .utf8)
     }
+
+    private static let displayDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
 }

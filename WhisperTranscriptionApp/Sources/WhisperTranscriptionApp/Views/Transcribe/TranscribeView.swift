@@ -52,7 +52,9 @@ struct TranscribeView: View {
                         if let readinessError = modelReadinessError {
                             ModelReadinessPanel(
                                 modelName: modelManager.currentTranscriptionModel.displayName,
-                                message: readinessError
+                                message: readinessError,
+                                actionTitle: modelReadinessActionTitle,
+                                onAction: modelReadinessAction
                             )
                             .padding(.horizontal)
                             .padding(.top, 8)
@@ -300,6 +302,18 @@ struct TranscribeView: View {
         modelManager.currentTranscriptionReadinessError()
     }
 
+    private var modelReadinessActionTitle: LocalizedStringKey? {
+        guard modelManager.usesAppleSpeechBackend, !modelManager.isDownloading else { return nil }
+        return "Prepare Speech Model"
+    }
+
+    private var modelReadinessAction: (() -> Void)? {
+        guard modelReadinessActionTitle != nil else { return nil }
+        return {
+            modelManager.downloadModel()
+        }
+    }
+
     private var recordingButtonDisabled: Bool {
         viewModel.isProcessing
             || recordingService.isChangingRecordingState
@@ -367,24 +381,36 @@ struct TranscribeView: View {
 private struct ModelReadinessPanel: View {
     let modelName: String
     let message: String
+    let actionTitle: LocalizedStringKey?
+    let onAction: (() -> Void)?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.title3)
-                .foregroundColor(AppColors.warning)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.title3)
+                    .foregroundColor(AppColors.warning)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(modelName)
-                    .font(AppFonts.headline)
-                    .foregroundColor(AppColors.textPrimary)
-                Text(message)
-                    .font(AppFonts.callout)
-                    .foregroundColor(AppColors.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(modelName)
+                        .font(AppFonts.headline)
+                        .foregroundColor(AppColors.textPrimary)
+                    Text(message)
+                        .font(AppFonts.callout)
+                        .foregroundColor(AppColors.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                Spacer(minLength: 0)
             }
 
-            Spacer(minLength: 0)
+            if let actionTitle, let onAction {
+                Button(action: onAction) {
+                    Label(actionTitle, systemImage: "arrow.down.circle.fill")
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
         }
         .padding()
         .background(AppColors.warning.opacity(0.12))

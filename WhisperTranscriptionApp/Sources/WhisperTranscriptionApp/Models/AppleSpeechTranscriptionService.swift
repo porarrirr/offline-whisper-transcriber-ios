@@ -128,18 +128,27 @@ struct AppleSpeechTranscriptionService {
 
         let analyzer = SpeechAnalyzer(modules: [transcriber])
         do {
-            try await analyzer.prepareToAnalyze(in: audioFile.processingFormat)
-            AppLogger.info(
-                "Apple SpeechTranscriber analyzer started: audio=\(preparedAudio.url.lastPathComponent), format=\(Self.formatDescription(audioFile.processingFormat))",
-                context: "AppleSpeechTranscriptionService"
-            )
-            await MainActor.run { onProgress(0.5) }
+            try await withTaskCancellationHandler {
+                try Task.checkCancellation()
+                try await analyzer.prepareToAnalyze(in: audioFile.processingFormat)
+                AppLogger.info(
+                    "Apple SpeechTranscriber analyzer started: audio=\(preparedAudio.url.lastPathComponent), format=\(Self.formatDescription(audioFile.processingFormat))",
+                    context: "AppleSpeechTranscriptionService"
+                )
+                await MainActor.run { onProgress(0.5) }
 
-            let lastSampleTime = try await analyzer.analyzeSequence(from: audioFile)
-            if let lastSampleTime {
-                try await analyzer.finalizeAndFinish(through: lastSampleTime)
-            } else {
-                await analyzer.cancelAndFinishNow()
+                let lastSampleTime = try await analyzer.analyzeSequence(from: audioFile)
+                try Task.checkCancellation()
+                if let lastSampleTime {
+                    try await analyzer.finalizeAndFinish(through: lastSampleTime)
+                } else {
+                    await analyzer.cancelAndFinishNow()
+                }
+            } onCancel: {
+                resultsTask.cancel()
+                Task {
+                    await analyzer.cancelAndFinishNow()
+                }
             }
             AppLogger.info(
                 "Apple SpeechTranscriber analyzer finished: audio=\(preparedAudio.url.lastPathComponent)",
@@ -151,6 +160,7 @@ struct AppleSpeechTranscriptionService {
             throw error
         }
 
+        try Task.checkCancellation()
         let collected = try await resultsTask.value
         await MainActor.run { onProgress(1) }
 
