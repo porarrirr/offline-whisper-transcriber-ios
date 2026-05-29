@@ -46,9 +46,7 @@ actor WhisperModelService {
         Task { await publishRuntimeSnapshot(isLoadingModel: false) }
 
         warmupTask?.cancel()
-        warmupTask = Task { [modelPath, useFlashAttention] in
-            await self.scheduleWarmup(modelPath: modelPath, useFlashAttention: useFlashAttention, generation: generation)
-        }
+        warmupTask = nil
 
         probeTask?.cancel()
         probeTask = Task {
@@ -143,17 +141,12 @@ actor WhisperModelService {
         probeTask?.cancel()
         let cancelledWarmupTask = warmupTask
         let cancelledProbeTask = probeTask
-        let cancelledLoadTask = cancelInFlightLoad()
+        _ = cancelInFlightLoad()
         warmupTask = nil
         probeTask = nil
 
         await cancelledWarmupTask?.value
         await cancelledProbeTask?.value
-        do {
-            try await cancelledLoadTask?.value
-        } catch {
-            AppLogger.info("Cancelled Whisper model load before recording start", context: "WhisperModelService")
-        }
 
         context.unloadModel()
         await publishRuntimeSnapshot(isLoadingModel: false)

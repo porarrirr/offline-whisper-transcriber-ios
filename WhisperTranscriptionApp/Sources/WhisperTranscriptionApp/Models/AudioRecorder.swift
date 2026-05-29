@@ -74,7 +74,7 @@ final class AudioRecorder: NSObject, ObservableObject {
             try setupSession()
             let url = try makeRecordingURL()
             let inputNode = audioEngine.inputNode
-            let format = try await waitForValidInputFormat(on: inputNode)
+            let format = try await waitForStableInputTapFormat(on: inputNode)
 
             let settings: [String: Any] = [
                 AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
@@ -115,6 +115,11 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private func beginStartingState() throws {
         stateLock.lock()
+        if recordingState == .starting, !audioEngine.isRunning, recordingURL == nil {
+            AppLogger.info("Recovering stale recording start state before retry", context: "AudioRecorder")
+            recordingState = .idle
+        }
+
         let busy = recordingState != .idle || audioEngine.isRunning
         if !busy {
             recordingState = .starting
@@ -147,20 +152,41 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
-    private func waitForValidInputFormat(on inputNode: AVAudioInputNode) async throws -> AVAudioFormat {
-        let maxAttempts = 12
+    private func waitForStableInputTapFormat(on inputNode: AVAudioInputNode) async throws -> AVAudioFormat {
+        let maxAttempts = 16
         let retryDelayNanoseconds: UInt64 = 50_000_000
+        var previousFormat: AVAudioFormat?
+        var stableReadCount = 0
 
         for attempt in 1...maxAttempts {
+            let session = AVAudioSession.sharedInstance()
             let format = inputNode.outputFormat(forBus: 0)
-            if format.sampleRate > 0, format.channelCount > 0 {
-                if attempt > 1 {
+            if isUsableInputTapFormat(format, session: session) {
+                if let previousFormat, sameAudioHardwareShape(previousFormat, format) {
+                    stableReadCount += 1
+                } else {
+                    stableReadCount = 1
+                    previousFormat = format
+                }
+
+                if stableReadCount >= 2 {
+                    if attempt > 2 {
+                        AppLogger.info(
+                            "Audio input tap format stabilized after session activation: sampleRate=\(format.sampleRate), channels=\(format.channelCount), attempts=\(attempt)",
+                            context: "AudioRecorder"
+                        )
+                    }
+                    return format
+                }
+            } else {
+                if attempt == 1 {
                     AppLogger.info(
-                        "Audio input format became available after session activation: sampleRate=\(format.sampleRate), channels=\(format.channelCount), attempts=\(attempt)",
+                        "Waiting for audio input tap format: outputSampleRate=\(format.sampleRate), outputChannels=\(format.channelCount), sessionSampleRate=\(session.sampleRate)",
                         context: "AudioRecorder"
                     )
                 }
-                return format
+                stableReadCount = 0
+                previousFormat = nil
             }
 
             if attempt < maxAttempts {
@@ -168,12 +194,33 @@ final class AudioRecorder: NSObject, ObservableObject {
             }
         }
 
-        let finalFormat = inputNode.outputFormat(forBus: 0)
+        let finalInputFormat = inputNode.inputFormat(forBus: 0)
+        let finalOutputFormat = inputNode.outputFormat(forBus: 0)
+        let session = AVAudioSession.sharedInstance()
+        let route = currentRouteDescription(session: session)
         AppLogger.error(
-            "Audio input format unavailable after session activation: sampleRate=\(finalFormat.sampleRate), channels=\(finalFormat.channelCount)",
+            "Audio input tap format did not stabilize after session activation: inputSampleRate=\(finalInputFormat.sampleRate), inputChannels=\(finalInputFormat.channelCount), outputSampleRate=\(finalOutputFormat.sampleRate), outputChannels=\(finalOutputFormat.channelCount), sessionSampleRate=\(session.sampleRate), preferredSampleRate=\(session.preferredSampleRate), inputs=[\(route.inputs)], outputs=[\(route.outputs)]",
             context: "AudioRecorder"
         )
-        throw AudioRecorderError.recordingStartFailed("input format unavailable after session activation")
+        throw AudioRecorderError.recordingStartFailed("input tap format did not stabilize after session activation")
+    }
+
+    private func isUsableInputTapFormat(_ format: AVAudioFormat, session: AVAudioSession) -> Bool {
+        guard format.sampleRate > 0, format.channelCount > 0 else {
+            return false
+        }
+
+        let sessionSampleRate = session.sampleRate
+        guard sessionSampleRate > 0 else {
+            return false
+        }
+
+        return abs(format.sampleRate - sessionSampleRate) < 1
+    }
+
+    private func sameAudioHardwareShape(_ lhs: AVAudioFormat, _ rhs: AVAudioFormat) -> Bool {
+        abs(lhs.sampleRate - rhs.sampleRate) < 1
+            && lhs.channelCount == rhs.channelCount
     }
 
     func stopRecording() async throws -> URL {
@@ -222,6 +269,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         try performAudioSessionStep("activate session") {
             try session.setActive(true)
         }
+        try selectBluetoothHFPInputIfAvailable(session)
         logCurrentAudioRoute(session: session, event: "Recording audio session activated")
     }
 
@@ -236,6 +284,16 @@ final class AudioRecorder: NSObject, ObservableObject {
         session.currentRoute.inputs.contains { $0.portType == .bluetoothHFP }
             || session.currentRoute.outputs.contains { $0.portType == .bluetoothHFP }
             || (session.availableInputs?.contains { $0.portType == .bluetoothHFP } ?? false)
+    }
+
+    private func selectBluetoothHFPInputIfAvailable(_ session: AVAudioSession) throws {
+        guard let bluetoothInput = session.availableInputs?.first(where: { $0.portType == .bluetoothHFP }) else {
+            return
+        }
+
+        try performAudioSessionStep("set Bluetooth HFP preferred input \(bluetoothInput.portName)") {
+            try session.setPreferredInput(bluetoothInput)
+        }
     }
 
     private func performAudioSessionStep(_ stage: String, operation: () throws -> Void) throws {
@@ -428,10 +486,9 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     private func logCurrentAudioRoute(session: AVAudioSession, event: String) {
-        let inputs = session.currentRoute.inputs.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ", ")
-        let outputs = session.currentRoute.outputs.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ", ")
+        let route = currentRouteDescription(session: session)
         AppLogger.info(
-            "\(event): sampleRate=\(session.sampleRate), preferredSampleRate=\(session.preferredSampleRate), inputs=[\(inputs)], outputs=[\(outputs)]",
+            "\(event): sampleRate=\(session.sampleRate), preferredSampleRate=\(session.preferredSampleRate), inputs=[\(route.inputs)], outputs=[\(route.outputs)]",
             context: "AudioRecorder"
         )
 
@@ -441,6 +498,12 @@ final class AudioRecorder: NSObject, ObservableObject {
                 context: "AudioRecorder"
             )
         }
+    }
+
+    private func currentRouteDescription(session: AVAudioSession) -> (inputs: String, outputs: String) {
+        let inputs = session.currentRoute.inputs.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ", ")
+        let outputs = session.currentRoute.outputs.map { "\($0.portName)(\($0.portType.rawValue))" }.joined(separator: ", ")
+        return (inputs: inputs, outputs: outputs)
     }
 
     private func deactivateSession() {
