@@ -14,7 +14,9 @@ struct HistoryDetailView: View {
     @State private var showExportSheet = false
     @State private var showTimestampView = false
     @State private var showEditTitle = false
+    @State private var showEditTags = false
     @State private var editableTitle = ""
+    @State private var editableTags = ""
     @State private var shareItems: [Any] = []
     @State private var showExportAudioError = false
     @State private var cachedSegments: [TranscriptionSegment] = []
@@ -50,6 +52,35 @@ struct HistoryDetailView: View {
                     }
                     .labelStyle(.iconOnly)
                 }
+            }
+
+            Section {
+                if record.tags.isEmpty {
+                    Label("No tags", systemImage: "tag")
+                        .font(AppFonts.callout)
+                        .foregroundColor(AppColors.textSecondary)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(record.tags, id: \.self) { tag in
+                                TagPillLabel(tag: tag, isSelected: false)
+                            }
+                        }
+                        .padding(.vertical, 2)
+                    }
+                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 0))
+                }
+
+                Button {
+                    editableTags = record.tagsInputText
+                    showEditTags = true
+                } label: {
+                    Label(record.tags.isEmpty ? "Add Tags" : "Edit Tags", systemImage: "tag")
+                }
+            } header: {
+                Text("Tags")
+            } footer: {
+                Text("Enter tags separated by commas.")
             }
 
             Section {
@@ -277,6 +308,15 @@ struct HistoryDetailView: View {
             Button("Save") {
                 viewModel.updateTitle(record, title: editableTitle)
             }
+        }
+        .alert("Edit Tags", isPresented: $showEditTags) {
+            TextField("Tags", text: $editableTags)
+            Button("Cancel", role: .cancel) {}
+            Button("Save") {
+                viewModel.updateTags(record, tagsInput: editableTags)
+            }
+        } message: {
+            Text("Enter tags separated by commas.")
         }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: shareItems)

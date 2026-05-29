@@ -13,11 +13,22 @@ class TranscriptionRecord: Identifiable {
     var isFavorite: Bool
     var segmentsJSON: String?
     var language: String?
+    var tagsJSON: String?
     
     var segments: [TranscriptionSegment] {
         guard let segmentsJSON = segmentsJSON,
               let data = segmentsJSON.data(using: .utf8) else { return [] }
         return (try? JSONDecoder().decode([TranscriptionSegment].self, from: data)) ?? []
+    }
+
+    var tags: [String] {
+        guard let tagsJSON,
+              let data = tagsJSON.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([String].self, from: data)) ?? []
+    }
+
+    var tagsInputText: String {
+        tags.joined(separator: ", ")
     }
     
     init(
@@ -30,7 +41,8 @@ class TranscriptionRecord: Identifiable {
         createdAt: Date = Date(),
         isFavorite: Bool = false,
         segments: [TranscriptionSegment] = [],
-        language: String? = nil
+        language: String? = nil,
+        tags: [String] = []
     ) {
         self.id = id
         self.title = title
@@ -45,6 +57,7 @@ class TranscriptionRecord: Identifiable {
             self.segmentsJSON = json
         }
         self.language = language
+        self.tagsJSON = Self.encodedTags(tags)
     }
     
     enum SourceType: String, Codable {
@@ -85,11 +98,54 @@ class TranscriptionRecord: Identifiable {
         }
     }
 
+    func updateTags(_ tags: [String]) {
+        self.tagsJSON = Self.encodedTags(tags)
+    }
+
+    func matchesSearchText(_ searchText: String) -> Bool {
+        let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSearchText.isEmpty else { return true }
+        return text.localizedCaseInsensitiveContains(trimmedSearchText) ||
+            title.localizedCaseInsensitiveContains(trimmedSearchText) ||
+            tags.contains { $0.localizedCaseInsensitiveContains(trimmedSearchText) }
+    }
+
+    func hasTag(_ tag: String) -> Bool {
+        tags.contains { $0.compare(tag, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+    }
+
     static func defaultTitle(for date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale.current
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
         return formatter.string(from: date)
+    }
+
+    static func normalizedTags(from input: String) -> [String] {
+        let separators = CharacterSet(charactersIn: ",、\n")
+        let rawTags = input.components(separatedBy: separators)
+        var seenTags: Set<String> = []
+        var normalizedTags: [String] = []
+
+        for rawTag in rawTags {
+            let tag = rawTag.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !tag.isEmpty else { continue }
+
+            let key = tag.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+            guard seenTags.insert(key).inserted else { continue }
+            normalizedTags.append(tag)
+        }
+
+        return normalizedTags
+    }
+
+    private static func encodedTags(_ tags: [String]) -> String? {
+        let normalizedTags = normalizedTags(from: tags.joined(separator: ","))
+        guard !normalizedTags.isEmpty,
+              let data = try? JSONEncoder().encode(normalizedTags) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
     }
 }

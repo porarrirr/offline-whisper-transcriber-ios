@@ -7,6 +7,8 @@ class HistoryViewModel: ObservableObject {
     @Published var records: [TranscriptionRecord] = []
     @Published var searchText = ""
     @Published var filterFavorite = false
+    @Published var selectedTag: String?
+    @Published private(set) var availableTags: [String] = []
     @Published var errorMessage: String?
     
     private var modelContext: ModelContext?
@@ -31,12 +33,18 @@ class HistoryViewModel: ObservableObject {
         
         do {
             var allRecords = try modelContext.fetch(descriptor)
+            availableTags = Self.sortedUniqueTags(from: allRecords)
+            if let selectedTag,
+               !availableTags.contains(where: { Self.tagsAreEqual($0, selectedTag) }) {
+                self.selectedTag = nil
+            }
             
             if !searchText.isEmpty {
-                allRecords = allRecords.filter {
-                    $0.text.localizedCaseInsensitiveContains(searchText) ||
-                    $0.title.localizedCaseInsensitiveContains(searchText)
-                }
+                allRecords = allRecords.filter { $0.matchesSearchText(searchText) }
+            }
+
+            if let selectedTag {
+                allRecords = allRecords.filter { $0.hasTag(selectedTag) }
             }
             
             if filterFavorite {
@@ -68,6 +76,33 @@ class HistoryViewModel: ObservableObject {
         } catch {
             setError(String(localized: "Failed to delete history") + ": \(error.localizedDescription)")
         }
+        fetchRecords()
+    }
+
+    func updateTags(_ record: TranscriptionRecord, tagsInput: String) {
+        let previousTagsJSON = record.tagsJSON
+        let tags = TranscriptionRecord.normalizedTags(from: tagsInput)
+        record.updateTags(tags)
+        do {
+            try modelContext?.save()
+        } catch {
+            record.tagsJSON = previousTagsJSON
+            setError(String(localized: "Failed to update tags") + ": \(error.localizedDescription)")
+        }
+        fetchRecords()
+    }
+
+    func toggleTagFilter(_ tag: String) {
+        if selectedTag == tag {
+            selectedTag = nil
+        } else {
+            selectedTag = tag
+        }
+        fetchRecords()
+    }
+
+    func clearTagFilter() {
+        selectedTag = nil
         fetchRecords()
     }
     
@@ -186,6 +221,24 @@ class HistoryViewModel: ObservableObject {
             throw HistoryViewModelError.documentsDirectoryUnavailable
         }
         return documentsPath.appendingPathComponent("Recordings", isDirectory: true)
+    }
+
+    private static func sortedUniqueTags(from records: [TranscriptionRecord]) -> [String] {
+        var tagsByKey: [String: String] = [:]
+        for record in records {
+            for tag in record.tags {
+                let key = tag.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                tagsByKey[key] = tagsByKey[key] ?? tag
+            }
+        }
+
+        return tagsByKey.values.sorted {
+            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+        }
+    }
+
+    private static func tagsAreEqual(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.compare(rhs, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
     }
 }
 
