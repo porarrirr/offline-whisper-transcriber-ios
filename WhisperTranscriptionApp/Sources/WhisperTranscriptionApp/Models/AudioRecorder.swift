@@ -5,7 +5,6 @@ final class AudioRecorder: NSObject, ObservableObject {
     typealias AudioBufferHandler = (AVAudioPCMBuffer, AVAudioTime, AVAudioFormat) -> Void
 
     private static let recordingSampleRate = 48_000.0
-    private static let recordingBitRate = 128_000
 
     @Published var isRecording = false
     @Published var currentTime: TimeInterval = 0
@@ -79,7 +78,6 @@ final class AudioRecorder: NSObject, ObservableObject {
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: format.sampleRate,
             AVNumberOfChannelsKey: Int(format.channelCount),
-            AVEncoderBitRateKey: Self.recordingBitRate,
             AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue
         ]
         let file = try AVAudioFile(forWriting: url, settings: settings)
@@ -136,7 +134,11 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private func setupSession() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetoothHFP])
+        try session.setCategory(
+            .playAndRecord,
+            mode: .default,
+            options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers]
+        )
         try session.setPreferredSampleRate(Self.recordingSampleRate)
         try session.setActive(true)
         logCurrentAudioRoute(session: session, event: "Recording audio session activated")
@@ -169,6 +171,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     private func finishActiveRecording() {
+        setAudioBufferHandler(nil)
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
 
@@ -280,7 +283,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         guard let url, wasRecording else { return }
 
         finishActiveRecording()
-        let message = String(localized: "Recording was interrupted. A partial recording may be available for transcription.")
+        let message = String(localized: "Recording was interrupted by another audio app. The saved part is available for transcription.")
         AppLogger.error(message, context: "AudioRecorder")
         DispatchQueue.main.async {
             self.interruptionMessage = message

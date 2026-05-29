@@ -52,7 +52,7 @@ while IFS= read -r -d '' framework; do
   echo "  -> $framework"
   codesign --force \
     --sign "$IDENTITY" \
-    --timestamp \
+    --timestamp=none \
     --generate-entitlement-der \
     "$framework"
   codesign --verify --verbose=2 "$framework"

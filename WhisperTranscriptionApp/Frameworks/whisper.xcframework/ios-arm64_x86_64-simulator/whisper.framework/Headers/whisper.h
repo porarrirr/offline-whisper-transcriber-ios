@@ -117,6 +117,7 @@ extern "C" {
         bool  use_gpu;
         bool  flash_attn;
         int   gpu_device;  // CUDA device
+        bool  use_coreml;  // use Core ML encoder (iOS/macOS, requires WHISPER_USE_COREML)
 
         // [EXPERIMENTAL] Token-level timestamps with DTW
         bool dtw_token_timestamps;

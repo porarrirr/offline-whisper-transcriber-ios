@@ -11,6 +11,7 @@ class ModelManager: NSObject, ObservableObject {
     @Published var downloadProgress: Double = 0
     @Published var isDownloading = false
     @Published var downloadError: String?
+    @Published var downloadStatusText = "Preparing model..."
     @Published var currentTranscriptionModel: TranscriptionModel = .whisper(.largeV3TurboQ5_0)
     @Published var isVADModelReady = false
     @Published var vadDownloadProgress: Double = 0
@@ -22,12 +23,18 @@ class ModelManager: NSObject, ObservableObject {
     private var modelDownloadSession: URLSession?
     private var vadDownloadSession: URLSession?
     private var activeWhisperDownloadSize: WhisperModelSize?
+    private var activeWhisperDownloadIncludesModel = false
+    private var coreMLEncoderInstallTask: Task<Void, Never>?
     private var speechAssetDownloadTask: Task<Void, Never>?
     private let vadModelFileName = "ggml-silero-v6.2.0.bin"
     private let vadModelURL = URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin")!
 
     var modelPath: String {
         whisperModelURL.path
+    }
+
+    var coreMLEncoderPath: String {
+        whisperCoreMLEncoderURL.path
     }
 
     var vadModelPath: String {
@@ -46,10 +53,21 @@ class ModelManager: NSObject, ObservableObject {
         guard let size = currentTranscriptionModel.whisperModelSize else {
             preconditionFailure("Whisper model path requested for non-Whisper selection")
         }
+        return whisperModelURL(for: size)
+    }
+
+    private var whisperCoreMLEncoderURL: URL {
+        guard let size = currentTranscriptionModel.whisperModelSize else {
+            preconditionFailure("Whisper Core ML encoder path requested for non-Whisper selection")
+        }
+        return whisperCoreMLEncoderURL(for: size)
+    }
+
+    private var documentsURL: URL {
         guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             preconditionFailure("Documents directory is unavailable")
         }
-        return documentsPath.appendingPathComponent(size.fileName)
+        return documentsPath
     }
 
     private var vadModelFileURL: URL {
@@ -57,6 +75,30 @@ class ModelManager: NSObject, ObservableObject {
             preconditionFailure("Documents directory is unavailable")
         }
         return documentsPath.appendingPathComponent(vadModelFileName)
+    }
+
+    func whisperReadinessMessage() -> String {
+        guard let size = currentTranscriptionModel.whisperModelSize else {
+            return String(localized: "Model Ready")
+        }
+        let readiness = whisperReadiness(for: size)
+        if readiness.modelExists {
+            return String(localized: "Model Ready")
+        }
+        if !readiness.modelExists {
+            return String(localized: "Please download model")
+        }
+        return String(localized: "Core ML encoder is not available for this model.")
+    }
+
+    func currentWhisperModelIsReady() -> Bool {
+        guard let size = currentTranscriptionModel.whisperModelSize else { return false }
+        return whisperReadiness(for: size).modelExists
+    }
+
+    func currentWhisperModelIsReadyForCoreML() -> Bool {
+        guard let size = currentTranscriptionModel.whisperModelSize else { return false }
+        return whisperReadiness(for: size).isReady
     }
 
     private override init() {
@@ -79,8 +121,7 @@ class ModelManager: NSObject, ObservableObject {
     func refreshModelReadyState(autoInstallSystemAssets: Bool = false) async {
         switch currentTranscriptionModel.backend {
         case .whisper:
-            let exists = FileManager.default.fileExists(atPath: whisperModelURL.path)
-            isModelReady = exists
+            isModelReady = currentWhisperModelIsReady()
         case .appleSpeech(let locale):
             guard #available(iOS 26.0, *) else {
                 isModelReady = false
@@ -103,12 +144,19 @@ class ModelManager: NSObject, ObservableObject {
         downloadTask?.cancel()
         downloadTask = nil
         activeWhisperDownloadSize = nil
+        activeWhisperDownloadIncludesModel = false
+        coreMLEncoderInstallTask?.cancel()
+        coreMLEncoderInstallTask = nil
         speechAssetDownloadTask?.cancel()
         speechAssetDownloadTask = nil
         currentTranscriptionModel = model
         AppSettings.shared.selectedTranscriptionModel = model
+        Task {
+            await WhisperModelService.shared.invalidateAndUnload()
+        }
         isDownloading = false
         downloadProgress = 0
+        downloadStatusText = "Preparing model..."
         downloadError = nil
         Task { @MainActor in
             await refreshModelReadyState(autoInstallSystemAssets: true)
@@ -134,23 +182,47 @@ class ModelManager: NSObject, ObservableObject {
 
     private func downloadWhisperModel(size: WhisperModelSize) {
         guard !isDownloading else { return }
-        guard let url = size.downloadURL else {
-            setDownloadError("ダウンロードURLが無効です")
+
+        let readiness = whisperReadiness(for: size)
+        guard !readiness.isReady else {
+            isModelReady = true
+            downloadProgress = 1
+            downloadError = nil
+            scheduleWhisperSessionStartIfNeeded()
+            return
+        }
+
+        let requiredBytes = size.requiredDownloadBytes(
+            modelExists: readiness.modelExists,
+            encoderExists: readiness.encoderExists
+        )
+        do {
+            try DiskSpaceChecker.ensureAvailable(at: documentsURL, requiredBytes: requiredBytes)
+        } catch {
+            setDownloadError((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
             return
         }
 
         isDownloading = true
         downloadProgress = 0
+        downloadStatusText = "Preparing model..."
         downloadError = nil
         activeWhisperDownloadSize = size
+        activeWhisperDownloadIncludesModel = !readiness.modelExists
 
-        let configuration = URLSessionConfiguration.default
-        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
-        modelDownloadSession = session
+        if readiness.modelExists {
+            startWhisperCoreMLEncoderDownload(size: size)
+            return
+        }
 
-        downloadTask = session.downloadTask(with: url)
-        downloadTask?.taskDescription = "mainModel"
-        downloadTask?.resume()
+        guard let url = size.downloadURL else {
+            setDownloadError("ダウンロードURLが無効です")
+            isDownloading = false
+            return
+        }
+
+        downloadStatusText = "Downloading Whisper model..."
+        startWhisperDownload(url: url, taskDescription: "whisperModel")
     }
 
     private func downloadAppleSpeechAssets(locale: AppleSpeechLocale) {
@@ -162,6 +234,7 @@ class ModelManager: NSObject, ObservableObject {
 
         isDownloading = true
         downloadProgress = 0
+        downloadStatusText = "Preparing speech model..."
         downloadError = nil
         speechAssetDownloadTask?.cancel()
 
@@ -173,6 +246,7 @@ class ModelManager: NSObject, ObservableObject {
                 self.isModelReady = true
                 self.isDownloading = false
                 self.downloadProgress = 1
+                self.downloadStatusText = "Ready!"
                 self.downloadError = nil
             } catch {
                 self.setDownloadError(error.localizedDescription)
@@ -203,10 +277,14 @@ class ModelManager: NSObject, ObservableObject {
         downloadTask?.cancel()
         downloadTask = nil
         activeWhisperDownloadSize = nil
+        activeWhisperDownloadIncludesModel = false
+        coreMLEncoderInstallTask?.cancel()
+        coreMLEncoderInstallTask = nil
         speechAssetDownloadTask?.cancel()
         speechAssetDownloadTask = nil
         isDownloading = false
         downloadProgress = 0
+        downloadStatusText = "Preparing model..."
     }
 
     func cancelVADDownload() {
@@ -242,12 +320,16 @@ class ModelManager: NSObject, ObservableObject {
             if FileManager.default.fileExists(atPath: whisperModelURL.path) {
                 do {
                     try FileManager.default.removeItem(atPath: whisperModelURL.path)
-                    isModelReady = false
-                    downloadError = nil
                 } catch {
                     setDownloadError(String(localized: "Error deleting model") + ": \(error.localizedDescription)")
+                    return
                 }
             }
+            guard deleteCoreMLEncoderIfUnused(for: currentTranscriptionModel.whisperModelSize) else {
+                return
+            }
+            isModelReady = false
+            downloadError = nil
         case .appleSpeech(let locale):
             if #available(iOS 26.0, *) {
                 Task { @MainActor in
@@ -286,7 +368,154 @@ class ModelManager: NSObject, ObservableObject {
                 }
             }
         }
+        for encoderName in Set(WhisperModelSize.allCases.map(\.coreMLEncoderDirectoryName)) {
+            let encoderURL = documentsPath.appendingPathComponent(encoderName)
+            if FileManager.default.fileExists(atPath: encoderURL.path) {
+                do {
+                    try FileManager.default.removeItem(at: encoderURL)
+                } catch {
+                    setDownloadError(String(localized: "Error deleting model") + ": \(error.localizedDescription)")
+                    return
+                }
+            }
+        }
         isModelReady = false
+    }
+
+    private struct WhisperReadiness {
+        let modelExists: Bool
+        let encoderExists: Bool
+
+        var isReady: Bool {
+            modelExists && encoderExists
+        }
+    }
+
+    private func whisperReadiness(for size: WhisperModelSize) -> WhisperReadiness {
+        WhisperReadiness(
+            modelExists: FileManager.default.fileExists(atPath: whisperModelURL(for: size).path),
+            encoderExists: FileManager.default.fileExists(atPath: whisperCoreMLEncoderURL(for: size).path)
+        )
+    }
+
+    private func whisperModelURL(for size: WhisperModelSize) -> URL {
+        documentsURL.appendingPathComponent(size.fileName)
+    }
+
+    private func whisperCoreMLEncoderURL(for size: WhisperModelSize) -> URL {
+        documentsURL.appendingPathComponent(size.coreMLEncoderDirectoryName)
+    }
+
+    func scheduleWhisperSessionStartIfNeeded() {
+        guard usesWhisperBackend, currentWhisperModelIsReady() else { return }
+        let modelPath = modelPath
+        let encoderPath = FileManager.default.fileExists(atPath: coreMLEncoderPath) ? coreMLEncoderPath : nil
+        let useFlashAttention = AppSettings.shared.useFlashAttention
+        Task {
+            await WhisperModelService.shared.startSession(
+                modelPath: modelPath,
+                encoderPath: encoderPath,
+                useFlashAttention: useFlashAttention
+            )
+        }
+    }
+
+    private func startWhisperDownload(url: URL, taskDescription: String) {
+        let configuration = URLSessionConfiguration.default
+        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: .main)
+        modelDownloadSession = session
+
+        downloadTask = session.downloadTask(with: url)
+        downloadTask?.taskDescription = taskDescription
+        downloadTask?.resume()
+    }
+
+    private func startWhisperCoreMLEncoderDownload(size: WhisperModelSize) {
+        guard let url = size.coreMLEncoderDownloadURL else {
+            setDownloadError(String(localized: "Core ML encoder is not available for this model."))
+            isDownloading = false
+            return
+        }
+
+        downloadStatusText = "Downloading Core ML encoder..."
+        startWhisperDownload(url: url, taskDescription: "coreMLEncoder")
+    }
+
+    private func finishWhisperDownloadIfReady(size: WhisperModelSize) {
+        isModelReady = whisperReadiness(for: size).modelExists
+        scheduleWhisperSessionStartIfNeeded()
+        isDownloading = false
+        downloadProgress = isModelReady ? 1 : 0
+        downloadStatusText = isModelReady ? "Ready!" : "Preparing model..."
+        downloadTask = nil
+        activeWhisperDownloadSize = nil
+        activeWhisperDownloadIncludesModel = false
+    }
+
+    private func installCoreMLEncoderArchive(from archiveURL: URL, for size: WhisperModelSize) {
+        let destinationURL = whisperCoreMLEncoderURL(for: size)
+        let archiveCopyURL = documentsURL.appendingPathComponent("\(size.coreMLEncoderArchiveName).download")
+        do {
+            if FileManager.default.fileExists(atPath: archiveCopyURL.path) {
+                try FileManager.default.removeItem(at: archiveCopyURL)
+            }
+            try FileManager.default.moveItem(at: archiveURL, to: archiveCopyURL)
+        } catch {
+            setDownloadError(String(localized: "Error saving Core ML encoder") + ": \(error.localizedDescription)")
+            isDownloading = false
+            activeWhisperDownloadSize = nil
+            activeWhisperDownloadIncludesModel = false
+            return
+        }
+
+        downloadStatusText = "Installing Core ML encoder..."
+        downloadProgress = max(downloadProgress, 0.95)
+        coreMLEncoderInstallTask = Task.detached { [archiveCopyURL, destinationURL, size] in
+            do {
+                try ZipArchiveExtractor.extractMLModelCArchive(at: archiveCopyURL, to: destinationURL)
+                try? FileManager.default.removeItem(at: archiveCopyURL)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    ModelManager.shared.coreMLEncoderInstallTask = nil
+                    ModelManager.shared.finishWhisperDownloadIfReady(size: size)
+                }
+            } catch {
+                try? FileManager.default.removeItem(at: archiveCopyURL)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    ModelManager.shared.coreMLEncoderInstallTask = nil
+                    ModelManager.shared.setDownloadError(String(localized: "Error installing Core ML encoder") + ": \(error.localizedDescription)")
+                    ModelManager.shared.isDownloading = false
+                    ModelManager.shared.downloadTask = nil
+                    ModelManager.shared.activeWhisperDownloadSize = nil
+                    ModelManager.shared.activeWhisperDownloadIncludesModel = false
+                    ModelManager.shared.isModelReady = false
+                }
+            }
+        }
+    }
+
+    private func deleteCoreMLEncoderIfUnused(for optionalSize: WhisperModelSize?) -> Bool {
+        guard let size = optionalSize else { return true }
+        let encoderURL = whisperCoreMLEncoderURL(for: size)
+        let isUsedByAnotherInstalledModel = WhisperModelSize.allCases.contains { otherSize in
+            otherSize != size &&
+            otherSize.coreMLEncoderDirectoryName == size.coreMLEncoderDirectoryName &&
+            FileManager.default.fileExists(atPath: whisperModelURL(for: otherSize).path)
+        }
+
+        guard !isUsedByAnotherInstalledModel,
+              FileManager.default.fileExists(atPath: encoderURL.path) else {
+            return true
+        }
+
+        do {
+            try FileManager.default.removeItem(at: encoderURL)
+            return true
+        } catch {
+            setDownloadError(String(localized: "Error deleting model") + ": \(error.localizedDescription)")
+            return false
+        }
     }
 
     private func setDownloadError(_ message: String) {
@@ -300,12 +529,16 @@ class ModelManager: NSObject, ObservableObject {
     }
 }
 
-extension ModelManager: URLSessionDownloadDelegate {
+extension ModelManager: @preconcurrency URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64, totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64) {
         guard totalBytesExpectedToWrite > 0 else { return }
         let progress = Double(totalBytesWritten) / Double(totalBytesExpectedToWrite)
         if downloadTask.taskDescription == "vadModel" {
             vadDownloadProgress = progress
+        } else if downloadTask.taskDescription == "whisperModel" && activeWhisperDownloadIncludesModel {
+            downloadProgress = progress * 0.5
+        } else if downloadTask.taskDescription == "coreMLEncoder" && activeWhisperDownloadIncludesModel {
+            downloadProgress = 0.5 + progress * 0.5
         } else {
             downloadProgress = progress
         }
@@ -314,9 +547,18 @@ extension ModelManager: URLSessionDownloadDelegate {
     func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
         do {
             let isVADModelDownload = downloadTask.taskDescription == "vadModel"
+            let isCoreMLEncoderDownload = downloadTask.taskDescription == "coreMLEncoder"
             let destinationURL: URL
             if isVADModelDownload {
                 destinationURL = vadModelFileURL
+            } else if isCoreMLEncoderDownload {
+                guard let whisperSize = activeWhisperDownloadSize else {
+                    setDownloadError(String(localized: "Downloaded model target was lost. Please download the model again."))
+                    isDownloading = false
+                    return
+                }
+                installCoreMLEncoderArchive(from: location, for: whisperSize)
+                return
             } else {
                 guard let whisperSize = activeWhisperDownloadSize else {
                     setDownloadError(String(localized: "Downloaded model target was lost. Please download the model again."))
@@ -338,11 +580,16 @@ extension ModelManager: URLSessionDownloadDelegate {
                 vadDownloadProgress = 1.0
                 vadDownloadTask = nil
             } else {
-                isModelReady = true
-                isDownloading = false
-                downloadProgress = 1.0
-                self.downloadTask = nil
-                activeWhisperDownloadSize = nil
+                guard let whisperSize = activeWhisperDownloadSize else {
+                    setDownloadError(String(localized: "Downloaded model target was lost. Please download the model again."))
+                    isDownloading = false
+                    return
+                }
+                if FileManager.default.fileExists(atPath: whisperCoreMLEncoderURL(for: whisperSize).path) {
+                    finishWhisperDownloadIfReady(size: whisperSize)
+                } else {
+                    startWhisperCoreMLEncoderDownload(size: whisperSize)
+                }
             }
         } catch {
             if downloadTask.taskDescription == "vadModel" {
@@ -352,6 +599,7 @@ extension ModelManager: URLSessionDownloadDelegate {
                 setDownloadError(String(localized: "Error saving model file") + ": \(error.localizedDescription)")
                 isDownloading = false
                 activeWhisperDownloadSize = nil
+                activeWhisperDownloadIncludesModel = false
             }
         }
     }
@@ -365,6 +613,7 @@ extension ModelManager: URLSessionDownloadDelegate {
                 } else {
                     downloadTask = nil
                     activeWhisperDownloadSize = nil
+                    activeWhisperDownloadIncludesModel = false
                     isDownloading = false
                 }
                 return
@@ -378,6 +627,7 @@ extension ModelManager: URLSessionDownloadDelegate {
                 isDownloading = false
                 downloadTask = nil
                 activeWhisperDownloadSize = nil
+                activeWhisperDownloadIncludesModel = false
             }
         }
     }

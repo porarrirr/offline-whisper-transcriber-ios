@@ -188,7 +188,7 @@ struct ModelDownloadView: View {
                 }
 
                 if settings.usesWhisperBackend {
-                    Text("Will download \(settings.selectedTranscriptionModel.approximateSize) for the first time.\nWi-Fi connection is recommended.")
+                    Text("Will download \(settings.selectedTranscriptionModel.approximateSize) and the Core ML encoder.\nWi-Fi connection is recommended.")
                         .font(AppFonts.caption)
                         .foregroundColor(AppColors.textSecondary)
                         .multilineTextAlignment(.center)

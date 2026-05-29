@@ -173,20 +173,16 @@ private func transcribeWithWhisperIntent(
     settings: AppSettings,
     languageOverride: String?
 ) async throws -> String {
-    let whisperContext = WhisperContext()
-    let modelPath = modelManager.modelPath
-
-    await withCheckedContinuation { continuation in
-        whisperContext.loadModel(path: modelPath, useFlashAttention: settings.useFlashAttention)
-        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { timer in
-            if whisperContext.isModelLoaded || whisperContext.errorMessage != nil {
-                timer.invalidate()
-                continuation.resume()
-            }
-        }
+    guard modelManager.currentWhisperModelIsReady() else {
+        throw IntentError.modelNotReady
     }
 
-    guard whisperContext.isModelLoaded else {
+    do {
+        try await WhisperModelService.shared.ensureModelLoaded(
+            path: modelManager.modelPath,
+            useFlashAttention: settings.useFlashAttention
+        )
+    } catch {
         throw IntentError.modelLoadFailed
     }
 
@@ -196,15 +192,14 @@ private func transcribeWithWhisperIntent(
     }
 
     do {
-        let processor = TranscriptionChunkProcessor()
-        let result = try await processor.transcribe(
+        let result = try await WhisperModelService.shared.transcribe(
             inputURL: audioURL,
-            whisperContext: whisperContext,
             language: selectedLanguage == "auto" ? "" : selectedLanguage,
             translate: settings.translateToEnglish,
             prompt: settings.promptText,
             useVAD: settings.useVAD,
-            vadModelPath: settings.useVAD ? modelManager.vadModelPath : nil
+            vadModelPath: settings.useVAD ? modelManager.vadModelPath : nil,
+            onChunkProgress: { _, _ in }
         )
         return result.text
     } catch is AudioConverter.AudioConverterError {
@@ -222,6 +217,7 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case noAudioFile
     case conversionFailed
     case transcriptionFailed
+    case coreMLEncoderNotReady
     case vadModelNotReady
     
     var localizedStringResource: LocalizedStringResource {
@@ -236,6 +232,8 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
             return "Failed to convert audio or video file."
         case .transcriptionFailed:
             return "Transcription failed."
+        case .coreMLEncoderNotReady:
+            return "Core ML encoder is required. Please open the app and download the additional encoder model."
         case .vadModelNotReady:
             return "VAD model is not ready. Please open the app and download the VAD model from settings."
         }

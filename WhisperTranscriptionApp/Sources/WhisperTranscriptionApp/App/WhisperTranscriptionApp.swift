@@ -39,5 +39,6 @@ struct WhisperTranscriptionApp: App {
         if AppSettings.shared.autoDeleteRecordings {
             viewModel.cleanupOldRecordings()
         }
+        ModelManager.shared.scheduleWhisperSessionStartIfNeeded()
     }
 }

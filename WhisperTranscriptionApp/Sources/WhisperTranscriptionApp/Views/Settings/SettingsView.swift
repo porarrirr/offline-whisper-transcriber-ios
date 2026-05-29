@@ -261,6 +261,9 @@ struct SettingsView: View {
     }
 
     private var modelStatusText: LocalizedStringKey {
+        if settings.usesWhisperBackend {
+            return LocalizedStringKey(modelManager.whisperReadinessMessage())
+        }
         if modelManager.isModelReady {
             return LocalizedStringKey("Model Ready")
         }

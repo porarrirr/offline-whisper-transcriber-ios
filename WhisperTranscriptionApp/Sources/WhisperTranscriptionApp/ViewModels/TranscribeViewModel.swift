@@ -22,7 +22,6 @@ class TranscribeViewModel: ObservableObject {
     @Published var liveSegments: [TranscriptionSegment] = []
     @Published var liveRecordingURL: URL?
     
-    private let whisperContext = WhisperContext()
     private let modelManager = ModelManager.shared
     private let settings = AppSettings.shared
     private var transcriptionTask: Task<Void, Never>?
@@ -30,7 +29,9 @@ class TranscribeViewModel: ObservableObject {
     private var liveTask: Task<Void, Never>?
 
     func startRecording(recordingService: RecordingService) {
-        releaseWhisperModel(reason: "recording started")
+        Task {
+            await WhisperModelService.shared.releaseForRecording()
+        }
         transcriptionResult = ""
         transcriptionSegments = []
         transcriptionLanguage = nil
@@ -53,7 +54,9 @@ class TranscribeViewModel: ObservableObject {
 
     func startLiveTranscription(recordingService: RecordingService) {
         guard !isProcessing else { return }
-        releaseWhisperModel(reason: "live transcription started")
+        Task {
+            await WhisperModelService.shared.releaseForRecording()
+        }
         recordingService.startLiveTranscription()
     }
 
@@ -125,6 +128,9 @@ class TranscribeViewModel: ObservableObject {
 
     func cancelTranscription() {
         transcriptionTask?.cancel()
+        Task {
+            await WhisperModelService.shared.cancelLoad()
+        }
     }
 
     func cancelLiveTranscription(recordingService: RecordingService) {
@@ -175,9 +181,6 @@ class TranscribeViewModel: ObservableObject {
             usesDeterminateProgress = true
             processingStatusText = ""
             UIApplication.shared.isIdleTimerDisabled = false
-            if settings.usesWhisperBackend {
-                releaseWhisperModel(reason: "transcription finished")
-            }
             if cleanupAfterProcessing {
                 removeTemporaryInput(url: url)
             }
@@ -194,8 +197,8 @@ class TranscribeViewModel: ObservableObject {
 
             switch settings.selectedTranscriptionModel.backend {
             case .whisper:
-                guard modelManager.isModelReady else {
-                    setError(String(localized: "Model is not ready"))
+                guard modelManager.currentWhisperModelIsReady() else {
+                    setError(modelManager.whisperReadinessMessage())
                     throw TranscriptionAborted()
                 }
                 result = try await transcribeWithWhisper(url: url, duration: duration)
@@ -260,15 +263,23 @@ class TranscribeViewModel: ObservableObject {
     }
     
     private func transcribeWithWhisper(url: URL, duration: TimeInterval) async throws -> ChunkedTranscriptionResult {
-        if !whisperContext.isLoaded(path: modelManager.modelPath, useFlashAttention: settings.useFlashAttention) {
-            AppLogger.info("Loading Whisper model...", context: "TranscribeViewModel")
-            let loaded = try await loadModelAsync()
-            guard loaded else {
-                setError(whisperContext.errorMessage ?? String(localized: "Failed to load model"))
-                throw TranscriptionAborted()
-            }
-            AppLogger.info("Whisper model load completed", context: "TranscribeViewModel")
+        processingStatusText = String(localized: "Loading model...")
+        usesDeterminateProgress = false
+
+        do {
+            try await WhisperModelService.shared.ensureModelLoaded(
+                path: modelManager.modelPath,
+                useFlashAttention: settings.useFlashAttention
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            setError((error as? LocalizedError)?.errorDescription ?? String(localized: "Failed to load model"))
+            throw TranscriptionAborted()
         }
+
+        processingStatusText = String(localized: "Converting...")
+        usesDeterminateProgress = true
 
         let language = settings.selectedLanguage == "auto" ? "" : settings.selectedLanguage
         let useVAD = settings.useVAD
@@ -277,10 +288,8 @@ class TranscribeViewModel: ObservableObject {
             throw TranscriptionAborted()
         }
 
-        let processor = TranscriptionChunkProcessor()
-        return try await processor.transcribe(
+        return try await WhisperModelService.shared.transcribe(
             inputURL: url,
-            whisperContext: whisperContext,
             language: language,
             translate: settings.translateToEnglish,
             prompt: settings.promptText,
@@ -324,21 +333,6 @@ class TranscribeViewModel: ObservableObject {
         }
     }
 
-    private func loadModelAsync() async throws -> Bool {
-        whisperContext.loadModel(
-            path: modelManager.modelPath,
-            useFlashAttention: settings.useFlashAttention
-        )
-
-        while true {
-            try Task.checkCancellation()
-            if whisperContext.isModelLoaded || whisperContext.errorMessage != nil {
-                return whisperContext.isModelLoaded
-            }
-            try await Task.sleep(nanoseconds: 500_000_000)
-        }
-    }
-    
     private func scheduleRecordingDeletion(url: URL) {
         DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 7 * 24 * 60 * 60) {
             do {
@@ -357,12 +351,6 @@ class TranscribeViewModel: ObservableObject {
         } catch {
             AppLogger.error("Failed to remove temporary input file", context: "TranscribeViewModel", error: error)
         }
-    }
-
-    private func releaseWhisperModel(reason: String) {
-        guard whisperContext.isModelLoaded else { return }
-        whisperContext.unloadModel()
-        AppLogger.info("Whisper model released: reason=\(reason)", context: "TranscribeViewModel")
     }
 
     func setError(_ message: String) {

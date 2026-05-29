@@ -10,7 +10,12 @@ cd "$WHISPER_DIR"
 WHISPER_IOS_ONLY=ON ./build-xcframework.sh
 
 rm -rf "$OUTPUT"
-cp -R "$WHISPER_DIR/build-apple/whisper.xcframework" "$OUTPUT"
+xcodebuild -create-xcframework \
+  -framework "$WHISPER_DIR/build-ios-sim/framework/whisper.framework" \
+  -debug-symbols "$WHISPER_DIR/build-ios-sim/dSYMs/whisper.dSYM" \
+  -framework "$WHISPER_DIR/build-ios-device/framework/whisper.framework" \
+  -debug-symbols "$WHISPER_DIR/build-ios-device/dSYMs/whisper.dSYM" \
+  -output "$OUTPUT"
 "$ROOT/Scripts/sign-whisper-xcframework.sh" "$OUTPUT"
 
 echo "Installed: $OUTPUT"

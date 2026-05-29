@@ -37,6 +37,83 @@ enum WhisperModelSize: String, CaseIterable, Identifiable {
         URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(fileName)")
     }
 
+    var coreMLEncoderDirectoryName: String {
+        "ggml-\(coreMLModelName)-encoder.mlmodelc"
+    }
+
+    var coreMLEncoderArchiveName: String {
+        "\(coreMLEncoderDirectoryName).zip"
+    }
+
+    var coreMLEncoderDownloadURL: URL? {
+        URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(coreMLEncoderArchiveName)")
+    }
+
+    private var coreMLModelName: String {
+        switch self {
+        case .tiny, .tinyQ5_1:
+            return "tiny"
+        case .base, .baseQ5_1:
+            return "base"
+        case .small, .smallQ5_1:
+            return "small"
+        case .medium, .mediumQ5_0:
+            return "medium"
+        case .largeV3TurboQ8_0, .largeV3TurboQ5_0:
+            return "large-v3-turbo"
+        }
+    }
+
+    /// Headroom for URLSession temp files and filesystem metadata during download/install.
+    static let downloadSafetyBufferBytes: Int64 = 64 * 1024 * 1024
+
+    /// Published ggml model size on Hugging Face (bytes).
+    var modelFileSizeBytes: Int64 {
+        switch self {
+        case .tiny: return 77_691_713
+        case .tinyQ5_1: return 32_152_673
+        case .base: return 147_951_465
+        case .baseQ5_1: return 59_707_625
+        case .small: return 487_601_967
+        case .smallQ5_1: return 190_085_487
+        case .medium: return 1_533_763_059
+        case .mediumQ5_0: return 539_212_467
+        case .largeV3TurboQ8_0: return 874_188_075
+        case .largeV3TurboQ5_0: return 574_041_195
+        }
+    }
+
+    /// Peak disk use while downloading and extracting the Core ML encoder zip (archive + extracted tree).
+    var coreMLEncoderPeakBytes: Int64 {
+        let zipBytes: Int64
+        switch coreMLModelName {
+        case "tiny":
+            zipBytes = 15_037_446
+        case "base":
+            zipBytes = 37_922_638
+        case "small":
+            zipBytes = 163_083_239
+        case "medium":
+            zipBytes = 567_829_413
+        case "large-v3-turbo":
+            zipBytes = 1_173_393_014
+        default:
+            zipBytes = 0
+        }
+        return zipBytes * 2
+    }
+
+    func requiredDownloadBytes(modelExists: Bool, encoderExists: Bool) -> Int64 {
+        var total = Self.downloadSafetyBufferBytes
+        if !modelExists {
+            total += modelFileSizeBytes
+        }
+        if !encoderExists {
+            total += coreMLEncoderPeakBytes
+        }
+        return total
+    }
+
     var approximateSize: String {
         switch self {
         case .tiny: return String(localized: "Approx. 39MB")

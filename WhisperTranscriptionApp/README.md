@@ -177,7 +177,7 @@ XcodeGenを使用した場合は自動で設定されます。手動作成の場
 | **Deployment Target** | iOS 17.0 |
 | ** architectures** | arm64 |
 | **ENABLE_USER_SCRIPT_SANDBOXING** | NO（whisper.cppビルド時）|
-| **OTHER_LDFLAGS** | `-lc++` を追加（C++リンケージ用）|
+| **OTHER_LDFLAGS** | `-lc++ -lz` を追加（C++/zlibリンケージ用）|
 
 ### 6. モデルの配置（任意）
 

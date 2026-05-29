@@ -70,19 +70,9 @@ struct TranscribeView: View {
 
                             if shouldShowLivePanel {
                                 LiveTranscriptionPanel(
-                                    elapsedTime: recordingService.liveElapsedTime,
-                                    audioLevel: recordingService.liveAudioLevel,
                                     finalizedText: recordingService.liveFinalizedText,
                                     volatileText: recordingService.liveVolatileText,
-                                    state: recordingService.liveState,
-                                    onStop: {
-                                        liveTranscriptionRequested = false
-                                        viewModel.stopLiveTranscription(recordingService: recordingService)
-                                    },
-                                    onCancel: {
-                                        liveTranscriptionRequested = false
-                                        viewModel.cancelLiveTranscription(recordingService: recordingService)
-                                    }
+                                    state: recordingService.liveState
                                 )
                                 .padding(.horizontal)
                             }
@@ -201,7 +191,7 @@ struct TranscribeView: View {
                                             .font(AppFonts.headline)
                                             .foregroundColor(AppColors.textPrimary)
 
-                                        Text("Use the saved partial recording")
+                                        Text("Transcribe the part that was saved before interruption")
                                             .font(AppFonts.caption)
                                             .foregroundColor(AppColors.textSecondary)
                                     }
@@ -375,24 +365,13 @@ private struct LiveTranscriptionToggle: View {
 }
 
 private struct LiveTranscriptionPanel: View {
-    let elapsedTime: TimeInterval
-    let audioLevel: Float
     let finalizedText: String
     let volatileText: String
     let state: LiveTranscriptionState
-    let onStop: () -> Void
-    let onCancel: () -> Void
 
     private var visibleFinalText: String {
         let trimmed = finalizedText.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.isEmpty ? String(localized: "Listening...") : trimmed
-    }
-
-    private var formattedElapsedTime: String {
-        let hours = Int(elapsedTime) / 3600
-        let minutes = (Int(elapsedTime) % 3600) / 60
-        let seconds = Int(elapsedTime) % 60
-        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
     }
 
     private var statusText: LocalizedStringKey {
@@ -413,93 +392,43 @@ private struct LiveTranscriptionPanel: View {
     }
 
     var body: some View {
-        VStack(spacing: 20) {
-            HStack(spacing: 16) {
-                Button(action: onCancel) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 18, weight: .semibold))
-                        .frame(width: 40, height: 40)
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(AppColors.accent)
-                .accessibilityLabel(Text("Cancel"))
-
-                Spacer()
-
+        VStack(alignment: .leading, spacing: 12) {
+            Label {
                 Text(statusText)
-                    .font(AppFonts.title2)
-                    .foregroundColor(AppColors.textPrimary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-
-                Spacer()
-
-                Image(systemName: "gearshape")
-                    .font(.system(size: 22, weight: .semibold))
+                    .font(AppFonts.callout)
+                    .foregroundColor(AppColors.textSecondary)
+            } icon: {
+                Image(systemName: "quote.bubble.fill")
                     .foregroundColor(AppColors.accent)
-                    .frame(width: 40, height: 40)
-                    .accessibilityHidden(true)
             }
-
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(Color.red)
-                    .frame(width: 12, height: 12)
-                Text(formattedElapsedTime)
-                    .font(.title2.monospacedDigit())
-                    .foregroundColor(AppColors.textPrimary)
-            }
-
-            WaveformView(audioLevel: audioLevel)
-                .frame(height: 82)
-
-            Divider()
-                .background(AppColors.surface)
 
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 10) {
                     Text(visibleFinalText)
-                        .font(.system(size: 27, weight: .regular, design: .default))
+                        .font(.system(size: 20, weight: .regular, design: .default))
                         .foregroundColor(finalizedText.isEmpty ? AppColors.textSecondary : AppColors.textPrimary)
-                        .lineSpacing(8)
+                        .lineSpacing(5)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
 
                     if !volatileText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(volatileText)
-                            .font(.system(size: 24, weight: .regular, design: .default))
+                            .font(.system(size: 18, weight: .regular, design: .default))
                             .foregroundColor(AppColors.textSecondary.opacity(0.72))
-                            .lineSpacing(6)
+                            .lineSpacing(4)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .padding(.vertical, 4)
+                .padding(.vertical, 2)
             }
-            .frame(minHeight: 260, maxHeight: 420)
-
-            Button(action: onStop) {
-                ZStack {
-                    Circle()
-                        .fill(Color.red)
-                        .frame(width: 82, height: 82)
-                        .shadow(color: Color.red.opacity(0.26), radius: 16, x: 0, y: 8)
-
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.white)
-                        .frame(width: 26, height: 26)
-                }
-            }
-            .buttonStyle(.plain)
-            .disabled(state == .finalizing || state == .saving || state == .preparing)
-            .opacity(state == .finalizing || state == .saving || state == .preparing ? 0.55 : 1)
-            .accessibilityLabel(Text("Stop"))
+            .frame(minHeight: 84, maxHeight: 180)
         }
-        .padding(20)
-        .background(AppColors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .padding(16)
+        .background(AppColors.cardBackground.opacity(0.82))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(AppColors.accent.opacity(0.24), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(AppColors.accent.opacity(0.18), lineWidth: 1)
         }
     }
 }

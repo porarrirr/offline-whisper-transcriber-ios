@@ -35,11 +35,13 @@ class DownloadViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isDownloading in
                 self?.isDownloading = isDownloading
-                if isDownloading {
-                    self?.statusText = AppSettings.shared.usesAppleSpeechBackend
-                        ? "Preparing speech model..."
-                        : "Downloading model..."
-                }
+            }
+            .store(in: &cancellables)
+
+        modelManager.$downloadStatusText
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] statusText in
+                self?.statusText = statusText
             }
             .store(in: &cancellables)
 
@@ -60,10 +62,6 @@ class DownloadViewModel: ObservableObject {
     
     func startDownload() {
         guard !isDownloading else { return }
-        
-        isDownloading = true
-        statusText = "Downloading model..."
-
         modelManager.downloadModel()
     }
     

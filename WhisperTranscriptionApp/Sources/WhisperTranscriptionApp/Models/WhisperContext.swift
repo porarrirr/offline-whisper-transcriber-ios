@@ -7,51 +7,59 @@ struct TranscriptionResult {
     let language: String?
 }
 
-class WhisperContext: ObservableObject {
-    @Published var isModelLoaded = false
-    @Published var isProcessing = false
-    @Published var progress: Double = 0
-    @Published var resultText: String = ""
-    @Published var errorMessage: String?
-    
+final class WhisperContext {
+    private(set) var isModelLoaded = false
+    private(set) var errorMessage: String?
+
     private var whisperContext: OpaquePointer?
     private(set) var loadedModelPath: String?
     private(set) var loadedUseFlashAttention = false
+    private(set) var loadedUseCoreML = false
 
-    func isLoaded(path: String, useFlashAttention: Bool) -> Bool {
-        isModelLoaded && loadedModelPath == path && loadedUseFlashAttention == useFlashAttention
+    func isLoaded(path: String, useFlashAttention: Bool, useCoreML: Bool) -> Bool {
+        isModelLoaded
+            && loadedModelPath == path
+            && loadedUseFlashAttention == useFlashAttention
+            && loadedUseCoreML == useCoreML
     }
 
-    func loadModel(path: String, useFlashAttention: Bool = false) {
+    func loadModel(path: String, useFlashAttention: Bool, useCoreML: Bool) async throws {
         guard FileManager.default.fileExists(atPath: path) else {
             errorMessage = "モデルファイルが見つかりません"
-            AppLogger.error("モデルファイルが見つかりません", context: "WhisperContext")
-            return
+            throw WhisperModelServiceError.modelFileMissing
         }
 
-        if isLoaded(path: path, useFlashAttention: useFlashAttention) {
+        if isLoaded(path: path, useFlashAttention: useFlashAttention, useCoreML: useCoreML) {
             return
         }
 
         unloadModel()
         errorMessage = nil
-        
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            var params = whisper_context_default_params()
-            params.use_gpu = true
-            params.flash_attn = useFlashAttention
-            
-            let context = whisper_init_from_file_with_params(path, params)
-            
-            DispatchQueue.main.async {
-                if let context = context {
-                    self?.whisperContext = context
-                    self?.loadedModelPath = path
-                    self?.loadedUseFlashAttention = useFlashAttention
-                    self?.isModelLoaded = true
-                    self?.errorMessage = nil
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                guard let self else {
+                    continuation.resume(throwing: WhisperModelServiceError.modelLoadFailed)
+                    return
+                }
+
+                var params = whisper_context_default_params()
+                params.use_gpu = true
+                params.flash_attn = useFlashAttention
+                params.use_coreml = useCoreML
+
+                let context = whisper_init_from_file_with_params(path, params)
+                if let context {
+                    self.whisperContext = context
+                    self.loadedModelPath = path
+                    self.loadedUseFlashAttention = useFlashAttention
+                    self.loadedUseCoreML = useCoreML
+                    self.isModelLoaded = true
+                    self.errorMessage = nil
+                    continuation.resume()
                 } else {
-                    self?.setErrorOnMain("モデルの読み込みに失敗しました")
+                    self.errorMessage = "モデルの読み込みに失敗しました"
+                    continuation.resume(throwing: WhisperModelServiceError.modelLoadFailed)
                 }
             }
         }
@@ -75,12 +83,6 @@ class WhisperContext: ObservableObject {
             return nil
         }
         
-        await MainActor.run {
-            isProcessing = true
-            progress = 0
-            resultText = ""
-        }
-        
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 guard let self = self else {
@@ -100,14 +102,7 @@ class WhisperContext: ObservableObject {
                     onProgress: onProgress
                 )
                 
-                DispatchQueue.main.async {
-                    self.isProcessing = false
-                    self.progress = 1.0
-                    if let result = result {
-                        self.resultText = result.text
-                    }
-                    continuation.resume(returning: result)
-                }
+                continuation.resume(returning: result)
             }
         }
     }
@@ -131,17 +126,9 @@ class WhisperContext: ObservableObject {
         }
 
         guard !samples.isEmpty else {
-            await MainActor.run {
-                errorMessage = WhisperContextError.emptyAudioFile.localizedDescription
-                AppLogger.error(WhisperContextError.emptyAudioFile.localizedDescription, context: "WhisperContext")
-            }
+            errorMessage = WhisperContextError.emptyAudioFile.localizedDescription
+            AppLogger.error(WhisperContextError.emptyAudioFile.localizedDescription, context: "WhisperContext")
             return nil
-        }
-
-        await MainActor.run {
-            isProcessing = true
-            progress = 0
-            resultText = ""
         }
 
         return await withCheckedContinuation { continuation in
@@ -163,14 +150,7 @@ class WhisperContext: ObservableObject {
                     onProgress: onProgress
                 )
 
-                DispatchQueue.main.async {
-                    self.isProcessing = false
-                    self.progress = 1.0
-                    if let result = result {
-                        self.resultText = result.text
-                    }
-                    continuation.resume(returning: result)
-                }
+                continuation.resume(returning: result)
             }
         }
     }
@@ -454,6 +434,7 @@ class WhisperContext: ObservableObject {
         isModelLoaded = false
         loadedModelPath = nil
         loadedUseFlashAttention = false
+        loadedUseCoreML = false
     }
 
     private func setErrorOnMain(_ message: String) {

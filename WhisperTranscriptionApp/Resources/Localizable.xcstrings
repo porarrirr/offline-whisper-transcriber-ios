@@ -1462,6 +1462,17 @@
         }
       }
     },
+    "Could not prepare the live audio format." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ音声フォーマットを準備できませんでした。"
+          }
+        }
+      }
+    },
     "Could not retrieve document directory for saving recording." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3002,6 +3013,17 @@
         }
       }
     },
+    "Finalizing live transcription..." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ文字起こしを確定中..."
+          }
+        }
+      }
+    },
     "Find transcripts in %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3840,6 +3862,94 @@
         }
       }
     },
+    "Listening..." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聞き取り中..."
+          }
+        }
+      }
+    },
+    "Live Meeting Notes" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ会議ノート"
+          }
+        }
+      }
+    },
+    "Live Transcribe" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ文字起こし"
+          }
+        }
+      }
+    },
+    "Live transcription failed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ文字起こしに失敗しました"
+          }
+        }
+      }
+    },
+    "Live transcription requires iOS 26 and a device that supports SpeechTranscriber." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ文字起こしには iOS 26 と SpeechTranscriber 対応デバイスが必要です。"
+          }
+        }
+      }
+    },
+    "Live transcription stopped because recording was interrupted. The saved part is available for transcription." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音が中断されたためライブ文字起こしを停止しました。保存済み部分は文字起こしできます。"
+          }
+        }
+      }
+    },
+    "Live transcription stopped in the background. Recording continues and will be transcribed when stopped." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バックグラウンドではライブ文字起こしを停止しました。録音は継続し、停止後に文字起こしします。"
+          }
+        }
+      }
+    },
+    "Live transcription was interrupted; recording will continue." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ文字起こしが中断されました。録音は継続します。"
+          }
+        }
+      }
+    },
     "Logs" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3906,6 +4016,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已複製日誌"
+          }
+        }
+      }
+    },
+    "Low-latency transcription with iOS SpeechTranscriber" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS SpeechTranscriber による低遅延文字起こし"
           }
         }
       }
@@ -4151,6 +4272,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "模型準備就緒"
+          }
+        }
+      }
+    },
+    "Not enough storage. About %@ is required but only %@ is available. Free up space and try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空き容量が不足しています。約 %1$@ が必要ですが、利用可能は約 %2$@ です。ストレージを空けてから再度お試しください。"
           }
         }
       }
@@ -4783,6 +4915,17 @@
         }
       }
     },
+    "Preparing live transcription..." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ文字起こしを準備中..."
+          }
+        }
+      }
+    },
     "Preparing model..." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4978,6 +5121,28 @@
         }
       }
     },
+    "Recording stopped, but the recording file was not saved." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を停止しましたが、録音ファイルが保存されませんでした。"
+          }
+        }
+      }
+    },
+    "Recording was interrupted by another audio app. The saved part is available for transcription." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別の音声アプリにより録音が中断されました。保存済み部分は文字起こしできます。"
+          }
+        }
+      }
+    },
     "Remove from Favorites" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5079,6 +5244,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "俄語"
+          }
+        }
+      }
+    },
+    "Saving live transcription..." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ文字起こしを保存中..."
           }
         }
       }
@@ -5598,6 +5774,17 @@
         }
       }
     },
+    "Speech recognition permission is required for live transcription." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ文字起こしには音声認識の許可が必要です。"
+          }
+        }
+      }
+    },
     "Speech transcription is not available on this device." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5609,6 +5796,17 @@
         }
       }
     },
+    "Start recording with live transcription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ライブ文字起こし付きで録音開始"
+          }
+        }
+      }
+    },
     "Start transcription with %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5616,6 +5814,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@で文字起こしを始める"
+          }
+        }
+      }
+    },
+    "Stop" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止"
           }
         }
       }
@@ -6062,6 +6271,17 @@
     "Title" : {
 
     },
+    "Toggle live transcription while recording" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音中にライブ文字起こしを切り替え"
+          }
+        }
+      }
+    },
     "Transcribe" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6292,6 +6512,17 @@
         }
       }
     },
+    "Transcribe the part that was saved before interruption" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中断前に保存できた部分を文字起こしします"
+          }
+        }
+      }
+    },
     "Transcribe with %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6496,6 +6727,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "轉寫失敗"
+          }
+        }
+      }
+    },
+    "Transcription finished, but no text was produced." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしは完了しましたが、テキストが生成されませんでした。"
           }
         }
       }
@@ -6835,6 +7077,17 @@
         }
       }
     },
+    "Unable to check available storage. Please try again later." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "空き容量を確認できませんでした。しばらくしてから再度お試しください。"
+          }
+        }
+      }
+    },
     "Update Model" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7115,203 +7368,9 @@
         }
       }
     },
-    "Could not prepare the live audio format." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブ音声フォーマットを準備できませんでした。"
-          }
-        }
-      }
-    },
-    "Finalizing live transcription..." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブ文字起こしを確定中..."
-          }
-        }
-      }
-    },
-    "Listening..." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "聞き取り中..."
-          }
-        }
-      }
-    },
-    "Live Meeting Notes" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブ会議ノート"
-          }
-        }
-      }
-    },
-    "Live Transcribe" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブ文字起こし"
-          }
-        }
-      }
-    },
-    "Live transcription failed" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブ文字起こしに失敗しました"
-          }
-        }
-      }
-    },
-    "Live transcription requires iOS 26 and a device that supports SpeechTranscriber." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブ文字起こしには iOS 26 と SpeechTranscriber 対応デバイスが必要です。"
-          }
-        }
-      }
-    },
-    "Live transcription was interrupted; recording will continue." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブ文字起こしが中断されました。録音は継続します。"
-          }
-        }
-      }
-    },
-    "Low-latency transcription with iOS SpeechTranscriber" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iOS SpeechTranscriber による低遅延文字起こし"
-          }
-        }
-      }
-    },
-    "Preparing live transcription..." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブ文字起こしを準備中..."
-          }
-        }
-      }
-    },
-    "Recording stopped, but the recording file was not saved." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "録音を停止しましたが、録音ファイルが保存されませんでした。"
-          }
-        }
-      }
-    },
-    "Saving live transcription..." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブ文字起こしを保存中..."
-          }
-        }
-      }
-    },
-    "Speech recognition permission is required for live transcription." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブ文字起こしには音声認識の許可が必要です。"
-          }
-        }
-      }
-    },
-    "Stop" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "停止"
-          }
-        }
-      }
-    },
-    "Start recording with live transcription" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ライブ文字起こし付きで録音開始"
-          }
-        }
-      }
-    },
-    "Transcription finished, but no text was produced." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "文字起こしは完了しましたが、テキストが生成されませんでした。"
-          }
-        }
-      }
-    },
-    "Toggle live transcription while recording" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "録音中にライブ文字起こしを切り替え"
-          }
-        }
-      }
-    },
-    "Live transcription stopped in the background. Recording continues and will be transcribed when stopped." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "バックグラウンドではライブ文字起こしを停止しました。録音は継続し、停止後に文字起こしします。"
-          }
-        }
-      }
+    "Will download %@ and the Core ML encoder.\nWi-Fi connection is recommended." : {
+      "comment" : "A label that describes the download process of a speech recognition model.",
+      "isCommentAutoGenerated" : true
     },
     "Will download %@ for the first time.\nWi-Fi connection is recommended." : {
       "extractionState" : "manual",

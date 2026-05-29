@@ -55,6 +55,16 @@ final class RecordingService: ObservableObject {
         audioRecorder.$isRecording
             .receive(on: DispatchQueue.main)
             .assign(to: &$isRecording)
+        audioRecorder.$isRecording
+            .removeDuplicates()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isRecording in
+                guard let self, !isRecording, self.liveService != nil else { return }
+                Task {
+                    await self.cancelLiveTranscription(message: String(localized: "Live transcription stopped because recording was interrupted. The saved part is available for transcription."))
+                }
+            }
+            .store(in: &cancellables)
         audioRecorder.$currentTime
             .receive(on: DispatchQueue.main)
             .assign(to: &$currentTime)
