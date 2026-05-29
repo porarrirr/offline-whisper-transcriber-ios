@@ -106,7 +106,7 @@ final class RecordingService: ObservableObject {
     func startRecording() {
         Task {
             do {
-                _ = try await startRecording(requiresLiveActivity: false, releaseWhisperModel: false)
+                _ = try await startRecording(requiresLiveActivity: false, releaseWhisperModel: true)
             } catch {
                 errorMessage = error.localizedDescription
             }
@@ -155,7 +155,7 @@ final class RecordingService: ObservableObject {
         case .active:
             AppLogger.info("App became active while recording", context: "RecordingService")
             Task {
-                await RecordingLiveActivityManager.shared.startRecordingActivity(startedAt: recordingStartedAt ?? Date())
+                await RecordingLiveActivityManager.shared.ensureRecordingActivity(startedAt: recordingStartedAt ?? Date())
             }
         case .inactive:
             AppLogger.info("App became inactive while recording; recording continues", context: "RecordingService")
@@ -163,7 +163,6 @@ final class RecordingService: ObservableObject {
             AppLogger.info("App entered background while recording; recording continues", context: "RecordingService")
             Task {
                 await cancelLiveTranscription(message: String(localized: "Live transcription stopped in the background. Recording continues and will be transcribed when stopped."))
-                await RecordingLiveActivityManager.shared.startRecordingActivity(startedAt: recordingStartedAt ?? Date())
             }
         @unknown default:
             AppLogger.info("Unknown scene phase while recording", context: "RecordingService")
@@ -272,7 +271,7 @@ final class RecordingService: ObservableObject {
             }
 
             do {
-                try audioRecorder.startRecording()
+                try await audioRecorder.startRecording()
             } catch {
                 if requiredLiveActivityStarted {
                     await RecordingLiveActivityManager.shared.endRecordingActivity()
@@ -289,7 +288,7 @@ final class RecordingService: ObservableObject {
 
             if !requiresLiveActivity {
                 Task {
-                    await RecordingLiveActivityManager.shared.startRecordingActivity(startedAt: startedAt)
+                    await RecordingLiveActivityManager.shared.ensureRecordingActivity(startedAt: startedAt)
                 }
             }
 

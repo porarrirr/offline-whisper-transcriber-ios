@@ -60,7 +60,7 @@ struct OpenTranscriptionHistoryIntent: AppIntent {
 }
 
 @available(iOS 18.0, *)
-struct StartBackgroundRecordingIntent: AppIntent, AudioRecordingIntent {
+struct StartBackgroundRecordingIntent: AppIntent, AudioRecordingIntent, LiveActivityIntent {
     static var title: LocalizedStringResource = "Start Recording"
     static var description = IntentDescription("Starts an audio recording in the background")
     static var openAppWhenRun = false

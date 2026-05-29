@@ -17,6 +17,27 @@ final class RecordingLiveActivityManager {
         }
     }
 
+    func ensureRecordingActivity(startedAt: Date = Date()) async {
+        do {
+            try await ensureRequiredRecordingActivity(startedAt: startedAt)
+        } catch {
+            AppLogger.error("Failed to ensure recording Live Activity", context: "RecordingLiveActivity", error: error)
+        }
+    }
+
+    func ensureRequiredRecordingActivity(startedAt: Date = Date()) async throws {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            throw RecordingLiveActivityError.activitiesDisabled
+        }
+
+        if let activeActivity = Activity<RecordingActivityAttributes>.activities.first {
+            activity = activeActivity
+            return
+        }
+
+        try await startRequiredRecordingActivity(startedAt: startedAt)
+    }
+
     func startRequiredRecordingActivity(startedAt: Date = Date()) async throws {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             throw RecordingLiveActivityError.activitiesDisabled

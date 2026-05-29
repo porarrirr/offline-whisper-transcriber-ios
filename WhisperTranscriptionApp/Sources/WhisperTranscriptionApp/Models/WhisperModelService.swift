@@ -137,14 +137,31 @@ actor WhisperModelService {
         )
     }
 
-    func releaseForRecording() {
-        cancelInFlightLoad()
+    func releaseForRecording() async {
+        sessionGeneration += 1
+        warmupTask?.cancel()
+        probeTask?.cancel()
+        let cancelledWarmupTask = warmupTask
+        let cancelledProbeTask = probeTask
+        let cancelledLoadTask = cancelInFlightLoad()
+        warmupTask = nil
+        probeTask = nil
+
+        await cancelledWarmupTask?.value
+        await cancelledProbeTask?.value
+        do {
+            try await cancelledLoadTask?.value
+        } catch {
+            AppLogger.info("Cancelled Whisper model load before recording start", context: "WhisperModelService")
+        }
+
         context.unloadModel()
+        await publishRuntimeSnapshot(isLoadingModel: false)
         AppLogger.info("Whisper model released: reason=recording started", context: "WhisperModelService")
     }
 
     func invalidateAndUnload() {
-        cancelInFlightLoad()
+        _ = cancelInFlightLoad()
         probeTask?.cancel()
         warmupTask?.cancel()
         context.unloadModel()
@@ -156,7 +173,7 @@ actor WhisperModelService {
     }
 
     func cancelLoad() {
-        cancelInFlightLoad()
+        _ = cancelInFlightLoad()
     }
 
     private func runProbe(encoderPath: String?, melBinCount: Int, generation: UInt64) async {
@@ -201,6 +218,8 @@ actor WhisperModelService {
                 unloadModelIfItDoesNotMatchCurrentSession()
                 return
             }
+        } catch is CancellationError {
+            return
         } catch {
             await MainActor.run {
                 AppLogger.error("Whisper warmup failed", context: "WhisperModelService", error: error)
@@ -263,10 +282,12 @@ actor WhisperModelService {
         }
     }
 
-    private func cancelInFlightLoad() {
+    private func cancelInFlightLoad() -> Task<Void, Error>? {
         loadGeneration += 1
-        loadTask?.cancel()
+        let task = loadTask
+        task?.cancel()
         loadTask = nil
+        return task
     }
 
     private func publishRuntimeSnapshot(isLoadingModel: Bool) async {

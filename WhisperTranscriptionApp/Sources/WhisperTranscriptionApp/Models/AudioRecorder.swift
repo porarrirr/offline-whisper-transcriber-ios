@@ -5,6 +5,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     typealias AudioBufferHandler = (AVAudioPCMBuffer, AVAudioTime, AVAudioFormat) -> Void
 
     private static let recordingSampleRate = 48_000.0
+    private static let bluetoothHFPRecordingSampleRate = 16_000.0
 
     @Published var isRecording = false
     @Published var currentTime: TimeInterval = 0
@@ -66,25 +67,14 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
-    func startRecording() throws {
-        stateLock.lock()
-        let busy = recordingState != .idle || audioEngine.isRunning
-        if !busy {
-            recordingState = .starting
-        }
-        stateLock.unlock()
-        guard !busy else {
-            throw AudioRecorderError.stopInProgress
-        }
+    func startRecording() async throws {
+        try beginStartingState()
 
         do {
             try setupSession()
             let url = try makeRecordingURL()
             let inputNode = audioEngine.inputNode
-            let format = inputNode.outputFormat(forBus: 0)
-            guard format.sampleRate > 0, format.channelCount > 0 else {
-                throw AudioRecorderError.recordingStartFailed
-            }
+            let format = try await waitForValidInputFormat(on: inputNode)
 
             let settings: [String: Any] = [
                 AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
@@ -92,36 +82,98 @@ final class AudioRecorder: NSObject, ObservableObject {
                 AVNumberOfChannelsKey: Int(format.channelCount),
                 AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue
             ]
-            let file = try AVAudioFile(forWriting: url, settings: settings)
+            let file: AVAudioFile
+            do {
+                file = try AVAudioFile(forWriting: url, settings: settings)
+            } catch {
+                throw makeRecordingStartError(stage: "create recording file", error: error)
+            }
 
             inputNode.removeTap(onBus: 0)
+            AppLogger.info(
+                "Installing audio input tap: sampleRate=\(format.sampleRate), channels=\(format.channelCount)",
+                context: "AudioRecorder"
+            )
             inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, time in
                 self?.handleAudioBuffer(buffer, time: time, format: format)
             }
 
             audioEngine.prepare()
-            try audioEngine.start()
-
-            stateLock.lock()
-            recordingFile = file
-            recordingURL = url
-            inputFormat = format
-            recordedFrames = 0
-            recordingState = .recording
-            stateLock.unlock()
-
-            DispatchQueue.main.async {
-                self.recordingError = nil
-                self.interruptionMessage = nil
-                self.interruptedRecordingURL = nil
-                self.currentTime = 0
-                self.audioLevel = 0
-                self.isRecording = true
+            do {
+                try audioEngine.start()
+            } catch {
+                throw makeRecordingStartError(stage: "start audio engine", error: error)
             }
+
+            setStartedRecording(file: file, url: url, format: format)
+            publishStartedRecording()
         } catch {
             cleanupFailedStart()
             throw error
         }
+    }
+
+    private func beginStartingState() throws {
+        stateLock.lock()
+        let busy = recordingState != .idle || audioEngine.isRunning
+        if !busy {
+            recordingState = .starting
+        }
+        stateLock.unlock()
+
+        guard !busy else {
+            throw AudioRecorderError.stopInProgress
+        }
+    }
+
+    private func setStartedRecording(file: AVAudioFile, url: URL, format: AVAudioFormat) {
+        stateLock.lock()
+        recordingFile = file
+        recordingURL = url
+        inputFormat = format
+        recordedFrames = 0
+        recordingState = .recording
+        stateLock.unlock()
+    }
+
+    private func publishStartedRecording() {
+        DispatchQueue.main.async {
+            self.recordingError = nil
+            self.interruptionMessage = nil
+            self.interruptedRecordingURL = nil
+            self.currentTime = 0
+            self.audioLevel = 0
+            self.isRecording = true
+        }
+    }
+
+    private func waitForValidInputFormat(on inputNode: AVAudioInputNode) async throws -> AVAudioFormat {
+        let maxAttempts = 12
+        let retryDelayNanoseconds: UInt64 = 50_000_000
+
+        for attempt in 1...maxAttempts {
+            let format = inputNode.outputFormat(forBus: 0)
+            if format.sampleRate > 0, format.channelCount > 0 {
+                if attempt > 1 {
+                    AppLogger.info(
+                        "Audio input format became available after session activation: sampleRate=\(format.sampleRate), channels=\(format.channelCount), attempts=\(attempt)",
+                        context: "AudioRecorder"
+                    )
+                }
+                return format
+            }
+
+            if attempt < maxAttempts {
+                try await Task.sleep(nanoseconds: retryDelayNanoseconds)
+            }
+        }
+
+        let finalFormat = inputNode.outputFormat(forBus: 0)
+        AppLogger.error(
+            "Audio input format unavailable after session activation: sampleRate=\(finalFormat.sampleRate), channels=\(finalFormat.channelCount)",
+            context: "AudioRecorder"
+        )
+        throw AudioRecorderError.recordingStartFailed("input format unavailable after session activation")
     }
 
     func stopRecording() async throws -> URL {
@@ -154,14 +206,52 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private func setupSession() throws {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(
-            .playAndRecord,
-            mode: .default,
-            options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers]
-        )
-        try session.setPreferredSampleRate(Self.recordingSampleRate)
-        try session.setActive(true)
+        try performAudioSessionStep("set category") {
+            try session.setCategory(
+                .playAndRecord,
+                mode: .default,
+                options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers]
+            )
+        }
+
+        let preferredSampleRate = preferredRecordingSampleRate(for: session)
+        try performAudioSessionStep("set preferred sample rate \(preferredSampleRate)") {
+            try session.setPreferredSampleRate(preferredSampleRate)
+        }
+
+        try performAudioSessionStep("activate session") {
+            try session.setActive(true)
+        }
         logCurrentAudioRoute(session: session, event: "Recording audio session activated")
+    }
+
+    private func preferredRecordingSampleRate(for session: AVAudioSession) -> Double {
+        if routeCanUseBluetoothHFP(session) {
+            return Self.bluetoothHFPRecordingSampleRate
+        }
+        return Self.recordingSampleRate
+    }
+
+    private func routeCanUseBluetoothHFP(_ session: AVAudioSession) -> Bool {
+        session.currentRoute.inputs.contains { $0.portType == .bluetoothHFP }
+            || session.currentRoute.outputs.contains { $0.portType == .bluetoothHFP }
+            || (session.availableInputs?.contains { $0.portType == .bluetoothHFP } ?? false)
+    }
+
+    private func performAudioSessionStep(_ stage: String, operation: () throws -> Void) throws {
+        do {
+            try operation()
+            AppLogger.info("Recording audio session step completed: \(stage)", context: "AudioRecorder")
+        } catch {
+            throw makeRecordingStartError(stage: stage, error: error)
+        }
+    }
+
+    private func makeRecordingStartError(stage: String, error: Error) -> AudioRecorderError {
+        let nsError = error as NSError
+        let detail = "\(stage): \(error.localizedDescription) [\(nsError.domain) \(nsError.code)]"
+        AppLogger.error("Recording start failed at \(detail)", context: "AudioRecorder", error: error)
+        return .recordingStartFailed(detail)
     }
 
     private func handleAudioBuffer(_ buffer: AVAudioPCMBuffer, time: AVAudioTime, format: AVAudioFormat) {
@@ -365,7 +455,7 @@ final class AudioRecorder: NSObject, ObservableObject {
 enum AudioRecorderError: LocalizedError {
     case documentsDirectoryUnavailable
     case noActiveRecording
-    case recordingStartFailed
+    case recordingStartFailed(String)
     case recordingFileMissing
     case recordingFileEmpty
     case stopInProgress
@@ -378,8 +468,8 @@ enum AudioRecorderError: LocalizedError {
             return String(localized: "Could not retrieve document directory for saving recording.")
         case .noActiveRecording:
             return String(localized: "No active recording was found.")
-        case .recordingStartFailed:
-            return String(localized: "Failed to start recording.")
+        case .recordingStartFailed(let detail):
+            return String(localized: "Failed to start recording.") + " \(detail)"
         case .recordingFileMissing:
             return String(localized: "Recording stopped, but the recording file was not saved.")
         case .recordingFileEmpty:

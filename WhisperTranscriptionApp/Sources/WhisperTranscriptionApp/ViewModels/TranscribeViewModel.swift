@@ -35,9 +35,6 @@ class TranscribeViewModel: ObservableObject {
             setError(readinessError)
             return
         }
-        Task {
-            await WhisperModelService.shared.releaseForRecording()
-        }
         transcriptionResult = ""
         transcriptionSegments = []
         transcriptionLanguage = nil
@@ -65,9 +62,6 @@ class TranscribeViewModel: ObservableObject {
         if let readinessError = modelManager.currentTranscriptionReadinessError() {
             setError(readinessError)
             return
-        }
-        Task {
-            await WhisperModelService.shared.releaseForRecording()
         }
         recordingService.startLiveTranscription()
     }
