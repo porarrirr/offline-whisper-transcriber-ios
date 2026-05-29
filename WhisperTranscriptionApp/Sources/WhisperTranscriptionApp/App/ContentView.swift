@@ -7,6 +7,5 @@ struct ContentView: View {
         MainTabView()
             .transition(.opacity)
             .animation(.easeInOut(duration: 0.3), value: modelManager.isModelReady)
-        .preferredColorScheme(.dark)
     }
 }

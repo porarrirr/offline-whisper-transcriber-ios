@@ -104,6 +104,15 @@ struct SettingsView: View {
                 }
             }
 
+            Section(header: Text("Appearance")) {
+                Picker("Theme", selection: $settings.appAppearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(LocalizedStringKey(appearance.displayName)).tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
+            }
+
             Section(header: Text("Advanced Settings")) {
                 if settings.usesWhisperBackend {
                     Toggle(isOn: $settings.useFlashAttention) {

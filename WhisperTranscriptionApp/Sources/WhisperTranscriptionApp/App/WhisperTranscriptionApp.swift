@@ -6,6 +6,7 @@ struct WhisperTranscriptionApp: App {
     private let modelContainer: ModelContainer?
     private let modelContainerErrorMessage: String?
     @StateObject private var recordingService = RecordingService()
+    @StateObject private var settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -21,20 +22,22 @@ struct WhisperTranscriptionApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if let modelContainer {
-                ContentView()
-                    .modelContainer(modelContainer)
-                    .environmentObject(recordingService)
-                    .onAppear {
-                        performStartupMaintenance(modelContainer: modelContainer)
-                    }
-                    .onChange(of: scenePhase) { _, newPhase in
-                        recordingService.handleScenePhase(newPhase)
-                    }
-            } else {
-                DataStoreUnavailableView(errorMessage: modelContainerErrorMessage)
-                    .preferredColorScheme(.dark)
+            Group {
+                if let modelContainer {
+                    ContentView()
+                        .modelContainer(modelContainer)
+                        .environmentObject(recordingService)
+                        .onAppear {
+                            performStartupMaintenance(modelContainer: modelContainer)
+                        }
+                        .onChange(of: scenePhase) { _, newPhase in
+                            recordingService.handleScenePhase(newPhase)
+                        }
+                } else {
+                    DataStoreUnavailableView(errorMessage: modelContainerErrorMessage)
+                }
             }
+            .preferredColorScheme(settings.appAppearance.preferredColorScheme)
         }
     }
     
@@ -48,6 +51,19 @@ struct WhisperTranscriptionApp: App {
             viewModel.cleanupOldRecordings()
         }
         ModelManager.shared.scheduleWhisperSessionStartIfNeeded()
+    }
+}
+
+private extension AppAppearance {
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .system:
+            return nil
+        case .light:
+            return .light
+        case .dark:
+            return .dark
+        }
     }
 }
 

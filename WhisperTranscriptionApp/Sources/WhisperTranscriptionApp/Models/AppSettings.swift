@@ -1,5 +1,24 @@
 import Foundation
 
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case system
+    case light
+    case dark
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .system:
+            return "System"
+        case .light:
+            return "Light"
+        case .dark:
+            return "Dark"
+        }
+    }
+}
+
 @MainActor
 class AppSettings: ObservableObject {
     static let shared = AppSettings()
@@ -42,6 +61,10 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(includeTimestamps, forKey: "includeTimestamps") }
     }
 
+    @Published var appAppearance: AppAppearance {
+        didSet { UserDefaults.standard.set(appAppearance.rawValue, forKey: Self.appAppearanceKey) }
+    }
+
     var selectedModelBackend: TranscriptionBackend {
         selectedTranscriptionModel.backend
     }
@@ -56,6 +79,7 @@ class AppSettings: ObservableObject {
 
     private static let selectedTranscriptionModelKey = "selectedTranscriptionModel"
     private static let legacySelectedModelSizeKey = "selectedModelSize"
+    private static let appAppearanceKey = "appAppearance"
     private static let defaultsMigrationVersionKey = "appSettingsDefaultsMigrationVersion"
     private static let currentDefaultsMigrationVersion = 5
 
@@ -81,6 +105,12 @@ class AppSettings: ObservableObject {
             : defaults.bool(forKey: "keepScreenOn")
         self.autoDeleteRecordings = defaults.bool(forKey: "autoDeleteRecordings")
         self.includeTimestamps = defaults.bool(forKey: "includeTimestamps")
+        if let storedAppearance = defaults.string(forKey: Self.appAppearanceKey),
+           let appAppearance = AppAppearance(rawValue: storedAppearance) {
+            self.appAppearance = appAppearance
+        } else {
+            self.appAppearance = .system
+        }
     }
 
     private static func migrateDefaultsIfNeeded() {
