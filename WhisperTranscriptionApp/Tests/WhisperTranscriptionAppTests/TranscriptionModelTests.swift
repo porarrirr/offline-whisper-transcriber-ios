@@ -28,6 +28,11 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertNil(TranscriptionModel(legacyWhisperRawValue: "missing"))
     }
 
+    func testPrimaryModelDisplayNamesIdentifyBackend() {
+        XCTAssertTrue(WhisperModelSize.tiny.displayName.contains("Whisper"))
+        XCTAssertTrue(AppleSpeechLocale.jaJP.displayName.contains("SpeechTranscriber"))
+    }
+
     func testRequiredDownloadBytesIncludesOnlyMissingArtifactsAndSafetyBuffer() {
         let size = WhisperModelSize.largeV3TurboQ5_0
         let buffer = WhisperModelSize.downloadSafetyBufferBytes

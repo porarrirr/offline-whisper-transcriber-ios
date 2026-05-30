@@ -314,8 +314,14 @@ struct TranscribeView: View {
     }
 
     private var modelReadinessActionTitle: LocalizedStringKey? {
-        guard modelManager.usesAppleSpeechBackend, !modelManager.isDownloading else { return nil }
-        return "Prepare Speech Model"
+        guard !modelManager.isDownloading else { return nil }
+        if modelManager.usesWhisperBackend {
+            return "Download Model"
+        }
+        if modelManager.usesAppleSpeechBackend {
+            return "Prepare Speech Model"
+        }
+        return nil
     }
 
     private var modelReadinessAction: (() -> Void)? {

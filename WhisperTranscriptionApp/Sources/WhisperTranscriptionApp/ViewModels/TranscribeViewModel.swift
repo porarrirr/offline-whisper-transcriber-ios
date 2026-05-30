@@ -201,6 +201,7 @@ class TranscribeViewModel: ObservableObject {
         transcriptionDuration = 0
 
         isProcessing = true
+        modelManager.beginTranscriptionOperation()
         showResult = false
         transcriptionProgress = 0
         usesDeterminateProgress = settings.usesWhisperBackend
@@ -209,6 +210,7 @@ class TranscribeViewModel: ObservableObject {
             : String(localized: "Converting...")
         UIApplication.shared.isIdleTimerDisabled = settings.keepScreenOn
         defer {
+            modelManager.endTranscriptionOperation()
             isProcessing = false
             transcriptionProgress = 0
             usesDeterminateProgress = true

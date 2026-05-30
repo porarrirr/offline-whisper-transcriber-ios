@@ -20,8 +20,15 @@ struct SettingsView: View {
                         Text(model.displayName).tag(model)
                     }
                 }
+                .disabled(modelManager.isTranscriptionInProgress)
                 .onChange(of: settings.selectedTranscriptionModel) { _, newValue in
                     modelManager.switchModel(model: newValue)
+                }
+
+                if modelManager.isTranscriptionInProgress {
+                    Label("Model changes are disabled while transcription is running.", systemImage: "lock.fill")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 HStack {
@@ -69,6 +76,7 @@ struct SettingsView: View {
                         Label("Delete Model", systemImage: "trash.fill")
                             .foregroundColor(.red)
                     }
+                    .disabled(modelManager.isTranscriptionInProgress)
                 }
             }
 
@@ -124,6 +132,7 @@ struct SettingsView: View {
                         }
                     }
                     .tint(AppColors.accent)
+                    .disabled(modelManager.isTranscriptionInProgress)
 
                     Toggle(isOn: $settings.useVAD) {
                         VStack(alignment: .leading) {
@@ -134,6 +143,7 @@ struct SettingsView: View {
                         }
                     }
                     .tint(AppColors.accent)
+                    .disabled(modelManager.isTranscriptionInProgress)
 
                     if settings.useVAD {
                         HStack {
@@ -160,6 +170,7 @@ struct SettingsView: View {
                                 Label("Delete VAD Model", systemImage: "trash")
                                     .foregroundColor(.red)
                             }
+                            .disabled(modelManager.isTranscriptionInProgress)
                         }
 
                         if let error = modelManager.vadDownloadError {

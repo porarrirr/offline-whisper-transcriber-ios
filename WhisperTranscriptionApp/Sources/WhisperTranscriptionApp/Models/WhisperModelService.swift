@@ -52,6 +52,14 @@ actor WhisperModelService {
         probeTask = Task {
             await self.runProbe(encoderPath: encoderPath, melBinCount: coreMLMelBinCount, generation: generation)
         }
+
+        warmupTask = Task {
+            await self.scheduleWarmup(
+                modelPath: modelPath,
+                useFlashAttention: useFlashAttention,
+                generation: generation
+            )
+        }
     }
 
     func ensureModelLoaded(path: String, useFlashAttention: Bool) async throws {
@@ -141,22 +149,30 @@ actor WhisperModelService {
         probeTask?.cancel()
         let cancelledWarmupTask = warmupTask
         let cancelledProbeTask = probeTask
-        _ = cancelInFlightLoad()
+        let cancelledLoadTask = cancelInFlightLoad()
         warmupTask = nil
         probeTask = nil
 
         await cancelledWarmupTask?.value
         await cancelledProbeTask?.value
+        if let cancelledLoadTask {
+            _ = try? await cancelledLoadTask.value
+        }
+        await waitForActiveTranscriptionsToFinish()
 
         context.unloadModel()
         await publishRuntimeSnapshot(isLoadingModel: false)
         AppLogger.info("Whisper model released: reason=recording started", context: "WhisperModelService")
     }
 
-    func invalidateAndUnload() {
-        _ = cancelInFlightLoad()
+    func invalidateAndUnload() async {
+        let cancelledLoadTask = cancelInFlightLoad()
         probeTask?.cancel()
         warmupTask?.cancel()
+        if let cancelledLoadTask {
+            _ = try? await cancelledLoadTask.value
+        }
+        await waitForActiveTranscriptionsToFinish()
         context.unloadModel()
         probeState = .pending
         sessionModelPath = nil
@@ -165,11 +181,21 @@ actor WhisperModelService {
         Task { await publishRuntimeSnapshot(isLoadingModel: false) }
     }
 
-    func cancelLoad() {
-        _ = cancelInFlightLoad()
+    func cancelLoad() async {
+        if let cancelledLoadTask = cancelInFlightLoad() {
+            _ = try? await cancelledLoadTask.value
+        }
+        if activeTranscriptionCount == 0 {
+            context.unloadModel()
+            await publishRuntimeSnapshot(isLoadingModel: false)
+        }
     }
 
     private func runProbe(encoderPath: String?, melBinCount: Int, generation: UInt64) async {
+        #if targetEnvironment(simulator)
+        guard generation == sessionGeneration else { return }
+        await applyProbeResolved(useCoreML: false, summary: "Core ML encoder disabled on Simulator")
+        #else
         guard let encoderPath, FileManager.default.fileExists(atPath: encoderPath) else {
             guard generation == sessionGeneration else { return }
             await applyProbeResolved(useCoreML: false, summary: "encoder package missing")
@@ -190,6 +216,7 @@ actor WhisperModelService {
         if useCoreML {
             await reloadIfIdle(useCoreML: true)
         }
+        #endif
     }
 
     private func applyProbeResolved(useCoreML: Bool, summary: String) async {
@@ -281,6 +308,12 @@ actor WhisperModelService {
         task?.cancel()
         loadTask = nil
         return task
+    }
+
+    private func waitForActiveTranscriptionsToFinish() async {
+        while activeTranscriptionCount > 0 {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+        }
     }
 
     private func publishRuntimeSnapshot(isLoadingModel: Bool) async {

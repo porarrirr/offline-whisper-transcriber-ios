@@ -17,7 +17,7 @@ enum WhisperModelSize: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .tiny: return String(localized: "超高速な基本モデル")
+        case .tiny: return String(localized: "Whisper Tiny (Fast Basic)")
         case .tinyQ5_1: return String(localized: "Tiny Q5_1 (More Light)")
         case .base: return String(localized: "Base (Balanced)")
         case .baseQ5_1: return String(localized: "Base Q5_1 (Light & Balanced)")
@@ -155,7 +155,7 @@ enum AppleSpeechLocale: String, CaseIterable, Identifiable {
     var displayName: String {
         switch self {
         case .jaJP:
-            return String(localized: "超高速な基本モデル")
+            return String(localized: "iOS SpeechTranscriber (Japanese)")
         case .enUS:
             return String(localized: "iOS SpeechTranscriber (English)")
         }

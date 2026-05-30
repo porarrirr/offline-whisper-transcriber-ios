@@ -17,6 +17,7 @@ class ModelManager: NSObject, ObservableObject {
     @Published var vadDownloadProgress: Double = 0
     @Published var isVADDownloading = false
     @Published var vadDownloadError: String?
+    @Published private(set) var isTranscriptionInProgress = false
 
     private var downloadTask: URLSessionDownloadTask?
     private var vadDownloadTask: URLSessionDownloadTask?
@@ -26,6 +27,7 @@ class ModelManager: NSObject, ObservableObject {
     private var activeWhisperDownloadIncludesModel = false
     private var coreMLEncoderInstallTask: Task<Void, Never>?
     private var speechAssetDownloadTask: Task<Void, Never>?
+    private var transcriptionOperationCount = 0
     private let vadModelFileName = "ggml-silero-v6.2.0.bin"
     private let vadModelURL = URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin")!
 
@@ -126,6 +128,16 @@ class ModelManager: NSObject, ObservableObject {
         return whisperReadiness(for: size).isReady
     }
 
+    func beginTranscriptionOperation() {
+        transcriptionOperationCount += 1
+        isTranscriptionInProgress = true
+    }
+
+    func endTranscriptionOperation() {
+        transcriptionOperationCount = max(0, transcriptionOperationCount - 1)
+        isTranscriptionInProgress = transcriptionOperationCount > 0
+    }
+
     private override init() {
         currentTranscriptionModel = AppSettings.shared.selectedTranscriptionModel
         super.init()
@@ -166,6 +178,11 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     func switchModel(model: TranscriptionModel) {
+        guard model != currentTranscriptionModel else { return }
+        guard modelMutationIsAllowed() else {
+            AppSettings.shared.selectedTranscriptionModel = currentTranscriptionModel
+            return
+        }
         downloadTask?.cancel()
         downloadTask = nil
         activeWhisperDownloadSize = nil
@@ -340,6 +357,7 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     func deleteCurrentModel() {
+        guard modelMutationIsAllowed() else { return }
         switch currentTranscriptionModel.backend {
         case .whisper:
             if FileManager.default.fileExists(atPath: whisperModelURL.path) {
@@ -355,6 +373,9 @@ class ModelManager: NSObject, ObservableObject {
             }
             isModelReady = false
             downloadError = nil
+            Task {
+                await WhisperModelService.shared.invalidateAndUnload()
+            }
         case .appleSpeech(let locale):
             if #available(iOS 26.0, *) {
                 Task { @MainActor in
@@ -366,6 +387,7 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     func deleteVADModel() {
+        guard modelMutationIsAllowed() else { return }
         if FileManager.default.fileExists(atPath: vadModelPath) {
             do {
                 try FileManager.default.removeItem(atPath: vadModelPath)
@@ -378,6 +400,7 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     func deleteAllModels() {
+        guard modelMutationIsAllowed() else { return }
         guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             setDownloadError(String(localized: "Could not retrieve documents directory for saving models."))
             return
@@ -405,6 +428,9 @@ class ModelManager: NSObject, ObservableObject {
             }
         }
         isModelReady = false
+        Task {
+            await WhisperModelService.shared.invalidateAndUnload()
+        }
     }
 
     private struct WhisperReadiness {
@@ -548,6 +574,14 @@ class ModelManager: NSObject, ObservableObject {
     private func setDownloadError(_ message: String) {
         downloadError = message
         AppLogger.error(message, context: "ModelManager")
+    }
+
+    private func modelMutationIsAllowed() -> Bool {
+        guard !isTranscriptionInProgress else {
+            setDownloadError(String(localized: "Please wait until transcription finishes before changing or deleting models."))
+            return false
+        }
+        return true
     }
 
     private func setVADDownloadError(_ message: String) {

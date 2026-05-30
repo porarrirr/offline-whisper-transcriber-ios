@@ -23,10 +23,12 @@ class DownloadViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isReady in
                 self?.isModelAvailable = isReady
+                self?.isComplete = isReady
                 if isReady {
-                    self?.isComplete = true
                     self?.isDownloading = false
                     self?.statusText = "Ready!"
+                } else if self?.isDownloading == false {
+                    self?.statusText = "Preparing model..."
                 }
             }
             .store(in: &cancellables)
@@ -71,9 +73,13 @@ class DownloadViewModel: ObservableObject {
             isComplete = true
             statusText = "Model is already prepared"
         } else if AppSettings.shared.usesAppleSpeechBackend {
+            isComplete = false
             modelManager.ensureModelAvailability()
             isDownloading = modelManager.isDownloading
             statusText = "Preparing speech model..."
+        } else {
+            isComplete = false
+            isModelAvailable = false
         }
     }
 }

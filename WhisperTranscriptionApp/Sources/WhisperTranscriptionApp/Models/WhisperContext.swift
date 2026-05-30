@@ -22,10 +22,13 @@ final class WhisperContext: @unchecked Sendable {
     private(set) var loadedUseCoreML = false
 
     func isLoaded(path: String, useFlashAttention: Bool, useCoreML: Bool) -> Bool {
-        isModelLoaded
+        let effectiveUseFlashAttention = Self.effectiveUseFlashAttention(useFlashAttention)
+        let effectiveUseCoreML = Self.effectiveUseCoreML(useCoreML)
+
+        return isModelLoaded
             && loadedModelPath == path
-            && loadedUseFlashAttention == useFlashAttention
-            && loadedUseCoreML == useCoreML
+            && loadedUseFlashAttention == effectiveUseFlashAttention
+            && loadedUseCoreML == effectiveUseCoreML
     }
 
     func loadModel(path: String, useFlashAttention: Bool, useCoreML: Bool) async throws {
@@ -33,6 +36,9 @@ final class WhisperContext: @unchecked Sendable {
             errorMessage = "モデルファイルが見つかりません"
             throw WhisperModelServiceError.modelFileMissing
         }
+
+        let effectiveUseFlashAttention = Self.effectiveUseFlashAttention(useFlashAttention)
+        let effectiveUseCoreML = Self.effectiveUseCoreML(useCoreML)
 
         if isLoaded(path: path, useFlashAttention: useFlashAttention, useCoreML: useCoreML) {
             return
@@ -49,16 +55,16 @@ final class WhisperContext: @unchecked Sendable {
                 }
 
                 var params = whisper_context_default_params()
-                params.use_gpu = true
-                params.flash_attn = useFlashAttention
-                params.use_coreml = useCoreML
+                params.use_gpu = Self.supportsGPUAcceleration
+                params.flash_attn = effectiveUseFlashAttention
+                params.use_coreml = effectiveUseCoreML
 
                 let context = whisper_init_from_file_with_params(path, params)
                 if let context {
                     self.whisperContext = context
                     self.loadedModelPath = path
-                    self.loadedUseFlashAttention = useFlashAttention
-                    self.loadedUseCoreML = useCoreML
+                    self.loadedUseFlashAttention = effectiveUseFlashAttention
+                    self.loadedUseCoreML = effectiveUseCoreML
                     self.isModelLoaded = true
                     self.errorMessage = nil
                     continuation.resume()
@@ -68,6 +74,30 @@ final class WhisperContext: @unchecked Sendable {
                 }
             }
         }
+    }
+
+    private static var supportsGPUAcceleration: Bool {
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        return true
+        #endif
+    }
+
+    private static var supportsCoreMLAcceleration: Bool {
+        #if targetEnvironment(simulator)
+        return false
+        #else
+        return true
+        #endif
+    }
+
+    private static func effectiveUseFlashAttention(_ requested: Bool) -> Bool {
+        requested && supportsGPUAcceleration
+    }
+
+    private static func effectiveUseCoreML(_ requested: Bool) -> Bool {
+        requested && supportsCoreMLAcceleration
     }
     
     func transcribe(
