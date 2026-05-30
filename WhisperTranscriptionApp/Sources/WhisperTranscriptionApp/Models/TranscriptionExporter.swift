@@ -186,10 +186,11 @@ struct TranscriptionExporter {
     }
     
     private static func formatDurationForSRT(_ duration: Double) -> String {
-        let hours = Int(duration) / 3600
-        let minutes = (Int(duration) % 3600) / 60
-        let seconds = Int(duration) % 60
-        let milliseconds = Int((duration - Double(Int(duration))) * 1000)
+        let totalMilliseconds = max(0, Int((duration * 1000).rounded()))
+        let hours = totalMilliseconds / 3_600_000
+        let minutes = (totalMilliseconds % 3_600_000) / 60_000
+        let seconds = (totalMilliseconds % 60_000) / 1000
+        let milliseconds = totalMilliseconds % 1000
         return String(format: "%02d:%02d:%02d,%03d", hours, minutes, seconds, milliseconds)
     }
 }

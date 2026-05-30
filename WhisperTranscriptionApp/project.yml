@@ -69,7 +69,34 @@ targets:
       - target: RecordingActivityWidget
         embed: true
     scheme:
-      testTargets: []
+      testTargets:
+        - WhisperTranscriptionAppTests
+  WhisperTranscriptionAppTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Tests/WhisperTranscriptionAppTests
+        createIntermediateGroups: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.porarrirr.offlinewhispertranscriber.tests
+        SWIFT_VERSION: "5.9"
+        GENERATE_INFOPLIST_FILE: YES
+        HEADER_SEARCH_PATHS:
+          - "$(SRCROOT)/whisper.cpp/include"
+          - "$(SRCROOT)/whisper.cpp/ggml/include"
+          - "$(SRCROOT)/whisper.cpp/src/coreml"
+        OTHER_LDFLAGS: "-lc++ -lz"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/WhisperTranscriptionApp.app/WhisperTranscriptionApp"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        DEVELOPMENT_TEAM: 77V64TWCFD
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    dependencies:
+      - target: WhisperTranscriptionApp
   RecordingActivityWidget:
     type: app-extension
     platform: iOS
