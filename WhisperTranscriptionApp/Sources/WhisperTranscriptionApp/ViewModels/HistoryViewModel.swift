@@ -84,8 +84,11 @@ class HistoryViewModel: ObservableObject {
     }
 
     func updateTags(_ record: TranscriptionRecord, tagsInput: String) {
+        updateTags(record, tags: TranscriptionRecord.normalizedTags(from: tagsInput))
+    }
+
+    func updateTags(_ record: TranscriptionRecord, tags: [String]) {
         let previousTagsJSON = record.tagsJSON
-        let tags = TranscriptionRecord.normalizedTags(from: tagsInput)
         record.updateTags(tags)
         do {
             try modelContext?.save()

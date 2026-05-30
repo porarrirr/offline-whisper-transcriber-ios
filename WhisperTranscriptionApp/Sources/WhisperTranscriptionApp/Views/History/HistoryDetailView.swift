@@ -16,7 +16,6 @@ struct HistoryDetailView: View {
     @State private var showEditTitle = false
     @State private var showEditTags = false
     @State private var editableTitle = ""
-    @State private var editableTags = ""
     @State private var shareItems: [Any] = []
     @State private var showExportAudioError = false
     @State private var cachedSegments: [TranscriptionSegment] = []
@@ -72,7 +71,6 @@ struct HistoryDetailView: View {
                 }
 
                 Button {
-                    editableTags = record.tagsInputText
                     showEditTags = true
                 } label: {
                     Label(record.tags.isEmpty ? "Add Tags" : "Edit Tags", systemImage: "tag")
@@ -309,17 +307,17 @@ struct HistoryDetailView: View {
                 viewModel.updateTitle(record, title: editableTitle)
             }
         }
-        .alert("Edit Tags", isPresented: $showEditTags) {
-            TextField("Tags", text: $editableTags)
-            Button("Cancel", role: .cancel) {}
-            Button("Save") {
-                viewModel.updateTags(record, tagsInput: editableTags)
-            }
-        } message: {
-            Text("Enter tags separated by commas.")
-        }
         .sheet(isPresented: $showShareSheet) {
             ShareSheet(activityItems: shareItems)
+        }
+        .sheet(isPresented: $showEditTags) {
+            TagEditorSheetView(
+                title: record.tags.isEmpty ? "Add Tags" : "Edit Tags",
+                initialTags: record.tags,
+                availableTags: viewModel.availableTags
+            ) { tags in
+                viewModel.updateTags(record, tags: tags)
+            }
         }
         .sheet(isPresented: $showExportSheet) {
             HistoryExportSheetView(record: record, viewModel: viewModel) { url in
@@ -356,6 +354,150 @@ struct HistoryDetailView: View {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
+private struct TagEditorSheetView: View {
+    let title: LocalizedStringKey
+    let availableTags: [String]
+    let onSave: ([String]) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedTags: [String]
+    @State private var newTagText = ""
+
+    private let tagColumns = [
+        GridItem(.adaptive(minimum: 92), spacing: 8, alignment: .leading)
+    ]
+
+    init(
+        title: LocalizedStringKey,
+        initialTags: [String],
+        availableTags: [String],
+        onSave: @escaping ([String]) -> Void
+    ) {
+        self.title = title
+        self.availableTags = availableTags
+        self.onSave = onSave
+        let normalizedTags = TranscriptionRecord.normalizedTags(from: initialTags.joined(separator: ","))
+        _selectedTags = State(initialValue: normalizedTags)
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    if selectedTags.isEmpty {
+                        Label("No tags", systemImage: "tag")
+                            .font(AppFonts.callout)
+                            .foregroundColor(AppColors.textSecondary)
+                    } else {
+                        tagGrid(tags: selectedTags) { tag in
+                            removeTag(tag)
+                        }
+                    }
+                } header: {
+                    Text("Tags")
+                }
+
+                if !reusableTags.isEmpty {
+                    Section {
+                        tagGrid(tags: reusableTags) { tag in
+                            addTags([tag])
+                        }
+                    } header: {
+                        Text("Add Tags")
+                    }
+                }
+
+                Section {
+                    HStack(spacing: 12) {
+                        TextField("Tags", text: $newTagText, axis: .vertical)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .submitLabel(.done)
+                            .onSubmit(addTypedTags)
+
+                        Button(action: addTypedTags) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.title3)
+                        }
+                        .disabled(newTagText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        .accessibilityLabel(Text("Add Tags"))
+                    }
+                } footer: {
+                    Text("Enter tags separated by commas.")
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        onSave(tagsForSaving())
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func tagGrid(tags: [String], action: @escaping (String) -> Void) -> some View {
+        LazyVGrid(columns: tagColumns, alignment: .leading, spacing: 8) {
+            ForEach(tags, id: \.self) { tag in
+                Button {
+                    action(tag)
+                } label: {
+                    TagPillLabel(
+                        tag: tag,
+                        isSelected: selectedTags.contains { tagsAreEqual($0, tag) }
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
+    private func addTypedTags() {
+        addTags(TranscriptionRecord.normalizedTags(from: newTagText))
+        newTagText = ""
+    }
+
+    private func addTags(_ tags: [String]) {
+        for tag in tags where !selectedTags.contains(where: { tagsAreEqual($0, tag) }) {
+            selectedTags.append(tag)
+        }
+    }
+
+    private var reusableTags: [String] {
+        availableTags.filter { tag in
+            !selectedTags.contains { tagsAreEqual($0, tag) }
+        }
+    }
+
+    private func tagsForSaving() -> [String] {
+        let typedTags = TranscriptionRecord.normalizedTags(from: newTagText)
+        var tags = selectedTags
+        for tag in typedTags where !tags.contains(where: { tagsAreEqual($0, tag) }) {
+            tags.append(tag)
+        }
+        return tags
+    }
+
+    private func removeTag(_ tag: String) {
+        selectedTags.removeAll { tagsAreEqual($0, tag) }
+    }
+
+    private func tagsAreEqual(_ lhs: String, _ rhs: String) -> Bool {
+        lhs.compare(rhs, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
     }
 }
 
