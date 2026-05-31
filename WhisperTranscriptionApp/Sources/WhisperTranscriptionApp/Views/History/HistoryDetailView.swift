@@ -9,7 +9,6 @@ struct HistoryDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @StateObject private var audioPlayer = AudioPlayer()
     @StateObject private var transcribeViewModel = TranscribeViewModel()
-    @State private var showShareSheet = false
     @State private var showCopyConfirmation = false
     @State private var showDeleteConfirmation = false
     @State private var showExportSheet = false
@@ -17,15 +16,15 @@ struct HistoryDetailView: View {
     @State private var showEditTitle = false
     @State private var showEditTags = false
     @State private var editableTitle = ""
-    @State private var shareItems: [Any] = []
+    @State private var sharePayload: SharePayload?
     @State private var showExportAudioError = false
     @State private var cachedSegments: [TranscriptionSegment] = []
     
     private func currentDisplayText() -> String {
         if showTimestampView && !cachedSegments.isEmpty {
-            return cachedSegments.map { "\($0.formattedTimestamp) \($0.text)" }.joined(separator: "\n")
+            return TranscriptionSegment.timestampedText(from: cachedSegments)
         }
-        return record.text
+        return TranscriptionSegment.plainText(from: cachedSegments, fallback: record.text)
     }
     
     var body: some View {
@@ -184,8 +183,7 @@ struct HistoryDetailView: View {
 
                         Button {
                             if let url = viewModel.exportRecordingAudio(record) {
-                                shareItems = [url]
-                                showShareSheet = true
+                                sharePayload = .file(url)
                             } else {
                                 showExportAudioError = true
                             }
@@ -234,8 +232,7 @@ struct HistoryDetailView: View {
                 .disabled(!record.hasTranscriptionText)
                 
                 Button(action: {
-                    shareItems = [currentDisplayText()]
-                    showShareSheet = true
+                    sharePayload = .text(currentDisplayText())
                 }) {
                     Label("Share Text", systemImage: "square.and.arrow.up")
                 }
@@ -311,8 +308,8 @@ struct HistoryDetailView: View {
                 viewModel.updateTitle(record, title: editableTitle)
             }
         }
-        .sheet(isPresented: $showShareSheet) {
-            ShareSheet(activityItems: shareItems)
+        .sheet(item: $sharePayload) { payload in
+            ShareSheet(activityItems: payload.activityItems)
         }
         .sheet(isPresented: $showEditTags) {
             TagEditorSheetView(
@@ -326,8 +323,7 @@ struct HistoryDetailView: View {
         .sheet(isPresented: $showExportSheet) {
             HistoryExportSheetView(record: record, viewModel: viewModel) { url in
                 if let url = url {
-                    shareItems = [url]
-                    showShareSheet = true
+                    sharePayload = .file(url)
                 }
             }
         }

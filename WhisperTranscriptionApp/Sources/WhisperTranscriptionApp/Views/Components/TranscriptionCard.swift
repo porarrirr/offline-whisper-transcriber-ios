@@ -18,6 +18,10 @@ struct TranscriptionCard: View {
         self.showTimestamps = showTimestamps
         self.isLoading = isLoading
     }
+
+    private var textOnlyDisplayText: String {
+        TranscriptionSegment.plainText(from: segments, fallback: text)
+    }
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -57,7 +61,7 @@ struct TranscriptionCard: View {
                             TranscriptionSegmentRow(segment: segment)
                         }
                     }
-                } else if !text.isEmpty && textChunks.isEmpty {
+                } else if !textOnlyDisplayText.isEmpty && textChunks.isEmpty {
                     ProgressView()
                         .tint(AppColors.accent)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -75,8 +79,8 @@ struct TranscriptionCard: View {
                 }
             }
         }
-        .task(id: text) {
-            await updateTextChunks(for: text)
+        .task(id: textOnlyDisplayText) {
+            await updateTextChunks(for: textOnlyDisplayText)
         }
         .padding()
         .background(.regularMaterial)

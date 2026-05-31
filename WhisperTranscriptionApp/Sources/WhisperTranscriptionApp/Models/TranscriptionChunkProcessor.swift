@@ -66,7 +66,6 @@ struct TranscriptionChunkProcessor {
         cancellationToken: WhisperCancellationToken,
         onChunkProgress: @escaping (WhisperAudioChunk, Double) -> Void
     ) async throws -> ChunkedTranscriptionResult {
-        var textParts: [String] = []
         var combinedSegments: [TranscriptionSegment] = []
         var detectedLanguage: String?
         var processedAudioDuration: TimeInterval = 0
@@ -116,13 +115,9 @@ struct TranscriptionChunkProcessor {
                     )
                 }
 
-            let acceptedText = acceptedSegments
-                .map(\.text)
-                .joined(separator: "\n")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let acceptedText = TranscriptionSegment.plainText(from: acceptedSegments)
 
             if !acceptedText.isEmpty {
-                textParts.append(acceptedText)
                 appendPromptContext(acceptedText, to: &recentPromptContext)
             }
 
@@ -131,7 +126,7 @@ struct TranscriptionChunkProcessor {
             processedAudioDuration = max(processedAudioDuration, chunk.startTime + chunk.duration)
         }
 
-        let finalText = textParts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalText = TranscriptionSegment.plainText(from: combinedSegments)
         guard !finalText.isEmpty else {
             throw TranscriptionProcessingError.emptyTranscription
         }

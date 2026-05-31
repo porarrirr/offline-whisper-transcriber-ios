@@ -9,11 +9,10 @@ struct ResultView: View {
     let language: String?
     let onDismiss: () -> Void
     
-    @State private var showShareSheet = false
     @State private var showCopyConfirmation = false
     @State private var showExportSheet = false
     @State private var showTimestampView = false
-    @State private var shareItems: [Any] = []
+    @State private var sharePayload: SharePayload?
     
     @MainActor
     init(
@@ -35,9 +34,9 @@ struct ResultView: View {
     
     private func currentDisplayText() -> String {
         if showTimestampView && !segments.isEmpty {
-            return segments.map { "\($0.formattedTimestamp) \($0.text)" }.joined(separator: "\n")
+            return TranscriptionSegment.timestampedText(from: segments)
         }
-        return text
+        return TranscriptionSegment.plainText(from: segments, fallback: text)
     }
     
     var body: some View {
@@ -79,8 +78,7 @@ struct ResultView: View {
                     }
                     
                     Button(action: {
-                        shareItems = [currentDisplayText()]
-                        showShareSheet = true
+                        sharePayload = .text(currentDisplayText())
                     }) {
                         Label("Share", systemImage: "square.and.arrow.up")
                     }
@@ -107,8 +105,8 @@ struct ResultView: View {
             .alert("Copied!", isPresented: $showCopyConfirmation) {
                 Button("OK", role: .cancel) {}
             }
-            .sheet(isPresented: $showShareSheet) {
-                ShareSheet(activityItems: shareItems)
+            .sheet(item: $sharePayload) { payload in
+                ShareSheet(activityItems: payload.activityItems)
             }
             .sheet(isPresented: $showExportSheet) {
                 ExportSheetView(
@@ -119,8 +117,7 @@ struct ResultView: View {
                     language: language
                 ) { url in
                     if let url = url {
-                        shareItems = [url]
-                        showShareSheet = true
+                        sharePayload = .file(url)
                     }
                 }
             }
@@ -194,6 +191,33 @@ struct ExportSheetView: View {
     
     private func extensionForFormat(_ format: ExportFormat) -> String {
         ".\(format.fileExtension)"
+    }
+}
+
+struct SharePayload: Identifiable {
+    enum ActivityItem {
+        case text(String)
+        case file(URL)
+    }
+
+    let id = UUID()
+    let item: ActivityItem
+
+    static func text(_ text: String) -> SharePayload {
+        SharePayload(item: .text(text))
+    }
+
+    static func file(_ url: URL) -> SharePayload {
+        SharePayload(item: .file(url))
+    }
+
+    var activityItems: [Any] {
+        switch item {
+        case .text(let text):
+            return [text]
+        case .file(let url):
+            return [url]
+        }
     }
 }
 

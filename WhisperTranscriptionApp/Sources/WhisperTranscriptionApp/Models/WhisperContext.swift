@@ -418,9 +418,7 @@ final class WhisperContext: @unchecked Sendable {
         
         let nSegments = whisper_full_n_segments(context)
         var segments: [TranscriptionSegment] = []
-        var textParts: [String] = []
         segments.reserveCapacity(Int(nSegments))
-        textParts.reserveCapacity(Int(nSegments))
         
         for i in 0..<nSegments {
             let t0 = whisper_full_get_segment_t0(context, i)
@@ -438,7 +436,6 @@ final class WhisperContext: @unchecked Sendable {
                     text: text
                 )
                 segments.append(segment)
-                textParts.append(text)
             }
         }
         
@@ -448,7 +445,7 @@ final class WhisperContext: @unchecked Sendable {
         }
         
         return TranscriptionResult(
-            text: textParts.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines),
+            text: TranscriptionSegment.plainText(from: segments),
             segments: segments,
             language: detectedLanguage ?? language
         )
