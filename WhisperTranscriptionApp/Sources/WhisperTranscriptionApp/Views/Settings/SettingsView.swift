@@ -42,6 +42,17 @@ struct SettingsView: View {
                     }
                 }
 
+                if let accelerationWarning = modelManager.whisperAccelerationWarningMessage() {
+                    Label(accelerationWarning, systemImage: "speedometer")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    if !modelManager.isDownloading {
+                        Button(action: { modelManager.downloadModel() }) {
+                            Label("Download Core ML Encoder", systemImage: "arrow.down.circle.fill")
+                        }
+                    }
+                }
+
                 if modelManager.isDownloading {
                     ProgressView(value: modelManager.downloadProgress)
                         .tint(AppColors.accent)

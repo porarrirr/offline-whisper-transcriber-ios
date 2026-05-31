@@ -55,6 +55,14 @@ final class TranscriptionModelTests: XCTestCase {
         )
     }
 
+    func testModelFileSizeValidationRequiresExactPublishedSize() {
+        let size = WhisperModelSize.tiny
+
+        XCTAssertTrue(size.isValidModelFileSize(size.modelFileSizeBytes))
+        XCTAssertFalse(size.isValidModelFileSize(size.modelFileSizeBytes - 1))
+        XCTAssertFalse(size.isValidModelFileSize(size.modelFileSizeBytes + 1))
+    }
+
     func testQuantizedWhisperVariantsUseBaseCoreMLEncoderName() {
         XCTAssertEqual(WhisperModelSize.tinyQ5_1.coreMLEncoderDirectoryName, WhisperModelSize.tiny.coreMLEncoderDirectoryName)
         XCTAssertEqual(WhisperModelSize.baseQ5_1.coreMLEncoderDirectoryName, WhisperModelSize.base.coreMLEncoderDirectoryName)

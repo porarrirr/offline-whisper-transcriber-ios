@@ -112,6 +112,7 @@ struct HistoryRow: View {
     let record: TranscriptionRecord
     
     var body: some View {
+        let tags = record.tags
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text(record.displayTitle)
@@ -149,14 +150,14 @@ struct HistoryRow: View {
                 .foregroundColor(AppColors.textSecondary)
                 .lineLimit(2)
 
-            if !record.tags.isEmpty {
+            if !tags.isEmpty {
                 HStack(spacing: 6) {
-                    ForEach(Array(record.tags.prefix(3)), id: \.self) { tag in
+                    ForEach(Array(tags.prefix(3)), id: \.self) { tag in
                         TagPillLabel(tag: tag, isSelected: false)
                     }
 
-                    if record.tags.count > 3 {
-                        Text("+\(record.tags.count - 3)")
+                    if tags.count > 3 {
+                        Text("+\(tags.count - 3)")
                             .font(AppFonts.caption)
                             .foregroundColor(AppColors.textSecondary)
                     }

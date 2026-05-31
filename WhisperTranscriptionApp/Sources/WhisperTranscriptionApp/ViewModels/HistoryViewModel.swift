@@ -13,9 +13,11 @@ class HistoryViewModel: ObservableObject {
     
     private var modelContext: ModelContext?
     private var fetchTask: Task<Void, Never>?
+    private var availableTagsNeedRefresh = true
     
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
+        availableTagsNeedRefresh = true
         fetchRecords()
     }
     
@@ -28,16 +30,13 @@ class HistoryViewModel: ObservableObject {
         guard let modelContext = modelContext else { return }
         
         let descriptor = FetchDescriptor<TranscriptionRecord>(
+            predicate: historyPredicate,
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         
         do {
             var allRecords = try modelContext.fetch(descriptor)
-            availableTags = Self.sortedUniqueTags(from: allRecords)
-            if let selectedTag,
-               !availableTags.contains(where: { Self.tagsAreEqual($0, selectedTag) }) {
-                self.selectedTag = nil
-            }
+            refreshAvailableTagsIfNeeded(modelContext: modelContext)
             
             if !searchText.isEmpty {
                 allRecords = allRecords.filter { $0.matchesSearchText(searchText) }
@@ -45,10 +44,6 @@ class HistoryViewModel: ObservableObject {
 
             if let selectedTag {
                 allRecords = allRecords.filter { $0.hasTag(selectedTag) }
-            }
-            
-            if filterFavorite {
-                allRecords = allRecords.filter { $0.isFavorite }
             }
             
             records = allRecords
@@ -66,12 +61,14 @@ class HistoryViewModel: ObservableObject {
         }
     }
     
-    func deleteRecord(_ record: TranscriptionRecord) {
+    @discardableResult
+    func deleteRecord(_ record: TranscriptionRecord) -> Bool {
         deleteRecords([record])
     }
 
-    func deleteRecords(_ recordsToDelete: [TranscriptionRecord]) {
-        guard let modelContext = modelContext else { return }
+    @discardableResult
+    func deleteRecords(_ recordsToDelete: [TranscriptionRecord]) -> Bool {
+        guard let modelContext = modelContext else { return false }
         let audioFilePaths = recordsToDelete.compactMap(\.audioFilePath)
         recordsToDelete.forEach { modelContext.delete($0) }
         do {
@@ -79,8 +76,12 @@ class HistoryViewModel: ObservableObject {
             audioFilePaths.forEach { deleteRecordingFileIfNeeded(at: $0) }
         } catch {
             setError(String(localized: "Failed to delete history") + ": \(error.localizedDescription)")
+            fetchRecords()
+            return false
         }
+        availableTagsNeedRefresh = true
         fetchRecords()
+        return true
     }
 
     func updateTags(_ record: TranscriptionRecord, tagsInput: String) {
@@ -96,6 +97,7 @@ class HistoryViewModel: ObservableObject {
             record.tagsJSON = previousTagsJSON
             setError(String(localized: "Failed to update tags") + ": \(error.localizedDescription)")
         }
+        availableTagsNeedRefresh = true
         fetchRecords()
     }
 
@@ -203,9 +205,35 @@ class HistoryViewModel: ObservableObject {
 
             guard importedRecords > 0 else { return }
             try modelContext.save()
+            availableTagsNeedRefresh = true
             fetchRecords()
         } catch {
             setError(String(localized: "Failed to recover saved recordings") + ": \(error.localizedDescription)")
+        }
+    }
+
+    private var historyPredicate: Predicate<TranscriptionRecord>? {
+        guard filterFavorite else { return nil }
+        return #Predicate<TranscriptionRecord> { record in
+            record.isFavorite
+        }
+    }
+
+    private func refreshAvailableTagsIfNeeded(modelContext: ModelContext) {
+        guard availableTagsNeedRefresh else { return }
+        do {
+            let descriptor = FetchDescriptor<TranscriptionRecord>(
+                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+            )
+            let allRecords = try modelContext.fetch(descriptor)
+            availableTags = Self.sortedUniqueTags(from: allRecords)
+            if let selectedTag,
+               !availableTags.contains(where: { Self.tagsAreEqual($0, selectedTag) }) {
+                self.selectedTag = nil
+            }
+            availableTagsNeedRefresh = false
+        } catch {
+            setError(String(localized: "Failed to load tags") + ": \(error.localizedDescription)")
         }
     }
 

@@ -60,6 +60,15 @@ struct TranscribeView: View {
                             )
                             .padding(.horizontal)
                             .padding(.top, 8)
+                        } else if let accelerationWarning = modelAccelerationWarning {
+                            ModelReadinessPanel(
+                                modelName: modelManager.currentTranscriptionModel.displayName,
+                                message: accelerationWarning,
+                                actionTitle: modelAccelerationActionTitle,
+                                onAction: modelAccelerationAction
+                            )
+                            .padding(.horizontal)
+                            .padding(.top, 8)
                         }
 
                         VStack(spacing: 20) {
@@ -313,6 +322,10 @@ struct TranscribeView: View {
         modelManager.currentTranscriptionReadinessError()
     }
 
+    private var modelAccelerationWarning: String? {
+        modelManager.whisperAccelerationWarningMessage()
+    }
+
     private var modelReadinessActionTitle: LocalizedStringKey? {
         guard !modelManager.isDownloading else { return nil }
         if modelManager.usesWhisperBackend {
@@ -326,6 +339,18 @@ struct TranscribeView: View {
 
     private var modelReadinessAction: (() -> Void)? {
         guard modelReadinessActionTitle != nil else { return nil }
+        return {
+            modelManager.downloadModel()
+        }
+    }
+
+    private var modelAccelerationActionTitle: LocalizedStringKey? {
+        guard !modelManager.isDownloading else { return nil }
+        return "Download Core ML Encoder"
+    }
+
+    private var modelAccelerationAction: (() -> Void)? {
+        guard modelAccelerationActionTitle != nil else { return nil }
         return {
             modelManager.downloadModel()
         }

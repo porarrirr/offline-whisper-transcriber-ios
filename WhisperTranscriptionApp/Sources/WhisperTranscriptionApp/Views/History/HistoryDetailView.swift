@@ -5,6 +5,7 @@ struct HistoryDetailView: View {
     let record: TranscriptionRecord
     @ObservedObject var viewModel: HistoryViewModel
     
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @StateObject private var audioPlayer = AudioPlayer()
     @StateObject private var transcribeViewModel = TranscribeViewModel()
@@ -286,7 +287,10 @@ struct HistoryDetailView: View {
         .alert("Confirm Deletion", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
-                viewModel.deleteRecord(record)
+                audioPlayer.stop()
+                if viewModel.deleteRecord(record) {
+                    dismiss()
+                }
             }
         } message: {
             Text("Are you sure you want to delete this transcription?")

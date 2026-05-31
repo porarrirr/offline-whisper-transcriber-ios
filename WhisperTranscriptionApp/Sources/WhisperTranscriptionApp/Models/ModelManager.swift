@@ -84,13 +84,21 @@ class ModelManager: NSObject, ObservableObject {
             return String(localized: "Model Ready")
         }
         let readiness = whisperReadiness(for: size)
-        if readiness.modelExists {
+        switch readiness.modelFileStatus {
+        case .valid:
             return String(localized: "Model Ready")
-        }
-        if !readiness.modelExists {
+        case .missing:
             return String(localized: "Please download model")
+        case .invalid:
+            return String(localized: "Downloaded model file is incomplete. Download the model again.")
         }
-        return String(localized: "Core ML encoder is not available for this model.")
+    }
+
+    func whisperAccelerationWarningMessage() -> String? {
+        guard let size = currentTranscriptionModel.whisperModelSize else { return nil }
+        let readiness = whisperReadiness(for: size)
+        guard readiness.modelExists, !readiness.encoderExists else { return nil }
+        return String(localized: "Core ML encoder is not installed, so transcription may be slower.")
     }
 
     func currentTranscriptionReadinessError() -> String? {
@@ -346,6 +354,10 @@ class ModelManager: NSObject, ObservableObject {
                     let formatter = ByteCountFormatter()
                     formatter.countStyle = .file
                     return formatter.string(fromByteCount: size)
+                } else if let size = attributes[.size] as? NSNumber {
+                    let formatter = ByteCountFormatter()
+                    formatter.countStyle = .file
+                    return formatter.string(fromByteCount: size.int64Value)
                 }
             } catch {
                 setDownloadError(String(localized: "Failed to get model size") + ": \(error.localizedDescription)")
@@ -434,19 +446,43 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     private struct WhisperReadiness {
-        let modelExists: Bool
+        let modelFileStatus: WhisperModelFileStatus
         let encoderExists: Bool
+
+        var modelExists: Bool {
+            modelFileStatus == .valid
+        }
 
         var isReady: Bool {
             modelExists && encoderExists
         }
     }
 
+    private enum WhisperModelFileStatus: Equatable {
+        case missing
+        case invalid(actualSize: Int64)
+        case valid
+    }
+
     private func whisperReadiness(for size: WhisperModelSize) -> WhisperReadiness {
         WhisperReadiness(
-            modelExists: FileManager.default.fileExists(atPath: whisperModelURL(for: size).path),
+            modelFileStatus: whisperModelFileStatus(for: size, at: whisperModelURL(for: size)),
             encoderExists: FileManager.default.fileExists(atPath: whisperCoreMLEncoderURL(for: size).path)
         )
+    }
+
+    private func whisperModelFileStatus(for size: WhisperModelSize, at url: URL) -> WhisperModelFileStatus {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return .missing
+        }
+        do {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            let byteCount = (attributes[.size] as? NSNumber)?.int64Value ?? -1
+            return size.isValidModelFileSize(byteCount) ? .valid : .invalid(actualSize: byteCount)
+        } catch {
+            AppLogger.error("Failed to inspect model file", context: "ModelManager", error: error)
+            return .invalid(actualSize: -1)
+        }
     }
 
     private func whisperModelURL(for size: WhisperModelSize) -> URL {
@@ -542,7 +578,8 @@ class ModelManager: NSObject, ObservableObject {
                     ModelManager.shared.downloadTask = nil
                     ModelManager.shared.activeWhisperDownloadSize = nil
                     ModelManager.shared.activeWhisperDownloadIncludesModel = false
-                    ModelManager.shared.isModelReady = false
+                    ModelManager.shared.isModelReady = ModelManager.shared.whisperReadiness(for: size).modelExists
+                    ModelManager.shared.downloadProgress = ModelManager.shared.isModelReady ? 1 : 0
                 }
             }
         }
@@ -554,7 +591,7 @@ class ModelManager: NSObject, ObservableObject {
         let isUsedByAnotherInstalledModel = WhisperModelSize.allCases.contains { otherSize in
             otherSize != size &&
             otherSize.coreMLEncoderDirectoryName == size.coreMLEncoderDirectoryName &&
-            FileManager.default.fileExists(atPath: whisperModelURL(for: otherSize).path)
+            whisperModelFileStatus(for: otherSize, at: whisperModelURL(for: otherSize)) == .valid
         }
 
         guard !isUsedByAnotherInstalledModel,
@@ -587,6 +624,31 @@ class ModelManager: NSObject, ObservableObject {
     private func setVADDownloadError(_ message: String) {
         vadDownloadError = message
         AppLogger.error(message, context: "ModelManager")
+    }
+
+    private func validateWhisperModelDownload(at url: URL, size: WhisperModelSize) throws {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        let byteCount = (attributes[.size] as? NSNumber)?.int64Value ?? -1
+        guard size.isValidModelFileSize(byteCount) else {
+            throw ModelDownloadValidationError.unexpectedFileSize(expected: size.modelFileSizeBytes, actual: byteCount)
+        }
+    }
+}
+
+private enum ModelDownloadValidationError: LocalizedError {
+    case unexpectedFileSize(expected: Int64, actual: Int64)
+
+    var errorDescription: String? {
+        switch self {
+        case .unexpectedFileSize(let expected, let actual):
+            let formatter = ByteCountFormatter()
+            formatter.countStyle = .file
+            return String(
+                format: String(localized: "Downloaded model file size is invalid. Expected %@ but received %@. Please download the model again."),
+                formatter.string(fromByteCount: expected),
+                formatter.string(fromByteCount: max(0, actual))
+            )
+        }
     }
 }
 
@@ -630,6 +692,7 @@ extension ModelManager: @preconcurrency URLSessionDownloadDelegate {
                     preconditionFailure("Documents directory is unavailable")
                 }
                 destinationURL = documentsPath.appendingPathComponent(whisperSize.fileName)
+                try validateWhisperModelDownload(at: location, size: whisperSize)
             }
             if FileManager.default.fileExists(atPath: destinationURL.path) {
                 try FileManager.default.removeItem(at: destinationURL)

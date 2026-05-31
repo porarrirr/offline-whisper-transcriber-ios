@@ -93,6 +93,10 @@ enum WhisperModelSize: String, CaseIterable, Identifiable {
         }
     }
 
+    func isValidModelFileSize(_ byteCount: Int64) -> Bool {
+        byteCount == modelFileSizeBytes
+    }
+
     /// Peak disk use while downloading and extracting the Core ML encoder zip (archive + extracted tree).
     var coreMLEncoderPeakBytes: Int64 {
         let zipBytes: Int64
