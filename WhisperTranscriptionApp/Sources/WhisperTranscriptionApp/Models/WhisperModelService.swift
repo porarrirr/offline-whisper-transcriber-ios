@@ -28,7 +28,6 @@ actor WhisperModelService {
     private var sessionEncoderPath: String?
     private var sessionUseFlashAttention = false
     private var sessionGeneration: UInt64 = 0
-    private var warmupTask: Task<Void, Never>?
     private var probeTask: Task<Void, Never>?
     private var loadTask: Task<Void, Error>?
     private var releaseCleanupTask: Task<Void, Never>?
@@ -48,20 +47,9 @@ actor WhisperModelService {
         releaseCleanupTask = nil
         Task { await publishRuntimeSnapshot(isLoadingModel: false) }
 
-        warmupTask?.cancel()
-        warmupTask = nil
-
         probeTask?.cancel()
         probeTask = Task {
             await self.runProbe(encoderPath: encoderPath, melBinCount: coreMLMelBinCount, generation: generation)
-        }
-
-        warmupTask = Task {
-            await self.scheduleWarmup(
-                modelPath: modelPath,
-                useFlashAttention: useFlashAttention,
-                generation: generation
-            )
         }
     }
 
@@ -151,24 +139,20 @@ actor WhisperModelService {
 
     func releaseForRecording() async {
         sessionGeneration += 1
-        warmupTask?.cancel()
         probeTask?.cancel()
-        let cancelledWarmupTask = warmupTask
         let cancelledProbeTask = probeTask
         let cancelledLoadTask = cancelInFlightLoad()
-        warmupTask = nil
         probeTask = nil
         releaseCleanupTask?.cancel()
 
         if cancelledLoadTask == nil && activeTranscriptionCount == 0 {
-            context.unloadModel()
+            context.unloadModelAsync()
         }
 
         await publishRuntimeSnapshot(isLoadingModel: false)
         AppLogger.info("Whisper model release requested: reason=recording started", context: "WhisperModelService")
 
         releaseCleanupTask = Task {
-            await cancelledWarmupTask?.value
             await cancelledProbeTask?.value
             if let cancelledLoadTask {
                 _ = try? await cancelledLoadTask.value
@@ -183,12 +167,11 @@ actor WhisperModelService {
         releaseCleanupTask = nil
         let cancelledLoadTask = cancelInFlightLoad()
         probeTask?.cancel()
-        warmupTask?.cancel()
         if let cancelledLoadTask {
             _ = try? await cancelledLoadTask.value
         }
         await waitForActiveTranscriptionsToFinish()
-        context.unloadModel()
+        context.unloadModelAsync()
         probeState = .pending
         sessionModelPath = nil
         sessionEncoderPath = nil
@@ -203,7 +186,7 @@ actor WhisperModelService {
             _ = try? await cancelledLoadTask.value
         }
         if activeTranscriptionCount == 0 {
-            context.unloadModel()
+            context.unloadModelAsync()
             await publishRuntimeSnapshot(isLoadingModel: false)
         }
     }
@@ -247,23 +230,6 @@ actor WhisperModelService {
         await publishRuntimeSnapshot(isLoadingModel: false)
     }
 
-    private func scheduleWarmup(modelPath: String, useFlashAttention: Bool, generation: UInt64) async {
-        guard generation == sessionGeneration else { return }
-        do {
-            try await ensureModelLoaded(path: modelPath, useFlashAttention: useFlashAttention)
-            guard generation == sessionGeneration else {
-                unloadModelIfItDoesNotMatchCurrentSession()
-                return
-            }
-        } catch is CancellationError {
-            return
-        } catch {
-            await MainActor.run {
-                AppLogger.error("Whisper warmup failed", context: "WhisperModelService", error: error)
-            }
-        }
-    }
-
     private func reloadIfIdle(useCoreML: Bool) async {
         guard activeTranscriptionCount == 0 else { return }
         guard let path = sessionModelPath else { return }
@@ -278,7 +244,7 @@ actor WhisperModelService {
             "Reloading Whisper model for Core ML policy change: useCoreML=\(useCoreML)",
             context: "WhisperModelService"
         )
-        context.unloadModel()
+        context.unloadModelAsync()
         do {
             try await ensureModelLoaded(path: path, useFlashAttention: sessionUseFlashAttention)
         } catch {
@@ -294,19 +260,6 @@ actor WhisperModelService {
             return false
         case .resolved(let useCoreML, _):
             return useCoreML
-        }
-    }
-
-    private func unloadModelIfItDoesNotMatchCurrentSession() {
-        guard let path = sessionModelPath else {
-            context.unloadModel()
-            return
-        }
-
-        if context.loadedModelPath != path
-            || context.loadedUseFlashAttention != sessionUseFlashAttention
-            || context.loadedUseCoreML != useCoreMLForLoad() {
-            context.unloadModel()
         }
     }
 
@@ -336,7 +289,7 @@ actor WhisperModelService {
     private func finishReleaseCleanup() async {
         releaseCleanupTask = nil
         guard activeTranscriptionCount == 0, loadTask == nil else { return }
-        context.unloadModel()
+        context.unloadModelAsync()
         await publishRuntimeSnapshot(isLoadingModel: false)
         AppLogger.info("Whisper model released: reason=recording started", context: "WhisperModelService")
     }

@@ -44,11 +44,15 @@ final class WhisperContext: @unchecked Sendable {
             return
         }
 
-        unloadModel()
+        let contextToFree = detachLoadedContext()
         errorMessage = nil
 
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            workQueue.async { [weak self] in
+            workQueue.async { [weak self, contextToFree] in
+                if let contextToFree {
+                    whisper_free(contextToFree.value)
+                }
+
                 guard let self else {
                     continuation.resume(throwing: WhisperModelServiceError.modelLoadFailed)
                     return
@@ -461,10 +465,29 @@ final class WhisperContext: @unchecked Sendable {
     }
     
     func unloadModel() {
-        if let context = whisperContext {
-            whisper_free(context)
-            whisperContext = nil
+        if let context = detachLoadedContext() {
+            whisper_free(context.value)
         }
+    }
+
+    func unloadModelAsync() {
+        guard let context = detachLoadedContext() else { return }
+        workQueue.async { [context] in
+            whisper_free(context.value)
+        }
+    }
+
+    private func detachLoadedContext() -> WhisperContextPointer? {
+        guard let context = whisperContext else {
+            clearLoadedModelState()
+            return nil
+        }
+        whisperContext = nil
+        clearLoadedModelState()
+        return WhisperContextPointer(value: context)
+    }
+
+    private func clearLoadedModelState() {
         isModelLoaded = false
         loadedModelPath = nil
         loadedUseFlashAttention = false
