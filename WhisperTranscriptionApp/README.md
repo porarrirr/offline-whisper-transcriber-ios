@@ -20,6 +20,12 @@ iPhone内でAI音声文字起こしを行うアプリです。OpenAIのWhisper�
 - **iOS** 17.0 以降を搭載した実機（Whisper 利用時は Metal/GPU 推奨。SpeechTranscriber は iOS 26.0 以降で利用可）
 - **Apple ID**（実機へのインストール用）
 
+## 開発時の前提
+
+- `WhisperTranscriptionApp.xcodeproj` は `project.yml` から `xcodegen generate` で生成されます。Xcode 上でプロジェクトファイルを直接編集しないでください。
+- `project.yml` の変更、新規ソース追加、リソース追加を行った場合は、**必ず** `WhisperTranscriptionApp` 直下で `xcodegen generate` を実行してください。
+- `whisper.cpp` 内の変更、または `Frameworks/whisper.xcframework` が存在しない場合は、フレームワークを再生成してから署名する必要があります。
+
 ## プロジェクト構成
 
 ```
@@ -54,31 +60,27 @@ git submodule update --init --recursive
 
 ### 2. whisper.xcframework の確認
 
-このリポジトリには `Frameworks/whisper.xcframework` を同梱しています。通常はそのまま次の手順へ進めます。
+このリポジトリには `Frameworks/whisper.xcframework` が同梱されています。通常はそのまま次の手順へ進めます。
 
-フレームワークを更新したい場合のみ、**Macで**以下を実行します：
+`whisper.cpp` を更新した、または `whisper.xcframework` を更新したい場合は、次の順番で再生成します。
+
+```bash
+./Scripts/build-ios-whisper-xcframework.sh
+```
+
+必要に応じて手動でも再生成できます：
 
 ```bash
 cd whisper.cpp
 ./build-xcframework.sh
-```
-
-ビルドが完了すると、以下のようなパスに `whisper.xcframework` が生成されます：
-
-```
-whisper.cpp/build-apple/whisper.xcframework
-```
-
-生成後、これをプロジェクトの `Frameworks/` ディレクトリにコピーします：
-
-```bash
-cp -R whisper.cpp/build-apple/whisper.xcframework Frameworks/
+cp -R build-apple/whisper.xcframework ../Frameworks/whisper.xcframework
+cd ..
 ./Scripts/sign-whisper-xcframework.sh
 ```
 
-`sign-whisper-xcframework.sh` は Keychain の **Apple Development** 証明書で各スライスを署名し、Xcode の「unsigned framework」警告を防ぎます。
+`./Scripts/sign-whisper-xcframework.sh` は Keychain の **Apple Development** 証明書で各フレームワークスライスを署名し、Xcode の「unsigned framework」警告を防ぎます。
 
-> **注意**: `build-xcframework.sh` はXcodeのコマンドラインツールを使用します。失敗する場合はXcodeを起動し、`Xcode > Settings > Locations` でCommand Line Toolsが正しく設定されているか確認してください。
+> **注意**: `build-xcframework.sh` はXcodeのコマンドラインツールを使用します。失敗する場合はXcodeを起動し、`Xcode > Settings > Locations` で Command Line Tools が正しく設定されているか確認してください。
 
 ### 3. Xcode プロジェクトの作成（自動生成）
 
