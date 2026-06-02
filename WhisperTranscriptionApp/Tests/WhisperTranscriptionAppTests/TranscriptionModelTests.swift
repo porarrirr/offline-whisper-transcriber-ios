@@ -73,4 +73,8 @@ final class TranscriptionModelTests: XCTestCase {
             WhisperModelSize.largeV3TurboQ8_0.coreMLEncoderDirectoryName
         )
     }
+
+    func testPickerOptionsIncludeSmallQ5WhisperModel() {
+        XCTAssertTrue(TranscriptionModel.pickerOptions.contains(.whisper(.smallQ5_1)))
+    }
 }

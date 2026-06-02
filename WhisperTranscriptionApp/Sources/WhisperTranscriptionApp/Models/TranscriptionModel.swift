@@ -228,14 +228,15 @@ enum TranscriptionModel: Hashable, Identifiable, Equatable {
     }
 
     static var pickerOptions: [TranscriptionModel] {
+        let smallWhisperOption = TranscriptionModel.whisper(.smallQ5_1)
         let qualityWhisperOption = TranscriptionModel.whisper(.largeV3TurboQ5_0)
         guard #available(iOS 26.0, *) else {
-            return [.whisper(.tiny), qualityWhisperOption]
+            return [.whisper(.tiny), smallWhisperOption, qualityWhisperOption]
         }
         guard SpeechTranscriber.isAvailable else {
-            return [.whisper(.tiny), qualityWhisperOption]
+            return [.whisper(.tiny), smallWhisperOption, qualityWhisperOption]
         }
-        return AppleSpeechLocale.pickerCases.map { .appleSpeech($0) } + [qualityWhisperOption]
+        return AppleSpeechLocale.pickerCases.map { .appleSpeech($0) } + [smallWhisperOption, qualityWhisperOption]
     }
 
     init?(storageKey: String) {
