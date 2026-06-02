@@ -470,10 +470,13 @@ final class WhisperContext: @unchecked Sendable {
         }
     }
 
-    func unloadModelAsync() {
+    func unloadModelAndWait() async {
         guard let context = detachLoadedContext() else { return }
-        workQueue.async { [context] in
-            whisper_free(context.value)
+        await withCheckedContinuation { continuation in
+            workQueue.async { [context] in
+                whisper_free(context.value)
+                continuation.resume()
+            }
         }
     }
 

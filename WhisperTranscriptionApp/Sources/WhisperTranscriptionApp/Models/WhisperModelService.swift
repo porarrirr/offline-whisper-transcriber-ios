@@ -30,7 +30,6 @@ actor WhisperModelService {
     private var sessionGeneration: UInt64 = 0
     private var probeTask: Task<Void, Never>?
     private var loadTask: Task<Void, Error>?
-    private var releaseCleanupTask: Task<Void, Never>?
     private var loadGeneration: UInt64 = 0
     private var activeTranscriptionCount = 0
 
@@ -43,8 +42,6 @@ actor WhisperModelService {
         sessionEncoderPath = encoderPath
         sessionUseFlashAttention = useFlashAttention
         probeState = .pending
-        releaseCleanupTask?.cancel()
-        releaseCleanupTask = nil
         Task { await publishRuntimeSnapshot(isLoadingModel: false) }
 
         probeTask?.cancel()
@@ -54,9 +51,6 @@ actor WhisperModelService {
     }
 
     func ensureModelLoaded(path: String, useFlashAttention: Bool) async throws {
-        releaseCleanupTask?.cancel()
-        releaseCleanupTask = nil
-
         guard FileManager.default.fileExists(atPath: path) else {
             throw WhisperModelServiceError.modelFileMissing
         }
@@ -140,38 +134,30 @@ actor WhisperModelService {
     func releaseForRecording() async {
         sessionGeneration += 1
         probeTask?.cancel()
-        let cancelledProbeTask = probeTask
-        let cancelledLoadTask = cancelInFlightLoad()
         probeTask = nil
-        releaseCleanupTask?.cancel()
 
-        if cancelledLoadTask == nil && activeTranscriptionCount == 0 {
-            context.unloadModelAsync()
-        }
-
-        await publishRuntimeSnapshot(isLoadingModel: false)
         AppLogger.info("Whisper model release requested: reason=recording started", context: "WhisperModelService")
+        await cancelAndWaitForInFlightLoads()
 
-        releaseCleanupTask = Task {
-            await cancelledProbeTask?.value
-            if let cancelledLoadTask {
-                _ = try? await cancelledLoadTask.value
-            }
-            guard !Task.isCancelled else { return }
-            await self.finishReleaseCleanup()
+        guard activeTranscriptionCount == 0 else {
+            await publishRuntimeSnapshot(isLoadingModel: false)
+            AppLogger.info(
+                "Whisper model release deferred: reason=recording started, activeTranscriptions=\(activeTranscriptionCount)",
+                context: "WhisperModelService"
+            )
+            return
         }
+
+        await context.unloadModelAndWait()
+        await publishRuntimeSnapshot(isLoadingModel: false)
+        AppLogger.info("Whisper model released: reason=recording started", context: "WhisperModelService")
     }
 
     func invalidateAndUnload() async {
-        releaseCleanupTask?.cancel()
-        releaseCleanupTask = nil
-        let cancelledLoadTask = cancelInFlightLoad()
         probeTask?.cancel()
-        if let cancelledLoadTask {
-            _ = try? await cancelledLoadTask.value
-        }
+        await cancelAndWaitForInFlightLoads()
         await waitForActiveTranscriptionsToFinish()
-        context.unloadModelAsync()
+        await context.unloadModelAndWait()
         probeState = .pending
         sessionModelPath = nil
         sessionEncoderPath = nil
@@ -180,13 +166,9 @@ actor WhisperModelService {
     }
 
     func cancelLoad() async {
-        releaseCleanupTask?.cancel()
-        releaseCleanupTask = nil
-        if let cancelledLoadTask = cancelInFlightLoad() {
-            _ = try? await cancelledLoadTask.value
-        }
+        await cancelAndWaitForInFlightLoads()
         if activeTranscriptionCount == 0 {
-            context.unloadModelAsync()
+            await context.unloadModelAndWait()
             await publishRuntimeSnapshot(isLoadingModel: false)
         }
     }
@@ -244,7 +226,7 @@ actor WhisperModelService {
             "Reloading Whisper model for Core ML policy change: useCoreML=\(useCoreML)",
             context: "WhisperModelService"
         )
-        context.unloadModelAsync()
+        await context.unloadModelAndWait()
         do {
             try await ensureModelLoaded(path: path, useFlashAttention: sessionUseFlashAttention)
         } catch {
@@ -280,18 +262,28 @@ actor WhisperModelService {
         return task
     }
 
+    private func cancelAndWaitForInFlightLoads() async {
+        while let cancelledLoadTask = cancelInFlightLoad() {
+            await waitForCancelledLoadToFinish(cancelledLoadTask)
+        }
+    }
+
+    private func waitForCancelledLoadToFinish(_ task: Task<Void, Error>) async {
+        do {
+            try await task.value
+        } catch is CancellationError {
+            return
+        } catch {
+            await MainActor.run {
+                AppLogger.error("Cancelled Whisper model load finished with error", context: "WhisperModelService", error: error)
+            }
+        }
+    }
+
     private func waitForActiveTranscriptionsToFinish() async {
         while activeTranscriptionCount > 0 {
             try? await Task.sleep(nanoseconds: 50_000_000)
         }
-    }
-
-    private func finishReleaseCleanup() async {
-        releaseCleanupTask = nil
-        guard activeTranscriptionCount == 0, loadTask == nil else { return }
-        context.unloadModelAsync()
-        await publishRuntimeSnapshot(isLoadingModel: false)
-        AppLogger.info("Whisper model released: reason=recording started", context: "WhisperModelService")
     }
 
     private func publishRuntimeSnapshot(isLoadingModel: Bool) async {
