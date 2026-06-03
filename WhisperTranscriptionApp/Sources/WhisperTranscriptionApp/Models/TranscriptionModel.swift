@@ -144,9 +144,37 @@ enum WhisperModelSize: String, CaseIterable, Identifiable {
     }
 }
 
-enum AppleSpeechLocale: String, CaseIterable, Identifiable {
-    case jaJP = "ja_JP"
-    case enUS = "en_US"
+struct AppleSpeechLocale: RawRepresentable, CaseIterable, Hashable, Identifiable {
+    let rawValue: String
+
+    static let jaJP = AppleSpeechLocale(localeIdentifier: "ja_JP")
+    static let enUS = AppleSpeechLocale(localeIdentifier: "en_US")
+    static let allCases: [AppleSpeechLocale] = [.jaJP, .enUS]
+
+    init(rawValue: String) {
+        self.rawValue = Locale(identifier: rawValue).identifier
+    }
+
+    init(localeIdentifier: String) {
+        self.init(rawValue: localeIdentifier)
+    }
+
+    init(locale: Locale) {
+        self.init(localeIdentifier: locale.identifier)
+    }
+
+    init?(storageIdentifier: String) {
+        let trimmed = storageIdentifier.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+
+        let locale = Locale(identifier: trimmed)
+        guard let languageCode = locale.language.languageCode?.identifier,
+              (2...3).contains(languageCode.count) else {
+            return nil
+        }
+
+        self.init(localeIdentifier: trimmed)
+    }
 
     var id: String { rawValue }
 
@@ -157,11 +185,14 @@ enum AppleSpeechLocale: String, CaseIterable, Identifiable {
     }
 
     var displayName: String {
-        switch self {
-        case .jaJP:
+        switch (locale.language.languageCode?.identifier, locale.region?.identifier) {
+        case ("ja", "JP"):
             return String(localized: "iOS SpeechTranscriber (Japanese)")
-        case .enUS:
+        case ("en", "US"):
             return String(localized: "iOS SpeechTranscriber (English)")
+        default:
+            let localeName = Locale.current.localizedString(forIdentifier: localeIdentifier) ?? localeIdentifier
+            return "\(String(localized: "iOS SpeechTranscriber")) (\(localeName))"
         }
     }
 
@@ -186,7 +217,7 @@ enum TranscriptionModel: Hashable, Identifiable, Equatable {
         case .whisper(let size):
             return "whisper:\(size.rawValue)"
         case .appleSpeech(let locale):
-            return "apple-speech:\(locale.rawValue)"
+            return "apple-speech:\(locale.localeIdentifier)"
         }
     }
 
@@ -228,15 +259,34 @@ enum TranscriptionModel: Hashable, Identifiable, Equatable {
     }
 
     static var pickerOptions: [TranscriptionModel] {
+        pickerOptions(selectedModel: nil)
+    }
+
+    static func pickerOptions(selectedModel: TranscriptionModel?) -> [TranscriptionModel] {
+        if #available(iOS 26.0, *), SpeechTranscriber.isAvailable {
+            return pickerOptions(supportsAppleSpeech: true, selectedModel: selectedModel)
+        }
+        return pickerOptions(supportsAppleSpeech: false, selectedModel: selectedModel)
+    }
+
+    static func pickerOptions(
+        supportsAppleSpeech: Bool,
+        selectedModel: TranscriptionModel? = nil
+    ) -> [TranscriptionModel] {
         let smallWhisperOption = TranscriptionModel.whisper(.smallQ5_1)
         let qualityWhisperOption = TranscriptionModel.whisper(.largeV3TurboQ5_0)
-        guard #available(iOS 26.0, *) else {
+        guard supportsAppleSpeech else {
             return [.whisper(.tiny), smallWhisperOption, qualityWhisperOption]
         }
-        guard SpeechTranscriber.isAvailable else {
-            return [.whisper(.tiny), smallWhisperOption, qualityWhisperOption]
+
+        var appleSpeechOptions = AppleSpeechLocale.pickerCases.map { TranscriptionModel.appleSpeech($0) }
+        if let selectedModel,
+           case .appleSpeech = selectedModel,
+           !appleSpeechOptions.contains(selectedModel) {
+            appleSpeechOptions.append(selectedModel)
         }
-        return AppleSpeechLocale.pickerCases.map { .appleSpeech($0) } + [smallWhisperOption, qualityWhisperOption]
+
+        return appleSpeechOptions + [smallWhisperOption, qualityWhisperOption]
     }
 
     init?(storageKey: String) {
@@ -246,7 +296,7 @@ enum TranscriptionModel: Hashable, Identifiable, Equatable {
             self = .whisper(size)
         } else if storageKey.hasPrefix("apple-speech:") {
             let raw = String(storageKey.dropFirst("apple-speech:".count))
-            guard let locale = AppleSpeechLocale(rawValue: raw) else { return nil }
+            guard let locale = AppleSpeechLocale(storageIdentifier: raw) else { return nil }
             self = .appleSpeech(locale)
         } else if let legacy = WhisperModelSize(rawValue: storageKey) {
             self = .whisper(legacy)

@@ -16,7 +16,7 @@ struct SettingsView: View {
         Form {
             Section(header: Text("Model Settings")) {
                 Picker("Model", selection: $settings.selectedTranscriptionModel) {
-                    ForEach(TranscriptionModel.pickerOptions) { model in
+                    ForEach(TranscriptionModel.pickerOptions(selectedModel: settings.selectedTranscriptionModel)) { model in
                         Text(model.displayName).tag(model)
                     }
                 }

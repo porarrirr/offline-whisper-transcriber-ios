@@ -1,4 +1,5 @@
 import Foundation
+import Speech
 
 enum AppAppearance: String, CaseIterable, Identifiable {
     case system
@@ -17,6 +18,82 @@ enum AppAppearance: String, CaseIterable, Identifiable {
             return "Dark"
         }
     }
+}
+
+struct PreferredTranscriptionDefaults: Equatable {
+    let model: TranscriptionModel
+    let whisperLanguage: String
+}
+
+enum TranscriptionDefaultResolver {
+    static let fallbackModel: TranscriptionModel = .whisper(.smallQ5_1)
+
+    static func preferredDefaults(
+        preferredLanguages: [String],
+        supportedSpeechLocale: Locale?
+    ) -> PreferredTranscriptionDefaults {
+        let whisperLanguage = defaultWhisperLanguage(preferredLanguages: preferredLanguages)
+        if let supportedSpeechLocale {
+            return PreferredTranscriptionDefaults(
+                model: .appleSpeech(AppleSpeechLocale(locale: supportedSpeechLocale)),
+                whisperLanguage: whisperLanguage
+            )
+        }
+        return PreferredTranscriptionDefaults(
+            model: fallbackModel,
+            whisperLanguage: whisperLanguage
+        )
+    }
+
+    static func provisionalDefaults(preferredLanguages: [String]) -> PreferredTranscriptionDefaults {
+        preferredDefaults(preferredLanguages: preferredLanguages, supportedSpeechLocale: nil)
+    }
+
+    static func defaultWhisperLanguage(preferredLanguages: [String]) -> String {
+        guard let preferredLocale = preferredLocale(from: preferredLanguages),
+              let languageCode = preferredLocale.language.languageCode?.identifier,
+              supportedWhisperLanguageCodes.contains(languageCode) else {
+            return "auto"
+        }
+        return languageCode
+    }
+
+    static func preferredLocale(from preferredLanguages: [String]) -> Locale? {
+        guard let preferredLanguage = preferredLanguages.first,
+              !preferredLanguage.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return nil
+        }
+        return Locale(identifier: preferredLanguage)
+    }
+
+    static func shouldResolveLocaleDefaultModel(
+        hadModelSelection: Bool,
+        selectedModelStorageKey: String?
+    ) -> Bool {
+        guard hadModelSelection else { return true }
+        return selectedModelStorageKey == TranscriptionModel.appleSpeech(.jaJP).storageKey
+    }
+
+    private static let supportedWhisperLanguageCodes: Set<String> = [
+        "ja",
+        "en",
+        "zh",
+        "ko",
+        "es",
+        "fr",
+        "de",
+        "it",
+        "pt",
+        "ru",
+        "ar",
+        "hi",
+        "nl",
+        "pl",
+        "tr",
+        "vi",
+        "th",
+        "id",
+    ]
 }
 
 @MainActor
@@ -81,7 +158,10 @@ class AppSettings: ObservableObject {
     private static let legacySelectedModelSizeKey = "selectedModelSize"
     private static let appAppearanceKey = "appAppearance"
     private static let defaultsMigrationVersionKey = "appSettingsDefaultsMigrationVersion"
-    private static let currentDefaultsMigrationVersion = 5
+    private static let localeDefaultResolutionPendingKey = "localeDefaultResolutionPending"
+    private static let localeDefaultResolutionVersionKey = "localeDefaultResolutionVersion"
+    private static let currentLocaleDefaultResolutionVersion = 1
+    private static let currentDefaultsMigrationVersion = 6
 
     private init() {
         Self.migrateDefaultsIfNeeded()
@@ -89,7 +169,7 @@ class AppSettings: ObservableObject {
         let defaults = UserDefaults.standard
         if let key = defaults.string(forKey: Self.selectedTranscriptionModelKey),
            let model = TranscriptionModel(storageKey: key),
-           TranscriptionModel.pickerOptions.contains(model) {
+           TranscriptionModel.pickerOptions(selectedModel: model).contains(model) {
             self.selectedTranscriptionModel = model
         } else {
             self.selectedTranscriptionModel = Self.preferredDefaultTranscriptionModel
@@ -110,6 +190,10 @@ class AppSettings: ObservableObject {
             self.appAppearance = appAppearance
         } else {
             self.appAppearance = .system
+        }
+
+        Task { @MainActor [weak self] in
+            await self?.resolvePendingLocaleDefaultIfNeeded()
         }
     }
 
@@ -139,6 +223,13 @@ class AppSettings: ObservableObject {
         }
         if appliedVersion < 5 {
             migrateDefaultsToVersion5(
+                defaults: defaults,
+                hadModelSelection: hadModelSelection,
+                hadLanguageSelection: hadLanguageSelection
+            )
+        }
+        if appliedVersion < 6 {
+            migrateDefaultsToVersion6(
                 defaults: defaults,
                 hadModelSelection: hadModelSelection,
                 hadLanguageSelection: hadLanguageSelection
@@ -193,6 +284,30 @@ class AppSettings: ObservableObject {
         applyDefaultLanguageIfMissing(defaults: defaults, hadLanguageSelection: hadLanguageSelection)
     }
 
+    private static func migrateDefaultsToVersion6(
+        defaults: UserDefaults,
+        hadModelSelection: Bool,
+        hadLanguageSelection: Bool
+    ) {
+        let shouldResolveDefaultModel = TranscriptionDefaultResolver.shouldResolveLocaleDefaultModel(
+            hadModelSelection: hadModelSelection,
+            selectedModelStorageKey: defaults.string(forKey: selectedTranscriptionModelKey)
+        )
+        guard shouldResolveDefaultModel else { return }
+
+        let provisionalDefaults = TranscriptionDefaultResolver.provisionalDefaults(
+            preferredLanguages: Locale.preferredLanguages
+        )
+        defaults.set(provisionalDefaults.model.storageKey, forKey: selectedTranscriptionModelKey)
+
+        if !hadLanguageSelection || languageSelectionIsOldDefaultEquivalent(defaults: defaults) {
+            defaults.set(provisionalDefaults.whisperLanguage, forKey: "selectedLanguage")
+        }
+
+        defaults.set(true, forKey: localeDefaultResolutionPendingKey)
+        defaults.set(0, forKey: localeDefaultResolutionVersionKey)
+    }
+
     private static func applyDefaultModelIfMissing(defaults: UserDefaults, hadModelSelection: Bool) {
         guard !hadModelSelection else { return }
         defaults.set(preferredDefaultTranscriptionModel.storageKey, forKey: selectedTranscriptionModelKey)
@@ -211,15 +326,73 @@ class AppSettings: ObservableObject {
         return FileManager.default.fileExists(atPath: modelURL.path)
     }
 
+    private static func languageSelectionIsOldDefaultEquivalent(defaults: UserDefaults) -> Bool {
+        defaults.string(forKey: "selectedLanguage") == "ja"
+    }
+
     private static var defaultTranscriptionLanguage: String {
-        "ja"
+        TranscriptionDefaultResolver.defaultWhisperLanguage(preferredLanguages: Locale.preferredLanguages)
     }
 
     static var preferredDefaultTranscriptionModel: TranscriptionModel {
-        if TranscriptionModel.pickerOptions.contains(.appleSpeech(.jaJP)) {
-            return .appleSpeech(.jaJP)
+        TranscriptionDefaultResolver.fallbackModel
+    }
+
+    static func preferredAppleSpeechLocaleForDevice() async -> AppleSpeechLocale? {
+        guard #available(iOS 26.0, *), SpeechTranscriber.isAvailable,
+              let preferredLocale = TranscriptionDefaultResolver.preferredLocale(
+                from: Locale.preferredLanguages
+              ),
+              let supportedLocale = await SpeechTranscriber.supportedLocale(
+                equivalentTo: preferredLocale
+              ) else {
+            return nil
         }
-        return .whisper(.tiny)
+        return AppleSpeechLocale(locale: supportedLocale)
+    }
+
+    private static func preferredDefaultsFromDevice() async -> PreferredTranscriptionDefaults {
+        let preferredLanguages = Locale.preferredLanguages
+        guard let preferredLocale = TranscriptionDefaultResolver.preferredLocale(from: preferredLanguages),
+              #available(iOS 26.0, *),
+              SpeechTranscriber.isAvailable else {
+            return TranscriptionDefaultResolver.provisionalDefaults(preferredLanguages: preferredLanguages)
+        }
+
+        let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: preferredLocale)
+        return TranscriptionDefaultResolver.preferredDefaults(
+            preferredLanguages: preferredLanguages,
+            supportedSpeechLocale: supportedLocale
+        )
+    }
+
+    private func resolvePendingLocaleDefaultIfNeeded() async {
+        let defaults = UserDefaults.standard
+        guard defaults.bool(forKey: Self.localeDefaultResolutionPendingKey),
+              defaults.integer(forKey: Self.localeDefaultResolutionVersionKey) < Self.currentLocaleDefaultResolutionVersion else {
+            return
+        }
+
+        let expectedModelKey = selectedTranscriptionModel.storageKey
+        let resolvedDefaults = await Self.preferredDefaultsFromDevice()
+
+        guard defaults.bool(forKey: Self.localeDefaultResolutionPendingKey) else { return }
+        guard selectedTranscriptionModel.storageKey == expectedModelKey else {
+            defaults.set(false, forKey: Self.localeDefaultResolutionPendingKey)
+            defaults.set(Self.currentLocaleDefaultResolutionVersion, forKey: Self.localeDefaultResolutionVersionKey)
+            return
+        }
+
+        selectedLanguage = resolvedDefaults.whisperLanguage
+        selectedTranscriptionModel = resolvedDefaults.model
+        defaults.set(false, forKey: Self.localeDefaultResolutionPendingKey)
+        defaults.set(Self.currentLocaleDefaultResolutionVersion, forKey: Self.localeDefaultResolutionVersionKey)
+
+        if ModelManager.shared.currentTranscriptionModel != resolvedDefaults.model {
+            ModelManager.shared.switchModel(model: resolvedDefaults.model)
+        } else {
+            ModelManager.shared.ensureModelAvailability()
+        }
     }
 
     static let supportedLanguages: [(code: String, name: String)] = [

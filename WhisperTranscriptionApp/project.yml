@@ -30,7 +30,7 @@ targets:
         DEVELOPMENT_TEAM: 77V64TWCFD
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
-        MARKETING_VERSION: "1.3"
+        MARKETING_VERSION: "1.6"
         CURRENT_PROJECT_VERSION: "2"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -111,7 +111,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.porarrirr.offlinewhispertranscriber.recordingactivity
         SWIFT_VERSION: "5.9"
         DEVELOPMENT_LANGUAGE: en
-        MARKETING_VERSION: "1.3"
+        MARKETING_VERSION: "1.6"
         CURRENT_PROJECT_VERSION: "2"
         DEVELOPMENT_TEAM: 77V64TWCFD
         CODE_SIGN_STYLE: Automatic

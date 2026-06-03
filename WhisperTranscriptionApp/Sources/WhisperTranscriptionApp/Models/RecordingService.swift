@@ -179,20 +179,32 @@ final class RecordingService: ObservableObject {
             setLiveFailure(String(localized: "Live transcription requires iOS 26 and a device that supports SpeechTranscriber."))
             return
         }
+        guard SpeechTranscriber.isAvailable else {
+            setLiveFailure(String(localized: "Speech transcription is not available on this device."))
+            return
+        }
         guard let inputFormat = audioRecorder.currentInputFormat else {
             setLiveFailure(String(localized: "Could not prepare the live audio format."))
             return
         }
 
         resetLiveSnapshot()
-        let locale = settings.selectedTranscriptionModel.appleSpeechLocale ?? .jaJP
-        let service = LiveTranscriptionService(locale: locale) { [weak self] snapshot in
-            self?.applyLiveSnapshot(snapshot)
-        }
-        liveService = service
         liveTask?.cancel()
         liveTask = Task { @MainActor in
             do {
+                let locale: AppleSpeechLocale
+                if let selectedLocale = settings.selectedTranscriptionModel.appleSpeechLocale {
+                    locale = selectedLocale
+                } else if let deviceLocale = await AppSettings.preferredAppleSpeechLocaleForDevice() {
+                    locale = deviceLocale
+                } else {
+                    throw LiveTranscriptionError.unsupportedLocale
+                }
+
+                let service = LiveTranscriptionService(locale: locale) { [weak self] snapshot in
+                    self?.applyLiveSnapshot(snapshot)
+                }
+                liveService = service
                 try await service.start(inputFormat: inputFormat, recordingURL: audioRecorder.currentRecordingURL)
                 audioRecorder.setAudioBufferHandler { [weak service] buffer, _, _ in
                     service?.handleAudioBuffer(buffer)
