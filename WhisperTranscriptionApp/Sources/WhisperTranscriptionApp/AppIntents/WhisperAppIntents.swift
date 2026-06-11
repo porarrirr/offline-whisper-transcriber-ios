@@ -60,18 +60,33 @@ struct OpenTranscriptionHistoryIntent: AppIntent {
 }
 
 @available(iOS 18.0, *)
-struct StartBackgroundRecordingIntent: AppIntent, AudioRecordingIntent {
+struct StartBackgroundRecordingIntent: AppIntent, AudioRecordingIntent, LiveActivityIntent {
     static var title: LocalizedStringResource = "Start Recording"
-    static var description = IntentDescription("Opens the app and starts an audio recording")
-    static var openAppWhenRun = true
+    static var description = IntentDescription("Starts an audio recording in the background")
+    static var openAppWhenRun = false
 
     @available(iOS 26.0, *)
-    static var supportedModes: IntentModes { .foreground(.immediate) }
+    static var supportedModes: IntentModes { .background }
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        WhisperAppDestination.transcribe.requestOpen(startRecordingRequested: true)
-        return .result(value: String(localized: "Opening recorder."))
+        do {
+            switch try await RecordingService.shared.startRecordingFromIntent() {
+            case .started:
+                return .result(value: String(localized: "Recording started."))
+            case .alreadyRecording:
+                return .result(value: String(localized: "Recording is already in progress."))
+            }
+        } catch AudioRecorderError.microphonePermissionRequired {
+            throw IntentError.microphonePermissionRequired
+        } catch AudioRecorderError.stopInProgress {
+            throw IntentError.recordingBusy
+        } catch is RecordingLiveActivityError {
+            throw IntentError.liveActivityRequired
+        } catch {
+            AppLogger.error("Failed to start recording from shortcut", context: "StartBackgroundRecordingIntent", error: error)
+            throw IntentError.recordingStartFailed(error.localizedDescription)
+        }
     }
 }
 

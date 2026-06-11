@@ -280,18 +280,14 @@ final class RecordingService: ObservableObject {
 
         do {
             let startedAt = Date()
-            var requiredLiveActivityStarted = false
-            if requiresLiveActivity {
-                try await RecordingLiveActivityManager.shared.startRequiredRecordingActivity(startedAt: startedAt)
-                requiredLiveActivityStarted = true
-            }
+            try await audioRecorder.startRecording()
 
             do {
-                try await audioRecorder.startRecording()
-            } catch {
-                if requiredLiveActivityStarted {
-                    await RecordingLiveActivityManager.shared.endRecordingActivity()
+                if requiresLiveActivity {
+                    try await RecordingLiveActivityManager.shared.startRequiredRecordingActivity(startedAt: startedAt)
                 }
+            } catch {
+                audioRecorder.discardRecordingAfterStartFailure()
                 throw error
             }
 

@@ -88,6 +88,7 @@ final class AudioRecorder: NSObject, ObservableObject {
             } catch {
                 throw makeRecordingStartError(stage: "create recording file", error: error)
             }
+            setPreparedRecording(file: file, url: url, format: format)
 
             inputNode.removeTap(onBus: 0)
             AppLogger.info(
@@ -105,7 +106,8 @@ final class AudioRecorder: NSObject, ObservableObject {
                 throw makeRecordingStartError(stage: "start audio engine", error: error)
             }
 
-            setStartedRecording(file: file, url: url, format: format)
+            try await waitForFirstRecordedBuffer()
+            try markRecordingStarted()
             publishStartedRecording()
         } catch {
             cleanupFailedStart()
@@ -131,14 +133,73 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
-    private func setStartedRecording(file: AVAudioFile, url: URL, format: AVAudioFormat) {
+    private func setPreparedRecording(file: AVAudioFile, url: URL, format: AVAudioFormat) {
         stateLock.lock()
         recordingFile = file
         recordingURL = url
         inputFormat = format
         recordedFrames = 0
-        recordingState = .recording
         stateLock.unlock()
+    }
+
+    private func waitForFirstRecordedBuffer() async throws {
+        let maxAttempts = 100
+        let retryDelayNanoseconds: UInt64 = 50_000_000
+
+        for attempt in 1...maxAttempts {
+            let progress = recordingProgressSnapshot()
+
+            if progress.hasRecordedAudio, audioEngine.isRunning {
+                AppLogger.info(
+                    "Confirmed first recorded audio buffer: attempts=\(attempt)",
+                    context: "AudioRecorder"
+                )
+                return
+            }
+
+            guard progress.state == .starting, audioEngine.isRunning else {
+                throw AudioRecorderError.recordingStartFailed(
+                    "audio engine stopped before the first audio buffer was recorded"
+                )
+            }
+
+            if attempt < maxAttempts {
+                try await Task.sleep(nanoseconds: retryDelayNanoseconds)
+            }
+        }
+
+        let session = AVAudioSession.sharedInstance()
+        let route = currentRouteDescription(session: session)
+        AppLogger.error(
+            "Audio engine started but no input buffer was recorded: sampleRate=\(session.sampleRate), inputs=[\(route.inputs)], outputs=[\(route.outputs)]",
+            context: "AudioRecorder"
+        )
+        throw AudioRecorderError.recordingStartFailed(
+            "audio engine started, but no microphone audio was received"
+        )
+    }
+
+    private func recordingProgressSnapshot() -> (hasRecordedAudio: Bool, state: RecordingState) {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return (recordedFrames > 0, recordingState)
+    }
+
+    private func markRecordingStarted() throws {
+        stateLock.lock()
+        let canStart = recordingState == .starting
+            && recordedFrames > 0
+            && audioEngine.isRunning
+        if canStart {
+            recordingState = .recording
+        }
+        stateLock.unlock()
+
+        guard canStart else {
+            throw AudioRecorderError.recordingStartFailed(
+                "recording stopped while confirming microphone audio"
+            )
+        }
     }
 
     private func publishStartedRecording() {
@@ -347,16 +408,28 @@ final class AudioRecorder: NSObject, ObservableObject {
     private func handleAudioBuffer(_ buffer: AVAudioPCMBuffer, time: AVAudioTime, format: AVAudioFormat) {
         stateLock.lock()
         let file = recordingFile
-        recordedFrames += AVAudioFramePosition(buffer.frameLength)
-        let elapsedTime = format.sampleRate > 0 ? TimeInterval(recordedFrames) / format.sampleRate : 0
+        let shouldRecord = recordingState == .starting || recordingState == .recording
         stateLock.unlock()
 
+        guard shouldRecord else { return }
+        guard let file else {
+            reportEncodingFailure(AudioRecorderError.recordingEncodingFailed(
+                String(localized: "Recording encoding failed") + ": recording file was not prepared"
+            ))
+            return
+        }
+
         do {
-            try file?.write(from: buffer)
+            try file.write(from: buffer)
         } catch {
             reportEncodingFailure(error)
             return
         }
+
+        stateLock.lock()
+        recordedFrames += AVAudioFramePosition(buffer.frameLength)
+        let elapsedTime = format.sampleRate > 0 ? TimeInterval(recordedFrames) / format.sampleRate : 0
+        stateLock.unlock()
 
         let level = averagePower(from: buffer)
         DispatchQueue.main.async {
@@ -411,13 +484,34 @@ final class AudioRecorder: NSObject, ObservableObject {
             audioEngine.stop()
         }
         stateLock.lock()
+        let failedRecordingURL = recordingURL
         recordingFile = nil
         recordingURL = nil
         inputFormat = nil
         recordedFrames = 0
         recordingState = .idle
         stateLock.unlock()
+        if let failedRecordingURL, FileManager.default.fileExists(atPath: failedRecordingURL.path) {
+            do {
+                try FileManager.default.removeItem(at: failedRecordingURL)
+            } catch {
+                AppLogger.error(
+                    "Failed to remove incomplete recording after startup failure",
+                    context: "AudioRecorder",
+                    error: error
+                )
+            }
+        }
+        DispatchQueue.main.async {
+            self.currentTime = 0
+            self.audioLevel = 0
+            self.isRecording = false
+        }
         deactivateSession()
+    }
+
+    func discardRecordingAfterStartFailure() {
+        cleanupFailedStart()
     }
 
     private func validateRecordingFile(at url: URL) throws -> URL {
