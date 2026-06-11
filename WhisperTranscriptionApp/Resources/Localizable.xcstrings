@@ -4118,6 +4118,9 @@
         }
       }
     },
+    "Loading SpeechTranscriber languages..." : {
+
+    },
     "Logs" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4630,6 +4633,9 @@
         }
       }
     },
+    "No SpeechTranscriber languages are available on this device." : {
+
+    },
     "No tags" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5014,6 +5020,16 @@
         }
       }
     },
+    "Please keep the app open until this finishes." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "完了するまでアプリを開いたままお待ちください。"
+          }
+        }
+      }
+    },
     "Please wait until transcription finishes before changing or deleting models." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5021,16 +5037,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "モデルの変更や削除は文字起こしが完了してから行ってください。"
-          }
-        }
-      }
-    },
-    "Please keep the app open until this finishes." : {
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "完了するまでアプリを開いたままお待ちください。"
           }
         }
       }
@@ -6013,6 +6019,9 @@
         }
       }
     },
+    "SpeechTranscriber Language" : {
+
+    },
     "Start recording with live transcription" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6531,17 +6540,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Tiny (快速且輕量)"
-          }
-        }
-      }
-    },
-    "Whisper Tiny (Fast Basic)" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Whisper Tiny（高速・基本）"
           }
         }
       }
@@ -7642,6 +7640,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "越南語"
+          }
+        }
+      }
+    },
+    "Whisper Tiny (Fast Basic)" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whisper Tiny（高速・基本）"
           }
         }
       }

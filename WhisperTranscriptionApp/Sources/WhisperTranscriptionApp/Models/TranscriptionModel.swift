@@ -184,6 +184,14 @@ struct AppleSpeechLocale: RawRepresentable, CaseIterable, Hashable, Identifiable
         Locale(identifier: localeIdentifier)
     }
 
+    var localizedLocaleName: String {
+        Locale.current.localizedString(forIdentifier: localeIdentifier) ?? localeIdentifier
+    }
+
+    private var normalizedLocaleIdentifier: String {
+        localeIdentifier.replacingOccurrences(of: "-", with: "_").lowercased()
+    }
+
     var displayName: String {
         switch (locale.language.languageCode?.identifier, locale.region?.identifier) {
         case ("ja", "JP"):
@@ -191,8 +199,7 @@ struct AppleSpeechLocale: RawRepresentable, CaseIterable, Hashable, Identifiable
         case ("en", "US"):
             return String(localized: "iOS SpeechTranscriber (English)")
         default:
-            let localeName = Locale.current.localizedString(forIdentifier: localeIdentifier) ?? localeIdentifier
-            return "\(String(localized: "iOS SpeechTranscriber")) (\(localeName))"
+            return "\(String(localized: "iOS SpeechTranscriber")) (\(localizedLocaleName))"
         }
     }
 
@@ -200,9 +207,45 @@ struct AppleSpeechLocale: RawRepresentable, CaseIterable, Hashable, Identifiable
         String(localized: "System download")
     }
 
-    /// Locales exposed in the model picker (filter with SpeechTranscriber when the SDK is available).
+    /// Initial locale shown before the async SpeechTranscriber-supported locale list is loaded.
     static var pickerCases: [AppleSpeechLocale] {
         [.jaJP]
+    }
+
+    static func speechTranscriberSupportedCases() async -> [AppleSpeechLocale] {
+        guard #available(iOS 26.0, *), SpeechTranscriber.isAvailable else {
+            return []
+        }
+        let supportedLocales = await SpeechTranscriber.supportedLocales
+        return supportedCases(from: supportedLocales)
+    }
+
+    static func supportedCases(from locales: [Locale]) -> [AppleSpeechLocale] {
+        supportedCases(from: locales.map { AppleSpeechLocale(locale: $0) })
+    }
+
+    static func supportedCases(from locales: [AppleSpeechLocale]) -> [AppleSpeechLocale] {
+        supportedCases(from: locales) { $0.localizedLocaleName }
+    }
+
+    static func supportedCases(
+        from locales: [AppleSpeechLocale],
+        localizedName: (AppleSpeechLocale) -> String
+    ) -> [AppleSpeechLocale] {
+        var seenLocaleIdentifiers = Set<String>()
+        let uniqueLocales = locales.filter { locale in
+            seenLocaleIdentifiers.insert(locale.normalizedLocaleIdentifier).inserted
+        }
+
+        return uniqueLocales.sorted { lhs, rhs in
+            let lhsName = localizedName(lhs)
+            let rhsName = localizedName(rhs)
+            let nameComparison = lhsName.localizedCaseInsensitiveCompare(rhsName)
+            if nameComparison == .orderedSame {
+                return lhs.normalizedLocaleIdentifier.localizedCaseInsensitiveCompare(rhs.normalizedLocaleIdentifier) == .orderedAscending
+            }
+            return nameComparison == .orderedAscending
+        }
     }
 }
 
@@ -263,15 +306,31 @@ enum TranscriptionModel: Hashable, Identifiable, Equatable {
     }
 
     static func pickerOptions(selectedModel: TranscriptionModel?) -> [TranscriptionModel] {
+        pickerOptions(selectedModel: selectedModel, appleSpeechLocales: AppleSpeechLocale.pickerCases)
+    }
+
+    static func pickerOptions(
+        selectedModel: TranscriptionModel?,
+        appleSpeechLocales: [AppleSpeechLocale]
+    ) -> [TranscriptionModel] {
         if #available(iOS 26.0, *), SpeechTranscriber.isAvailable {
-            return pickerOptions(supportsAppleSpeech: true, selectedModel: selectedModel)
+            return pickerOptions(
+                supportsAppleSpeech: true,
+                selectedModel: selectedModel,
+                appleSpeechLocales: appleSpeechLocales
+            )
         }
-        return pickerOptions(supportsAppleSpeech: false, selectedModel: selectedModel)
+        return pickerOptions(
+            supportsAppleSpeech: false,
+            selectedModel: selectedModel,
+            appleSpeechLocales: appleSpeechLocales
+        )
     }
 
     static func pickerOptions(
         supportsAppleSpeech: Bool,
-        selectedModel: TranscriptionModel? = nil
+        selectedModel: TranscriptionModel? = nil,
+        appleSpeechLocales: [AppleSpeechLocale] = AppleSpeechLocale.pickerCases
     ) -> [TranscriptionModel] {
         let smallWhisperOption = TranscriptionModel.whisper(.smallQ5_1)
         let qualityWhisperOption = TranscriptionModel.whisper(.largeV3TurboQ5_0)
@@ -279,7 +338,8 @@ enum TranscriptionModel: Hashable, Identifiable, Equatable {
             return [.whisper(.tiny), smallWhisperOption, qualityWhisperOption]
         }
 
-        var appleSpeechOptions = AppleSpeechLocale.pickerCases.map { TranscriptionModel.appleSpeech($0) }
+        var appleSpeechOptions = AppleSpeechLocale.supportedCases(from: appleSpeechLocales)
+            .map { TranscriptionModel.appleSpeech($0) }
         if let selectedModel,
            case .appleSpeech = selectedModel,
            !appleSpeechOptions.contains(selectedModel) {

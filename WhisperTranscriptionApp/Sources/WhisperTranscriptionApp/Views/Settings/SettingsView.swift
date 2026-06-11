@@ -9,14 +9,18 @@ struct SettingsView: View {
     @State private var showModelDownload = false
     @State private var showDeleteConfirmation = false
     @State private var showLanguagePicker = false
+    @State private var showSpeechLocalePicker = false
     @State private var showLogCopiedConfirmation = false
+    @State private var speechLocaleOptions: [AppleSpeechLocale] = []
+    @State private var didLoadSpeechLocaleOptions = false
+    @State private var isLoadingSpeechLocaleOptions = false
     @FocusState private var isPromptEditorFocused: Bool
 
     var body: some View {
         Form {
             Section(header: Text("Model Settings")) {
                 Picker("Model", selection: $settings.selectedTranscriptionModel) {
-                    ForEach(TranscriptionModel.pickerOptions(selectedModel: settings.selectedTranscriptionModel)) { model in
+                    ForEach(modelPickerOptions) { model in
                         Text(model.displayName).tag(model)
                     }
                 }
@@ -120,6 +124,31 @@ struct SettingsView: View {
                     TextEditor(text: $settings.promptText)
                         .frame(minHeight: 80)
                         .focused($isPromptEditorFocused)
+                }
+            } else if settings.usesAppleSpeechBackend {
+                Section(header: Text("Language Settings")) {
+                    Button(action: { showSpeechLocalePicker = true }) {
+                        HStack {
+                            Text("SpeechTranscriber Language")
+                                .foregroundColor(.primary)
+                            Spacer()
+                            Text(selectedSpeechLocaleName)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .disabled(modelManager.isTranscriptionInProgress || speechLocaleOptions.isEmpty)
+
+                    if isLoadingSpeechLocaleOptions {
+                        HStack {
+                            ProgressView()
+                            Text("Loading SpeechTranscriber languages...")
+                                .foregroundColor(.secondary)
+                        }
+                    } else if speechLocaleOptions.isEmpty {
+                        Text("No SpeechTranscriber languages are available on this device.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 
@@ -269,6 +298,9 @@ struct SettingsView: View {
         .onAppear {
             modelManager.ensureModelAvailability()
         }
+        .task(id: settings.selectedTranscriptionModel.storageKey) {
+            await refreshSpeechLocaleOptions()
+        }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -294,6 +326,24 @@ struct SettingsView: View {
         .sheet(isPresented: $showLanguagePicker) {
             LanguagePickerView(selectedLanguage: $settings.selectedLanguage, isPresented: $showLanguagePicker)
         }
+        .sheet(isPresented: $showSpeechLocalePicker) {
+            SpeechTranscriberLanguagePickerView(
+                locales: speechLocaleOptions,
+                selectedLocale: settings.selectedTranscriptionModel.appleSpeechLocale,
+                isLoading: isLoadingSpeechLocaleOptions,
+                isPresented: $showSpeechLocalePicker
+            ) { locale in
+                selectSpeechLocale(locale)
+            }
+        }
+    }
+
+    private var modelPickerOptions: [TranscriptionModel] {
+        let appleSpeechLocales = didLoadSpeechLocaleOptions ? speechLocaleOptions : AppleSpeechLocale.pickerCases
+        return TranscriptionModel.pickerOptions(
+            selectedModel: settings.selectedTranscriptionModel,
+            appleSpeechLocales: appleSpeechLocales
+        )
     }
 
     private var modelStatusText: LocalizedStringKey {
@@ -307,6 +357,25 @@ struct SettingsView: View {
             return LocalizedStringKey("Preparing speech model...")
         }
         return LocalizedStringKey("Please download model")
+    }
+
+    private var selectedSpeechLocaleName: String {
+        settings.selectedTranscriptionModel.appleSpeechLocale?.localizedLocaleName ?? String(localized: "Unknown")
+    }
+
+    @MainActor
+    private func refreshSpeechLocaleOptions() async {
+        isLoadingSpeechLocaleOptions = true
+        let locales = await AppleSpeechLocale.speechTranscriberSupportedCases()
+        speechLocaleOptions = locales
+        didLoadSpeechLocaleOptions = true
+        isLoadingSpeechLocaleOptions = false
+    }
+
+    private func selectSpeechLocale(_ locale: AppleSpeechLocale) {
+        let model = TranscriptionModel.appleSpeech(locale)
+        settings.selectedTranscriptionModel = model
+        modelManager.switchModel(model: model)
     }
 }
 
@@ -329,6 +398,62 @@ struct LanguagePickerView: View {
                             if selectedLanguage == language.code {
                                 Image(systemName: "checkmark")
                                     .foregroundColor(AppColors.accent)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Select Language")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") {
+                        isPresented = false
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct SpeechTranscriberLanguagePickerView: View {
+    let locales: [AppleSpeechLocale]
+    let selectedLocale: AppleSpeechLocale?
+    let isLoading: Bool
+    @Binding var isPresented: Bool
+    let onSelect: (AppleSpeechLocale) -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if isLoading && locales.isEmpty {
+                    HStack {
+                        ProgressView()
+                        Text("Loading SpeechTranscriber languages...")
+                            .foregroundColor(.secondary)
+                    }
+                } else if locales.isEmpty {
+                    Text("No SpeechTranscriber languages are available on this device.")
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach(locales) { locale in
+                        Button(action: {
+                            onSelect(locale)
+                            isPresented = false
+                        }) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(locale.localizedLocaleName)
+                                        .foregroundColor(.primary)
+                                    Text(locale.localeIdentifier.replacingOccurrences(of: "_", with: "-"))
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                                Spacer()
+                                if selectedLocale == locale {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(AppColors.accent)
+                                }
                             }
                         }
                     }

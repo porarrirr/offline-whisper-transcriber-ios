@@ -29,6 +29,25 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertEqual(TranscriptionModel(storageKey: model.storageKey), model)
     }
 
+    func testAppleSpeechSupportedCasesDeduplicateAndSortLocales() {
+        let englishUS = AppleSpeechLocale(localeIdentifier: "en_US")
+        let englishUSHyphenated = AppleSpeechLocale(localeIdentifier: "en-US")
+        let frenchFR = AppleSpeechLocale(localeIdentifier: "fr_FR")
+        let japaneseJP = AppleSpeechLocale(localeIdentifier: "ja_JP")
+
+        let cases = AppleSpeechLocale.supportedCases(
+            from: [frenchFR, japaneseJP, englishUS, englishUSHyphenated]
+        ) { locale in
+            [
+                englishUS.localeIdentifier: "A English",
+                frenchFR.localeIdentifier: "B French",
+                japaneseJP.localeIdentifier: "C Japanese",
+            ][locale.localeIdentifier] ?? locale.localeIdentifier
+        }
+
+        XCTAssertEqual(cases, [englishUS, frenchFR, japaneseJP])
+    }
+
     func testInvalidStorageKeysReturnNil() {
         XCTAssertNil(TranscriptionModel(storageKey: ""))
         XCTAssertNil(TranscriptionModel(storageKey: "whisper:missing"))
@@ -132,6 +151,19 @@ final class TranscriptionModelTests: XCTestCase {
         )
 
         XCTAssertTrue(options.contains(selectedModel))
+    }
+
+    func testPickerOptionsUseProvidedAppleSpeechLocales() {
+        let englishUS = AppleSpeechLocale(localeIdentifier: "en_US")
+        let frenchFR = AppleSpeechLocale(localeIdentifier: "fr_FR")
+        let options = TranscriptionModel.pickerOptions(
+            supportsAppleSpeech: true,
+            appleSpeechLocales: [frenchFR, englishUS, frenchFR]
+        )
+
+        let appleSpeechLocales = options.compactMap { $0.appleSpeechLocale?.localeIdentifier }
+        XCTAssertEqual(Set(appleSpeechLocales), [englishUS.localeIdentifier, frenchFR.localeIdentifier])
+        XCTAssertEqual(appleSpeechLocales.count, 2)
     }
 
     func testLocaleDefaultResolutionKeepsExistingTinySelection() {
