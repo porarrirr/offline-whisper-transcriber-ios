@@ -2956,6 +2956,41 @@
         }
       }
     },
+    "Failed to start audio playback" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error al iniciar la reproducción de audio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Échec du démarrage de la lecture audio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声再生の開始に失敗しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动音频播放失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟動音訊播放失敗"
+          }
+        }
+      }
+    },
     "Failed to save history" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5351,6 +5386,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "別の音声アプリにより録音が中断されました。保存済み部分は文字起こしできます。"
+          }
+        }
+      }
+    },
+    "Recording stopped because the audio input changed. The saved part is available for transcription." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声入力が変更されたため録音を停止しました。保存済み部分は文字起こしできます。"
           }
         }
       }

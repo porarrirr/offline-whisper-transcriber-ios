@@ -80,7 +80,7 @@ struct TranscriptionChunkProcessor {
             try Task.checkCancellation()
             let chunkPrompt = makeChunkPrompt(basePrompt: basePrompt, recentContext: recentPromptContext)
             let chunkStartedAt = Date()
-            let result = await whisperContext.transcribeChunk(
+            let result = try await whisperContext.transcribeChunk(
                 samples: chunk.samples,
                 startOffset: chunk.startTime,
                 segmentIDOffset: 0,
@@ -95,10 +95,6 @@ struct TranscriptionChunkProcessor {
                 }
             )
             try Task.checkCancellation()
-
-            guard let result else {
-                throw TranscriptionProcessingError.whisperFailed(whisperContext.errorMessage)
-            }
 
             logChunkCompletion(chunk: chunk, startedAt: chunkStartedAt)
 
@@ -182,13 +178,10 @@ struct TranscriptionChunkProcessor {
 }
 
 enum TranscriptionProcessingError: LocalizedError {
-    case whisperFailed(String?)
     case emptyTranscription
 
     var errorDescription: String? {
         switch self {
-        case .whisperFailed(let message):
-            return message ?? String(localized: "Transcription failed")
         case .emptyTranscription:
             return String(localized: "Transcription finished, but no text was produced.")
         }

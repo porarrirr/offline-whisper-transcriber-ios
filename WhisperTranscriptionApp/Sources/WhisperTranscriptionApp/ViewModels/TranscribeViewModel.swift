@@ -279,9 +279,6 @@ class TranscribeViewModel: ObservableObject {
                 setError(String(localized: "Failed to save history") + ": \(error.localizedDescription)")
             }
 
-            if settings.autoDeleteRecordings && sourceType == .recording {
-                scheduleRecordingDeletion(url: url)
-            }
         } catch is TranscriptionAborted {
             return
         } catch is CancellationError {
@@ -366,16 +363,6 @@ class TranscribeViewModel: ObservableObject {
                     self?.processingStatusText = String(localized: "Transcribing...")
                 }
                 self?.transcriptionProgress = max(self?.transcriptionProgress ?? 0, min(progress, 0.99))
-            }
-        }
-    }
-
-    private func scheduleRecordingDeletion(url: URL) {
-        DispatchQueue.global(qos: .background).asyncAfter(deadline: .now() + 7 * 24 * 60 * 60) {
-            do {
-                try FileManager.default.removeItem(at: url)
-            } catch {
-                AppLogger.error("Failed to automatically delete recording file", context: "TranscribeViewModel", error: error)
             }
         }
     }
@@ -470,9 +457,6 @@ class TranscribeViewModel: ObservableObject {
             throw TranscriptionPipelineError.historySaveFailed(error.localizedDescription)
         }
 
-        if settings.autoDeleteRecordings {
-            scheduleRecordingDeletion(url: recordingURL)
-        }
     }
 
     private func startTranscriptionTask(_ operation: @escaping @MainActor () async -> Void) {

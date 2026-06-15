@@ -16,7 +16,12 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private let audioEngine = AVAudioEngine()
     private let stateLock = NSLock()
+    private let fileWriteLock = NSLock()
     private let handlerLock = NSLock()
+    private let recordingStopQueue = DispatchQueue(
+        label: "com.porarrirr.audio-recorder.stop",
+        qos: .userInitiated
+    )
     private var recordingFile: AVAudioFile?
     private var recordingURL: URL?
     private var inputFormat: AVAudioFormat?
@@ -406,24 +411,53 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     private func handleAudioBuffer(_ buffer: AVAudioPCMBuffer, time: AVAudioTime, format: AVAudioFormat) {
+        switch writeAudioBuffer(buffer, format: format) {
+        case .ignored:
+            return
+        case .failed(let error):
+            reportEncodingFailure(error)
+            return
+        case .written(let elapsedTime):
+            let level = averagePower(from: buffer)
+            DispatchQueue.main.async {
+                self.currentTime = elapsedTime
+                self.audioLevel = level
+            }
+
+            handlerLock.lock()
+            let handler = audioBufferHandler
+            handlerLock.unlock()
+            handler?(buffer, time, format)
+        }
+    }
+
+    private func writeAudioBuffer(
+        _ buffer: AVAudioPCMBuffer,
+        format: AVAudioFormat
+    ) -> AudioBufferWriteResult {
+        fileWriteLock.lock()
+        var file: AVAudioFile?
+        defer {
+            file = nil
+            fileWriteLock.unlock()
+        }
+
         stateLock.lock()
-        let file = recordingFile
+        file = recordingFile
         let shouldRecord = recordingState == .starting || recordingState == .recording
         stateLock.unlock()
 
-        guard shouldRecord else { return }
-        guard let file else {
-            reportEncodingFailure(AudioRecorderError.recordingEncodingFailed(
+        guard shouldRecord else { return .ignored }
+        guard file != nil else {
+            return .failed(AudioRecorderError.recordingEncodingFailed(
                 String(localized: "Recording encoding failed") + ": recording file was not prepared"
             ))
-            return
         }
 
         do {
-            try file.write(from: buffer)
+            try file!.write(from: buffer)
         } catch {
-            reportEncodingFailure(error)
-            return
+            return .failed(error)
         }
 
         stateLock.lock()
@@ -431,16 +465,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         let elapsedTime = format.sampleRate > 0 ? TimeInterval(recordedFrames) / format.sampleRate : 0
         stateLock.unlock()
 
-        let level = averagePower(from: buffer)
-        DispatchQueue.main.async {
-            self.currentTime = elapsedTime
-            self.audioLevel = level
-        }
-
-        handlerLock.lock()
-        let handler = audioBufferHandler
-        handlerLock.unlock()
-        handler?(buffer, time, format)
+        return .written(elapsedTime)
     }
 
     private func finishActiveRecording() {
@@ -448,6 +473,9 @@ final class AudioRecorder: NSObject, ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
 
+        // Wait for an in-flight tap callback to finish using AVAudioFile before
+        // releasing it so the AAC container is finalized before validation.
+        fileWriteLock.lock()
         stateLock.lock()
         let duration = inputFormat.map { format in
             format.sampleRate > 0 ? TimeInterval(recordedFrames) / format.sampleRate : currentTime
@@ -458,6 +486,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         recordedFrames = 0
         recordingState = .idle
         stateLock.unlock()
+        fileWriteLock.unlock()
 
         DispatchQueue.main.async {
             self.currentTime = duration
@@ -468,13 +497,16 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     private func reportEncodingFailure(_ error: Error) {
+        guard transitionActiveRecordingToStopping(includingStarting: true) != nil else { return }
         let detail = error.localizedDescription
         let message = String(localized: "Recording encoding failed") + ": \(detail)"
         AppLogger.error(message, context: "AudioRecorder", error: error)
         DispatchQueue.main.async {
             self.recordingError = message
         }
-        finishActiveRecording()
+        recordingStopQueue.async { [self] in
+            finishActiveRecording()
+        }
     }
 
     private func cleanupFailedStart() {
@@ -483,6 +515,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         if audioEngine.isRunning {
             audioEngine.stop()
         }
+        fileWriteLock.lock()
         stateLock.lock()
         let failedRecordingURL = recordingURL
         recordingFile = nil
@@ -491,6 +524,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         recordedFrames = 0
         recordingState = .idle
         stateLock.unlock()
+        fileWriteLock.unlock()
         if let failedRecordingURL, FileManager.default.fileExists(atPath: failedRecordingURL.path) {
             do {
                 try FileManager.default.removeItem(at: failedRecordingURL)
@@ -567,6 +601,12 @@ final class AudioRecorder: NSObject, ObservableObject {
             name: AVAudioSession.routeChangeNotification,
             object: AVAudioSession.sharedInstance()
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleAudioEngineConfigurationChange),
+            name: .AVAudioEngineConfigurationChange,
+            object: audioEngine
+        )
     }
 
     @objc private func handleAudioSessionInterruption(_ notification: Notification) {
@@ -586,22 +626,45 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     private func handleRecordingInterruptionBegan() {
-        stateLock.lock()
-        let url = recordingURL
-        let wasRecording = recordingState == .recording || audioEngine.isRunning
-        stateLock.unlock()
-        guard let url, wasRecording else { return }
+        let message = String(localized: "Recording was interrupted by another audio app. The saved part is available for transcription.")
+        stopRecordingAfterUnexpectedAudioChange(message: message)
+    }
+
+    @objc private func handleAudioEngineConfigurationChange(_ notification: Notification) {
+        let message = String(localized: "Recording stopped because the audio input changed. The saved part is available for transcription.")
+        stopRecordingAfterUnexpectedAudioChange(message: message)
+    }
+
+    private func stopRecordingAfterUnexpectedAudioChange(message: String) {
+        guard let url = transitionActiveRecordingToStopping(includingStarting: false) else { return }
 
         finishActiveRecording()
-        let message = String(localized: "Recording was interrupted by another audio app. The saved part is available for transcription.")
-        AppLogger.error(message, context: "AudioRecorder")
-        DispatchQueue.main.async {
-            self.interruptionMessage = message
-            self.recordingError = message
-            if FileManager.default.fileExists(atPath: url.path) {
-                self.interruptedRecordingURL = url
-            }
+        let savedRecordingURL: URL?
+        let publishedMessage: String
+        do {
+            savedRecordingURL = try validateRecordingFile(at: url)
+            publishedMessage = message
+        } catch {
+            savedRecordingURL = nil
+            publishedMessage = "\(message) \(error.localizedDescription)"
         }
+
+        AppLogger.error(publishedMessage, context: "AudioRecorder")
+        DispatchQueue.main.async {
+            self.interruptionMessage = publishedMessage
+            self.recordingError = publishedMessage
+            self.interruptedRecordingURL = savedRecordingURL
+        }
+    }
+
+    private func transitionActiveRecordingToStopping(includingStarting: Bool) -> URL? {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        let canStop = recordingState == .recording
+            || (includingStarting && recordingState == .starting)
+        guard canStop, let recordingURL else { return nil }
+        recordingState = .stopping
+        return recordingURL
     }
 
     @objc private func handleAudioRouteChange(_ notification: Notification) {
@@ -678,4 +741,10 @@ private enum RecordingState {
     case starting
     case recording
     case stopping
+}
+
+private enum AudioBufferWriteResult {
+    case ignored
+    case written(TimeInterval)
+    case failed(Error)
 }

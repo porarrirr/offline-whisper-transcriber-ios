@@ -24,7 +24,26 @@ class AudioPlayer: ObservableObject {
     
     func play() {
         guard let player = player else { return }
-        player.play()
+
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playback, mode: .default)
+            try session.setActive(true)
+        } catch {
+            let message = String(localized: "Failed to start audio playback") + ": \(error.localizedDescription)"
+            errorMessage = message
+            AppLogger.error(message, context: "AudioPlayer", error: error)
+            return
+        }
+
+        guard player.play() else {
+            let message = String(localized: "Failed to start audio playback")
+            errorMessage = message
+            AppLogger.error(message, context: "AudioPlayer")
+            return
+        }
+
+        errorMessage = nil
         isPlaying = true
         
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in

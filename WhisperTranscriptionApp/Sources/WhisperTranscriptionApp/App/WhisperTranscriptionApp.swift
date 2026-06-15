@@ -29,6 +29,7 @@ struct WhisperTranscriptionApp: App {
                         .environmentObject(recordingService)
                         .onAppear {
                             performStartupMaintenance(modelContainer: modelContainer)
+                            recordingService.handleBecameActive()
                         }
                         .onChange(of: scenePhase) { _, newPhase in
                             recordingService.handleScenePhase(newPhase)

@@ -153,23 +153,40 @@ final class RecordingService: ObservableObject {
     }
 
     func handleScenePhase(_ phase: ScenePhase) {
-        guard isRecording else { return }
-
         switch phase {
         case .active:
-            AppLogger.info("App became active while recording", context: "RecordingService")
-            Task {
-                await RecordingLiveActivityManager.shared.ensureRecordingActivity(startedAt: recordingStartedAt ?? Date())
-            }
+            handleBecameActive()
         case .inactive:
+            guard isRecording else { return }
             AppLogger.info("App became inactive while recording; recording continues", context: "RecordingService")
         case .background:
+            guard isRecording else { return }
             AppLogger.info("App entered background while recording; recording continues", context: "RecordingService")
             Task {
                 await cancelLiveTranscription(message: String(localized: "Live transcription stopped in the background. Recording continues and will be transcribed when stopped."))
             }
         @unknown default:
-            AppLogger.info("Unknown scene phase while recording", context: "RecordingService")
+            AppLogger.info("Unknown scene phase", context: "RecordingService")
+        }
+    }
+
+    /// Called when the app becomes active, including the first launch.
+    /// `onChange(of:scenePhase)` does not fire for the initial `.active` value,
+    /// so this is also invoked from the view's `onAppear`.
+    func handleBecameActive() {
+        guard isRecording else {
+            // Not recording: dismiss any stale recording Live Activity left over
+            // from a previous session (e.g. the app was terminated mid-recording).
+            Task {
+                await RecordingLiveActivityManager.shared.endRecordingActivity()
+            }
+            return
+        }
+
+        AppLogger.info("App became active while recording", context: "RecordingService")
+        let startedAt = recordingStartedAt ?? Date()
+        Task {
+            await RecordingLiveActivityManager.shared.ensureRecordingActivity(startedAt: startedAt)
         }
     }
 

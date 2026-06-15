@@ -156,42 +156,48 @@ final class WhisperContext: @unchecked Sendable {
         vadModelPath: String? = nil,
         cancellationToken: WhisperCancellationToken? = nil,
         onProgress: ((Double) -> Void)? = nil
-    ) async -> TranscriptionResult? {
+    ) async throws -> TranscriptionResult {
         guard let context = whisperContext else {
-            await MainActor.run {
-                errorMessage = "モデルが読み込まれていません"
-                AppLogger.error("モデルが読み込まれていません", context: "WhisperContext")
-            }
-            return nil
+            let message = "モデルが読み込まれていません"
+            setError(message)
+            throw WhisperContextError.transcriptionFailed(message)
         }
 
         guard !samples.isEmpty else {
-            errorMessage = WhisperContextError.emptyAudioFile.localizedDescription
-            AppLogger.error(WhisperContextError.emptyAudioFile.localizedDescription, context: "WhisperContext")
-            return nil
+            let error = WhisperContextError.emptyAudioFile
+            setError(error.localizedDescription)
+            throw error
         }
         let contextPointer = WhisperContextPointer(value: context)
 
-        return await withCheckedContinuation { continuation in
+        return try await withCheckedThrowingContinuation { continuation in
             workQueue.async { [weak self, contextPointer] in
                 guard let self = self else {
-                    continuation.resume(returning: nil)
+                    continuation.resume(throwing: WhisperContextError.transcriptionFailed(
+                        String(localized: "Transcription failed")
+                    ))
                     return
                 }
 
-                let result = self.runWhisper(
-                    context: contextPointer.value,
-                    samples: samples,
-                    language: language,
-                    translate: translate,
-                    prompt: prompt,
-                    useVAD: useVAD,
-                    vadModelPath: vadModelPath,
-                    cancellationToken: cancellationToken,
-                    onProgress: onProgress
-                )
-
-                continuation.resume(returning: result)
+                do {
+                    let result = try self.runWhisper(
+                        context: contextPointer.value,
+                        samples: samples,
+                        language: language,
+                        translate: translate,
+                        prompt: prompt,
+                        useVAD: useVAD,
+                        vadModelPath: vadModelPath,
+                        cancellationToken: cancellationToken,
+                        onProgress: onProgress
+                    )
+                    continuation.resume(returning: result)
+                } catch {
+                    if !(error is CancellationError) {
+                        self.setError(error.localizedDescription)
+                    }
+                    continuation.resume(throwing: error)
+                }
             }
         }
     }
@@ -207,8 +213,8 @@ final class WhisperContext: @unchecked Sendable {
         vadModelPath: String? = nil,
         cancellationToken: WhisperCancellationToken? = nil,
         onProgress: ((Double) -> Void)? = nil
-    ) async -> TranscriptionResult? {
-        guard let result = await transcribe(
+    ) async throws -> TranscriptionResult {
+        let result = try await transcribe(
             samples: samples,
             language: language,
             translate: translate,
@@ -217,9 +223,7 @@ final class WhisperContext: @unchecked Sendable {
             vadModelPath: vadModelPath,
             cancellationToken: cancellationToken,
             onProgress: onProgress
-        ) else {
-            return nil
-        }
+        )
 
         let offsetSegments = result.segments.enumerated().map { index, segment in
             TranscriptionSegment(
@@ -250,7 +254,7 @@ final class WhisperContext: @unchecked Sendable {
     ) -> TranscriptionResult? {
         do {
             let samples = try readMonoSamples(from: URL(fileURLWithPath: audioPath))
-            return runWhisper(
+            return try runWhisper(
                 context: context,
                 samples: samples,
                 language: language,
@@ -262,9 +266,10 @@ final class WhisperContext: @unchecked Sendable {
                 onProgress: onProgress
             )
         } catch {
-            DispatchQueue.main.async { [weak self] in
-                self?.setErrorOnMain(error.localizedDescription)
+            if error is CancellationError {
+                return nil
             }
+            setError(error.localizedDescription)
             return nil
         }
     }
@@ -328,8 +333,10 @@ final class WhisperContext: @unchecked Sendable {
         vadModelPath: String?,
         cancellationToken: WhisperCancellationToken?,
         onProgress: ((Double) -> Void)?
-    ) -> TranscriptionResult? {
-        guard !samples.isEmpty else { return nil }
+    ) throws -> TranscriptionResult {
+        guard !samples.isEmpty else {
+            throw WhisperContextError.emptyAudioFile
+        }
         
         var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
         params.print_realtime = false
@@ -369,10 +376,9 @@ final class WhisperContext: @unchecked Sendable {
         let vadModelCString: UnsafeMutablePointer<CChar>?
         if useVAD {
             guard let vadModelPath, FileManager.default.fileExists(atPath: vadModelPath) else {
-                DispatchQueue.main.async { [weak self] in
-                    self?.setErrorOnMain("VADモデルが見つかりません。設定からVADモデルをダウンロードしてください。")
-                }
-                return nil
+                throw WhisperContextError.transcriptionFailed(
+                    "VADモデルが見つかりません。設定からVADモデルをダウンロードしてください。"
+                )
             }
 
             params.vad = true
@@ -412,12 +418,11 @@ final class WhisperContext: @unchecked Sendable {
         
         guard ret == 0 else {
             if cancellationToken?.isCancelled == true {
-                return nil
+                throw CancellationError()
             }
-            DispatchQueue.main.async { [weak self] in
-                self?.setErrorOnMain("Whisperの文字起こし処理に失敗しました（code: \(ret)）")
-            }
-            return nil
+            throw WhisperContextError.transcriptionFailed(
+                "Whisperの文字起こし処理に失敗しました（code: \(ret)）"
+            )
         }
         
         let nSegments = whisper_full_n_segments(context)
@@ -497,7 +502,7 @@ final class WhisperContext: @unchecked Sendable {
         loadedUseCoreML = false
     }
 
-    private func setErrorOnMain(_ message: String) {
+    private func setError(_ message: String) {
         errorMessage = message
         AppLogger.error(message, context: "WhisperContext")
     }
@@ -548,6 +553,7 @@ enum WhisperContextError: LocalizedError {
     case audioBufferCreationFailed
     case emptyAudioFile
     case unsupportedPCMFormat
+    case transcriptionFailed(String)
     
     var errorDescription: String? {
         switch self {
@@ -559,6 +565,8 @@ enum WhisperContextError: LocalizedError {
             return "音声データが空です"
         case .unsupportedPCMFormat:
             return "対応していないPCM形式です"
+        case .transcriptionFailed(let message):
+            return message
         }
     }
 }

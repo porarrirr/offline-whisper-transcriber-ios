@@ -59,8 +59,19 @@ final class RecordingLiveActivityManager {
     }
 
     func endRecordingActivity(dismissalPolicy: ActivityUIDismissalPolicy = .immediate) async {
-        let activities = Activity<RecordingActivityAttributes>.activities
-        guard !activities.isEmpty || activity != nil else { return }
+        // Always include the tracked activity. Right after `Activity.request`,
+        // `Activity.activities` may not yet reflect the new activity, and if we
+        // only iterated that array we would drop our reference without ending it,
+        // leaving the Live Activity stuck on screen after recording stops.
+        var activitiesToEnd = Activity<RecordingActivityAttributes>.activities
+        if let activity, !activitiesToEnd.contains(where: { $0.id == activity.id }) {
+            activitiesToEnd.append(activity)
+        }
+
+        guard !activitiesToEnd.isEmpty else {
+            activity = nil
+            return
+        }
 
         let state = RecordingActivityAttributes.ContentState(
             startedAt: activity?.content.state.startedAt ?? Date(),
@@ -68,7 +79,7 @@ final class RecordingLiveActivityManager {
         )
         let content = ActivityContent(state: state, staleDate: nil)
 
-        for activeActivity in activities {
+        for activeActivity in activitiesToEnd {
             await activeActivity.end(content, dismissalPolicy: dismissalPolicy)
         }
         activity = nil
