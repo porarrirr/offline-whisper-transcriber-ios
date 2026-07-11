@@ -218,9 +218,7 @@ final class RecordingService: ObservableObject {
                     throw LiveTranscriptionError.unsupportedLocale
                 }
 
-                let service = LiveTranscriptionService(locale: locale) { [weak self] snapshot in
-                    self?.applyLiveSnapshot(snapshot)
-                }
+                let service = self.makeLiveTranscriptionService(locale: locale)
                 liveService = service
                 try await service.start(inputFormat: inputFormat, recordingURL: audioRecorder.currentRecordingURL)
                 audioRecorder.setAudioBufferHandler { [weak service] buffer, _, _ in
@@ -341,6 +339,13 @@ final class RecordingService: ObservableObject {
         liveRecordingURL = snapshot.recordingURL
         if let errorMessage = snapshot.errorMessage {
             liveMessage = errorMessage
+        }
+    }
+
+    @available(iOS 26.0, *)
+    private func makeLiveTranscriptionService(locale: AppleSpeechLocale) -> LiveTranscriptionService {
+        LiveTranscriptionService(locale: locale) { [weak self] snapshot in
+            self?.applyLiveSnapshot(snapshot)
         }
     }
 

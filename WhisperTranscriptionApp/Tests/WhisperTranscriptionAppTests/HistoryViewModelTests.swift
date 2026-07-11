@@ -89,6 +89,57 @@ final class HistoryViewModelTests: XCTestCase {
         XCTAssertTrue(remainingRecords.isEmpty)
     }
 
+    func testDeleteRecordKeepsHistoryWhenAudioCannotBeStagedForDeletion() throws {
+        let context = try makeModelContext()
+        let directory = try makeTemporaryDirectory()
+        let audioURL = directory.appendingPathComponent("recording.m4a")
+        try Data("audio".utf8).write(to: audioURL)
+        let record = makeRecord(
+            title: "Recording",
+            text: "saved transcript",
+            audioFilePath: audioURL.path,
+            sourceType: .recording
+        )
+        context.insert(record)
+        try context.save()
+        let viewModel = HistoryViewModel(fileManager: FailingMoveFileManager())
+        viewModel.setModelContext(context)
+
+        XCTAssertFalse(viewModel.deleteRecord(record))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
+        XCTAssertEqual(viewModel.records.map(\.id), [record.id])
+        XCTAssertNotNil(viewModel.errorMessage)
+        let remainingRecords = try context.fetch(FetchDescriptor<TranscriptionRecord>())
+        XCTAssertEqual(remainingRecords.map(\.id), [record.id])
+    }
+
+    func testStartupRecoveryRestoresStagedAudioWhenHistoryStillReferencesOriginalPath() throws {
+        let context = try makeModelContext()
+        let directory = try makeTemporaryDirectory()
+        let originalURL = directory.appendingPathComponent("recording.m4a")
+        let stagedURL = directory.appendingPathComponent(".deleting-test--recording.m4a")
+        try Data("audio".utf8).write(to: stagedURL)
+        let record = makeRecord(
+            title: "Recording",
+            text: "saved transcript",
+            audioFilePath: originalURL.path,
+            sourceType: .recording
+        )
+        context.insert(record)
+        try context.save()
+        let viewModel = HistoryViewModel(recordingsDirectory: directory)
+        viewModel.setModelContext(context)
+
+        viewModel.importUntrackedRecordings()
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: originalURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: stagedURL.path))
+        XCTAssertNil(viewModel.errorMessage)
+        let remainingRecords = try context.fetch(FetchDescriptor<TranscriptionRecord>())
+        XCTAssertEqual(remainingRecords.map(\.id), [record.id])
+    }
+
     func testCleanupOldRecordingsClearsExpiredPathAndPreservesFavoriteAndRecentAudio() throws {
         let context = try makeModelContext()
         let directory = try makeTemporaryDirectory()
@@ -195,5 +246,11 @@ final class HistoryViewModelTests: XCTestCase {
             isFavorite: isFavorite,
             tags: tags
         )
+    }
+}
+
+private final class FailingMoveFileManager: FileManager {
+    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        throw CocoaError(.fileWriteNoPermission)
     }
 }

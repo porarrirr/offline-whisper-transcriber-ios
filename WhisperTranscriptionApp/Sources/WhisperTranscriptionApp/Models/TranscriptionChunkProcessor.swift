@@ -99,8 +99,11 @@ struct TranscriptionChunkProcessor {
             logChunkCompletion(chunk: chunk, startedAt: chunkStartedAt)
 
             let acceptedStart = chunk.index == 0 ? chunk.startTime : chunk.startTime + min(config.overlapDuration, chunk.duration)
-            let acceptedSegments = result.segments
-                .filter { $0.end > acceptedStart }
+            let acceptedSegments = Self.acceptedSegments(
+                from: result.segments,
+                acceptedStart: acceptedStart,
+                previousSegments: combinedSegments
+            )
                 .enumerated()
                 .map { index, segment in
                     TranscriptionSegment(
@@ -133,6 +136,68 @@ struct TranscriptionChunkProcessor {
             language: detectedLanguage,
             processedDuration: processedAudioDuration
         )
+    }
+
+    static func acceptedSegments(
+        from candidateSegments: [TranscriptionSegment],
+        acceptedStart: TimeInterval,
+        previousSegments: [TranscriptionSegment]
+    ) -> [TranscriptionSegment] {
+        var acceptedSegments: [TranscriptionSegment] = []
+        var precedingText = TranscriptionSegment.plainText(from: previousSegments)
+
+        for segment in candidateSegments where segment.end > acceptedStart {
+            var text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            var start = segment.start
+
+            if segment.start < acceptedStart {
+                let trimmedText = removingRepeatedBoundaryPrefix(
+                    from: text,
+                    precedingText: precedingText
+                )
+                if trimmedText != text {
+                    text = trimmedText
+                    start = max(start, acceptedStart)
+                }
+            }
+
+            guard !text.isEmpty else { continue }
+            let accepted = TranscriptionSegment(
+                id: segment.id,
+                start: start,
+                end: max(start, segment.end),
+                text: text
+            )
+            acceptedSegments.append(accepted)
+            precedingText = TranscriptionSegment.plainText(
+                from: previousSegments + acceptedSegments
+            )
+        }
+
+        return acceptedSegments
+    }
+
+    static func removingRepeatedBoundaryPrefix(from text: String, precedingText: String) -> String {
+        let candidate = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let preceding = precedingText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !candidate.isEmpty, !preceding.isEmpty else { return candidate }
+
+        let candidateCharacters = Array(candidate)
+        let precedingCharacters = Array(preceding)
+        let maximumOverlap = min(candidateCharacters.count, precedingCharacters.count)
+
+        for overlapLength in stride(from: maximumOverlap, through: 2, by: -1) {
+            guard precedingCharacters.suffix(overlapLength).elementsEqual(
+                candidateCharacters.prefix(overlapLength)
+            ) else {
+                continue
+            }
+
+            return String(candidateCharacters.dropFirst(overlapLength))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        return candidate
     }
 
     private func logChunkCompletion(chunk: WhisperAudioChunk, startedAt: Date) {

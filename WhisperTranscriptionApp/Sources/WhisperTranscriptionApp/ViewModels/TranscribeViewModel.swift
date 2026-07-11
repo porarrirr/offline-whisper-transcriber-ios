@@ -269,13 +269,11 @@ class TranscribeViewModel: ObservableObject {
             )
             transcriptionTitle = record.displayTitle
             transcriptionDuration = savedDuration
-            showResult = true
             do {
                 try modelContext.save()
+                showResult = true
             } catch {
-                if existingRecord == nil {
-                    modelContext.delete(record)
-                }
+                modelContext.rollback()
                 setError(String(localized: "Failed to save history") + ": \(error.localizedDescription)")
             }
 
@@ -352,7 +350,7 @@ class TranscribeViewModel: ObservableObject {
         return try await AppleSpeechTranscriptionService().transcribe(
             inputURL: url,
             locale: locale,
-            includeTimestamps: false
+            includeTimestamps: settings.includeTimestamps
         ) { [weak self] progress in
             Task { @MainActor in
                 if progress < 0.21 {

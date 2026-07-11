@@ -46,3 +46,78 @@ final class TranscriptionSegmentTests: XCTestCase {
         )
     }
 }
+
+final class TranscriptionChunkProcessorTests: XCTestCase {
+    func testAcceptedSegmentsRemoveRepeatedEnglishTextAcrossOverlapBoundary() {
+        let previous = [
+            TranscriptionSegment(id: 0, start: 295, end: 300, text: "A boundary phrase")
+        ]
+        let candidates = [
+            TranscriptionSegment(id: 0, start: 299, end: 302, text: "boundary phrase continues"),
+            TranscriptionSegment(id: 1, start: 302, end: 304, text: "afterward")
+        ]
+
+        let accepted = TranscriptionChunkProcessor.acceptedSegments(
+            from: candidates,
+            acceptedStart: 300,
+            previousSegments: previous
+        )
+
+        XCTAssertEqual(accepted.map(\.text), ["continues", "afterward"])
+        XCTAssertEqual(accepted.first?.start, 300)
+        XCTAssertEqual(
+            TranscriptionSegment.plainText(from: previous + accepted),
+            "A boundary phrase continues afterward"
+        )
+    }
+
+    func testAcceptedSegmentsDropFullyRepeatedJapaneseBoundarySegment() {
+        let previous = [
+            TranscriptionSegment(id: 0, start: 295, end: 300, text: "境界の文章")
+        ]
+        let candidates = [
+            TranscriptionSegment(id: 0, start: 299, end: 301, text: "境界の文章"),
+            TranscriptionSegment(id: 1, start: 301, end: 303, text: "続きです")
+        ]
+
+        let accepted = TranscriptionChunkProcessor.acceptedSegments(
+            from: candidates,
+            acceptedStart: 300,
+            previousSegments: previous
+        )
+
+        XCTAssertEqual(accepted.map(\.text), ["続きです"])
+        XCTAssertEqual(
+            TranscriptionSegment.plainText(from: previous + accepted),
+            "境界の文章続きです"
+        )
+    }
+
+    func testAcceptedSegmentsRejectSegmentsEntirelyInsideDiscardedOverlap() {
+        let candidates = [
+            TranscriptionSegment(id: 0, start: 295, end: 299.9, text: "old overlap"),
+            TranscriptionSegment(id: 1, start: 300, end: 302, text: "new text")
+        ]
+
+        let accepted = TranscriptionChunkProcessor.acceptedSegments(
+            from: candidates,
+            acceptedStart: 300,
+            previousSegments: []
+        )
+
+        XCTAssertEqual(accepted.map(\.text), ["new text"])
+    }
+}
+
+final class HistoryIntentLimitTests: XCTestCase {
+    func testValidHistoryLimitsAreAccepted() {
+        XCTAssertNoThrow(try HistoryIntentLimit.validate(1))
+        XCTAssertNoThrow(try HistoryIntentLimit.validate(100))
+    }
+
+    func testInvalidHistoryLimitsThrowInsteadOfReachingCollectionPrefix() {
+        XCTAssertThrowsError(try HistoryIntentLimit.validate(-1))
+        XCTAssertThrowsError(try HistoryIntentLimit.validate(0))
+        XCTAssertThrowsError(try HistoryIntentLimit.validate(101))
+    }
+}

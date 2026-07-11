@@ -89,7 +89,7 @@ struct AppleSpeechTranscriptionService {
             onProgress(progress * 0.2)
         }
 
-        let transcriber = try await makeTranscriber(locale: locale, includeTimestamps: false)
+        let transcriber = try await makeTranscriber(locale: locale, includeTimestamps: includeTimestamps)
         let naturalFormat = try await AudioConverter.shared.naturalAudioFormatForSpeechInput(inputURL: inputURL)
         guard let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
             compatibleWith: [transcriber],
@@ -121,7 +121,7 @@ struct AppleSpeechTranscriptionService {
 
         await MainActor.run { onProgress(0.4) }
 
-        let collector = ResultCollector(includeTimestamps: false)
+        let collector = ResultCollector(includeTimestamps: includeTimestamps)
         let resultsTask = Task {
             try await collector.collect(from: transcriber.results)
         }

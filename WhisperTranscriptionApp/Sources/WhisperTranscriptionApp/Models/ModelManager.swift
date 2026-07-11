@@ -290,8 +290,8 @@ class ModelManager: NSObject, ObservableObject {
 
         speechAssetDownloadTask = Task { @MainActor in
             do {
-                try await AppleSpeechTranscriptionService().ensureAssetsInstalled(for: locale) { [weak self] progress in
-                    self?.downloadProgress = progress
+                try await AppleSpeechTranscriptionService().ensureAssetsInstalled(for: locale) { progress in
+                    self.downloadProgress = progress
                 }
                 self.isModelReady = true
                 self.isDownloading = false

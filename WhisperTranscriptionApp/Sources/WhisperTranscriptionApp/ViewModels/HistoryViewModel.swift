@@ -14,6 +14,13 @@ class HistoryViewModel: ObservableObject {
     private var modelContext: ModelContext?
     private var fetchTask: Task<Void, Never>?
     private var availableTagsNeedRefresh = true
+    private let fileManager: FileManager
+    private let recordingsDirectoryOverride: URL?
+
+    init(fileManager: FileManager = .default, recordingsDirectory: URL? = nil) {
+        self.fileManager = fileManager
+        self.recordingsDirectoryOverride = recordingsDirectory
+    }
     
     func setModelContext(_ context: ModelContext) {
         self.modelContext = context
@@ -69,16 +76,35 @@ class HistoryViewModel: ObservableObject {
     @discardableResult
     func deleteRecords(_ recordsToDelete: [TranscriptionRecord]) -> Bool {
         guard let modelContext = modelContext else { return false }
-        let audioFilePaths = recordsToDelete.compactMap(\.audioFilePath)
+        let audioFilePaths = Array(Set(recordsToDelete.compactMap(\.audioFilePath)))
+        let stagedFiles: [StagedRecordingDeletion]
+        do {
+            stagedFiles = try stageRecordingFilesForDeletion(at: audioFilePaths)
+        } catch {
+            setError(String(localized: "Failed to delete recording file") + ": \(error.localizedDescription)")
+            return false
+        }
+
         recordsToDelete.forEach { modelContext.delete($0) }
         do {
             try modelContext.save()
-            audioFilePaths.forEach { deleteRecordingFileIfNeeded(at: $0) }
         } catch {
-            setError(String(localized: "Failed to delete history") + ": \(error.localizedDescription)")
+            modelContext.rollback()
+            if let restoreError = restoreStagedRecordingFiles(stagedFiles) {
+                setError(
+                    HistoryViewModelError.deletionRollbackFailed(
+                        databaseError: error.localizedDescription,
+                        restoreError: restoreError.localizedDescription
+                    ).localizedDescription
+                )
+            } else {
+                setError(String(localized: "Failed to delete history") + ": \(error.localizedDescription)")
+            }
             fetchRecords()
             return false
         }
+
+        removeStagedRecordingFiles(stagedFiles)
         availableTagsNeedRefresh = true
         fetchRecords()
         return true
@@ -183,10 +209,10 @@ class HistoryViewModel: ObservableObject {
             throw error
         }
 
-        guard FileManager.default.fileExists(atPath: audioPath) else { return }
+        guard fileManager.fileExists(atPath: audioPath) else { return }
 
         do {
-            try FileManager.default.removeItem(atPath: audioPath)
+            try fileManager.removeItem(atPath: audioPath)
         } catch {
             record.audioFilePath = audioPath
             do {
@@ -206,16 +232,21 @@ class HistoryViewModel: ObservableObject {
 
         do {
             let recordingsDirectory = try recordingsDirectory()
-            guard FileManager.default.fileExists(atPath: recordingsDirectory.path) else { return }
+            guard fileManager.fileExists(atPath: recordingsDirectory.path) else { return }
 
             let descriptor = FetchDescriptor<TranscriptionRecord>()
             let records = try modelContext.fetch(descriptor)
             let trackedAudioPaths = Set(records.compactMap(\.audioFilePath))
-            let recordingURLs = try FileManager.default.contentsOfDirectory(
+            let directoryURLs = try fileManager.contentsOfDirectory(
                 at: recordingsDirectory,
                 includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
-                options: [.skipsHiddenFiles]
+                options: []
             )
+            try recoverStagedRecordingDeletions(
+                directoryURLs: directoryURLs,
+                trackedAudioPaths: trackedAudioPaths
+            )
+            let recordingURLs = directoryURLs.filter { !$0.lastPathComponent.hasPrefix(".") }
 
             var importedRecords = 0
             for url in recordingURLs where url.pathExtension.localizedCaseInsensitiveCompare("m4a") == .orderedSame {
@@ -274,16 +305,81 @@ class HistoryViewModel: ObservableObject {
         AppLogger.error(message, context: "HistoryViewModel")
     }
 
-    private func deleteRecordingFileIfNeeded(at path: String?) {
-        guard let path, FileManager.default.fileExists(atPath: path) else { return }
+    private func stageRecordingFilesForDeletion(at paths: [String]) throws -> [StagedRecordingDeletion] {
+        var stagedFiles: [StagedRecordingDeletion] = []
         do {
-            try FileManager.default.removeItem(atPath: path)
+            for path in paths where fileManager.fileExists(atPath: path) {
+                let sourceURL = URL(fileURLWithPath: path)
+                let stagedURL = sourceURL
+                    .deletingLastPathComponent()
+                    .appendingPathComponent(".deleting-\(UUID().uuidString)--\(sourceURL.lastPathComponent)")
+                try fileManager.moveItem(at: sourceURL, to: stagedURL)
+                stagedFiles.append(StagedRecordingDeletion(originalURL: sourceURL, stagedURL: stagedURL))
+            }
+            return stagedFiles
         } catch {
-            setError(String(localized: "Failed to delete recording file") + ": \(error.localizedDescription)")
+            if let restoreError = restoreStagedRecordingFiles(stagedFiles) {
+                throw HistoryViewModelError.deletionRollbackFailed(
+                    databaseError: error.localizedDescription,
+                    restoreError: restoreError.localizedDescription
+                )
+            }
+            throw error
+        }
+    }
+
+    private func restoreStagedRecordingFiles(_ stagedFiles: [StagedRecordingDeletion]) -> Error? {
+        var firstError: Error?
+        for stagedFile in stagedFiles.reversed() where fileManager.fileExists(atPath: stagedFile.stagedURL.path) {
+            do {
+                try fileManager.moveItem(at: stagedFile.stagedURL, to: stagedFile.originalURL)
+            } catch {
+                firstError = firstError ?? error
+            }
+        }
+        return firstError
+    }
+
+    private func removeStagedRecordingFiles(_ stagedFiles: [StagedRecordingDeletion]) {
+        for stagedFile in stagedFiles where fileManager.fileExists(atPath: stagedFile.stagedURL.path) {
+            do {
+                try fileManager.removeItem(at: stagedFile.stagedURL)
+            } catch {
+                setError(String(localized: "Failed to delete recording file") + ": \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func recoverStagedRecordingDeletions(
+        directoryURLs: [URL],
+        trackedAudioPaths: Set<String>
+    ) throws {
+        for stagedURL in directoryURLs where stagedURL.lastPathComponent.hasPrefix(".deleting-") {
+            guard let separatorRange = stagedURL.lastPathComponent.range(of: "--") else {
+                throw HistoryViewModelError.invalidStagedRecordingName(stagedURL.lastPathComponent)
+            }
+            let originalName = String(stagedURL.lastPathComponent[separatorRange.upperBound...])
+            guard !originalName.isEmpty else {
+                throw HistoryViewModelError.invalidStagedRecordingName(stagedURL.lastPathComponent)
+            }
+
+            let originalURL = stagedURL.deletingLastPathComponent().appendingPathComponent(originalName)
+            if trackedAudioPaths.contains(originalURL.path) {
+                guard !fileManager.fileExists(atPath: originalURL.path) else {
+                    try fileManager.removeItem(at: stagedURL)
+                    continue
+                }
+                try fileManager.moveItem(at: stagedURL, to: originalURL)
+            } else {
+                try fileManager.removeItem(at: stagedURL)
+            }
         }
     }
 
     private func recordingsDirectory() throws -> URL {
+        if let recordingsDirectoryOverride {
+            return recordingsDirectoryOverride
+        }
         guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             throw HistoryViewModelError.documentsDirectoryUnavailable
         }
@@ -309,9 +405,16 @@ class HistoryViewModel: ObservableObject {
     }
 }
 
+private struct StagedRecordingDeletion {
+    let originalURL: URL
+    let stagedURL: URL
+}
+
 private enum HistoryViewModelError: LocalizedError {
     case documentsDirectoryUnavailable
     case cleanupRollbackFailed(deletionError: String, restoreError: String)
+    case deletionRollbackFailed(databaseError: String, restoreError: String)
+    case invalidStagedRecordingName(String)
 
     var errorDescription: String? {
         switch self {
@@ -319,6 +422,11 @@ private enum HistoryViewModelError: LocalizedError {
             return String(localized: "Could not retrieve document directory for saved recordings.")
         case .cleanupRollbackFailed(let deletionError, let restoreError):
             return "Recording deletion failed (\(deletionError)); restoring its history reference also failed (\(restoreError))."
+        case .deletionRollbackFailed(let databaseError, let restoreError):
+            return String(localized: "Failed to restore recording file")
+                + ": database=\(databaseError), file=\(restoreError)"
+        case .invalidStagedRecordingName(let name):
+            return "Invalid staged recording filename: \(name)"
         }
     }
 }

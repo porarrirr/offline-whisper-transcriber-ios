@@ -157,6 +157,8 @@ struct GetTranscriptionHistoryIntent: AppIntent {
     
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        try HistoryIntentLimit.validate(limit)
+
         let modelContainer = try ModelContainer(for: TranscriptionRecord.self)
         let modelContext = ModelContext(modelContainer)
         
@@ -174,6 +176,17 @@ struct GetTranscriptionHistoryIntent: AppIntent {
         return .result(value: result)
     }
 }
+
+enum HistoryIntentLimit {
+    static let validRange = 1...100
+
+    static func validate(_ value: Int) throws {
+        guard validRange.contains(value) else {
+            throw IntentError.invalidHistoryLimit
+        }
+    }
+}
+
 @available(iOS 18.0, *)
 struct WhisperShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
@@ -321,6 +334,7 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case recordingBusy
     case recordingStartFailed(String)
     case liveActivityRequired
+    case invalidHistoryLimit
     
     var localizedStringResource: LocalizedStringResource {
         switch self {
@@ -350,6 +364,8 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
             return "Failed to start recording: \(detail)"
         case .liveActivityRequired:
             return "Live Activities must be enabled to start recording from a shortcut."
+        case .invalidHistoryLimit:
+            return "History count must be between 1 and 100."
         }
     }
 }
