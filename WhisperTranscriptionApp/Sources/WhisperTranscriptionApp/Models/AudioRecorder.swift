@@ -544,10 +544,6 @@ final class AudioRecorder: NSObject, ObservableObject {
         deactivateSession()
     }
 
-    func discardRecordingAfterStartFailure() {
-        cleanupFailedStart()
-    }
-
     private func validateRecordingFile(at url: URL) throws -> URL {
         guard FileManager.default.fileExists(atPath: url.path) else {
             throw AudioRecorderError.recordingFileMissing

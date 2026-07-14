@@ -295,15 +295,26 @@ final class RecordingService: ObservableObject {
 
         do {
             let startedAt = Date()
-            try await audioRecorder.startRecording()
-
-            do {
-                if requiresLiveActivity {
-                    try await RecordingLiveActivityManager.shared.startRequiredRecordingActivity(startedAt: startedAt)
-                }
-            } catch {
-                audioRecorder.discardRecordingAfterStartFailure()
-                throw error
+            if requiresLiveActivity {
+                try await Self.startRecordingWithRequiredLiveActivity(
+                    startLiveActivity: {
+                        try await RecordingLiveActivityManager.shared.startRequiredRecordingActivity(
+                            startedAt: startedAt
+                        )
+                        AppLogger.info(
+                            "Required recording Live Activity started before audio capture",
+                            context: "RecordingService"
+                        )
+                    },
+                    startAudioRecording: {
+                        try await self.audioRecorder.startRecording()
+                    },
+                    endLiveActivity: {
+                        await RecordingLiveActivityManager.shared.endRecordingActivity()
+                    }
+                )
+            } else {
+                try await audioRecorder.startRecording()
             }
 
             recordingStartedAt = startedAt
@@ -325,6 +336,20 @@ final class RecordingService: ObservableObject {
             recordingStartedAt = nil
             isRecording = false
             UIApplication.shared.isIdleTimerDisabled = false
+            throw error
+        }
+    }
+
+    static func startRecordingWithRequiredLiveActivity(
+        startLiveActivity: () async throws -> Void,
+        startAudioRecording: () async throws -> Void,
+        endLiveActivity: () async -> Void
+    ) async throws {
+        try await startLiveActivity()
+        do {
+            try await startAudioRecording()
+        } catch {
+            await endLiveActivity()
             throw error
         }
     }
