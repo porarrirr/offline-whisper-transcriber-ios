@@ -6,6 +6,7 @@ final class RecordingLiveActivityManager {
     static let shared = RecordingLiveActivityManager()
 
     private var activity: Activity<RecordingActivityAttributes>?
+    private var lastActivityRequestedAt: Date?
 
     private init() {}
 
@@ -51,11 +52,20 @@ final class RecordingLiveActivityManager {
             status: String(localized: "Recording")
         )
 
+        lastActivityRequestedAt = Date()
         activity = try Activity.request(
             attributes: attributes,
             content: ActivityContent(state: state, staleDate: nil),
             pushType: nil
         )
+    }
+
+    func activityDiagnosticsDescription() -> String {
+        let state = activity.map { String(describing: $0.activityState) } ?? "none"
+        let elapsed = lastActivityRequestedAt.map {
+            Int(Date().timeIntervalSince($0) * 1_000)
+        }
+        return "activityState=\(state), msSinceRequest=\(elapsed.map(String.init) ?? "none")"
     }
 
     func endRecordingActivity(dismissalPolicy: ActivityUIDismissalPolicy = .immediate) async {

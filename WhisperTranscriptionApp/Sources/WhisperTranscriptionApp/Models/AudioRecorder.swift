@@ -1,6 +1,11 @@
 import AVFoundation
 import Foundation
 
+enum RecordingStartContext {
+    case foreground
+    case backgroundIntent
+}
+
 final class AudioRecorder: NSObject, ObservableObject {
     typealias AudioBufferHandler = (AVAudioPCMBuffer, AVAudioTime, AVAudioFormat) -> Void
 
@@ -72,11 +77,11 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
-    func startRecording() async throws {
+    func startRecording(context: RecordingStartContext = .foreground) async throws {
         try beginStartingState()
 
         do {
-            try await setupSession()
+            try await setupSession(context: context)
             let url = try makeRecordingURL()
             let inputNode = audioEngine.inputNode
             let format = try await waitForStableInputTapFormat(on: inputNode)
@@ -106,8 +111,21 @@ final class AudioRecorder: NSObject, ObservableObject {
 
             audioEngine.prepare()
             do {
-                try audioEngine.start()
+                try await Self.startEngineWithBoundedRetry(
+                    maxAttempts: 3,
+                    retryDelayNanoseconds: 300_000_000,
+                    startEngine: { try self.audioEngine.start() },
+                    onRetry: { attempt, error in
+                        AppLogger.error(
+                            "Bounded retry of audioEngine.start() triggered: attempt=\(attempt)",
+                            context: "AudioRecorder",
+                            error: error
+                        )
+                        self.logEngineStartFailureDiagnostics(attempt: attempt, error: error)
+                    }
+                )
             } catch {
+                logEngineStartFailureDiagnostics(attempt: 3, error: error)
                 throw makeRecordingStartError(stage: "start audio engine", error: error)
             }
 
@@ -117,6 +135,27 @@ final class AudioRecorder: NSObject, ObservableObject {
         } catch {
             cleanupFailedStart()
             throw error
+        }
+    }
+
+    static func startEngineWithBoundedRetry(
+        maxAttempts: Int,
+        retryDelayNanoseconds: UInt64,
+        startEngine: () throws -> Void,
+        onRetry: (_ attempt: Int, _ error: Error) -> Void,
+        sleep: (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }
+    ) async throws {
+        precondition(maxAttempts > 0)
+
+        for attempt in 1...maxAttempts {
+            do {
+                try startEngine()
+                return
+            } catch {
+                guard attempt < maxAttempts else { throw error }
+                onRetry(attempt, error)
+                try await sleep(retryDelayNanoseconds)
+            }
         }
     }
 
@@ -308,16 +347,19 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
-    private func setupSession() async throws {
+    private func setupSession(context: RecordingStartContext) async throws {
         let session = AVAudioSession.sharedInstance()
         let bluetoothInput = session.availableInputs?.first(where: { $0.portType == .bluetoothHFP })
         let usesBluetoothHFP = bluetoothInput != nil || session.currentRoute.inputs.contains { $0.portType == .bluetoothHFP }
         let sessionMode: AVAudioSession.Mode = usesBluetoothHFP ? .voiceChat : .default
-        let categoryOptions: AVAudioSession.CategoryOptions = usesBluetoothHFP
-            ? [.allowBluetoothHFP]
-            : [.defaultToSpeaker, .mixWithOthers]
+        let categoryOptions = Self.recordingCategoryOptions(
+            usesBluetoothHFP: usesBluetoothHFP,
+            context: context
+        )
 
-        try performAudioSessionStep("set category") {
+        try performAudioSessionStep(
+            "set category (context=\(context), options=\(categoryOptions.rawValue))"
+        ) {
             try session.setCategory(
                 .playAndRecord,
                 mode: sessionMode,
@@ -338,6 +380,21 @@ final class AudioRecorder: NSObject, ObservableObject {
             try await waitForBluetoothHFPRoute(session: session, preferredInput: bluetoothInput)
         }
         logCurrentAudioRoute(session: session, event: "Recording audio session activated")
+    }
+
+    static func recordingCategoryOptions(
+        usesBluetoothHFP: Bool,
+        context: RecordingStartContext
+    ) -> AVAudioSession.CategoryOptions {
+        if usesBluetoothHFP {
+            return [.allowBluetoothHFP]
+        }
+        switch context {
+        case .foreground:
+            return [.defaultToSpeaker, .mixWithOthers]
+        case .backgroundIntent:
+            return [.defaultToSpeaker]
+        }
     }
 
     private func preferredRecordingSampleRate(usesBluetoothHFP: Bool) -> Double {
@@ -410,6 +467,20 @@ final class AudioRecorder: NSObject, ObservableObject {
         return .recordingStartFailed(detail)
     }
 
+    private func logEngineStartFailureDiagnostics(attempt: Int, error: Error) {
+        let session = AVAudioSession.sharedInstance()
+        let nsError = error as NSError
+        let route = currentRouteDescription(session: session)
+        let availableInputs = session.availableInputs?.map {
+            "\($0.portName)(\($0.portType.rawValue))"
+        }.joined(separator: ", ") ?? "none"
+        AppLogger.error(
+            "audioEngine.start() failure diagnostics: attempt=\(attempt), errorDomain=\(nsError.domain), errorCode=\(nsError.code), isOtherAudioPlaying=\(session.isOtherAudioPlaying), secondaryAudioShouldBeSilencedHint=\(session.secondaryAudioShouldBeSilencedHint), availableInputs=[\(availableInputs)], inputs=[\(route.inputs)], outputs=[\(route.outputs)], sampleRate=\(session.sampleRate), preferredSampleRate=\(session.preferredSampleRate), category=\(session.category.rawValue), categoryOptions=\(session.categoryOptions.rawValue), audioEngine=\(audioEngine.description)",
+            context: "AudioRecorder",
+            error: error
+        )
+    }
+
     private func handleAudioBuffer(_ buffer: AVAudioPCMBuffer, time: AVAudioTime, format: AVAudioFormat) {
         switch writeAudioBuffer(buffer, format: format) {
         case .ignored:
@@ -472,6 +543,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         setAudioBufferHandler(nil)
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
+        audioEngine.reset()
 
         // Wait for an in-flight tap callback to finish using AVAudioFile before
         // releasing it so the AAC container is finalized before validation.
@@ -515,6 +587,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         if audioEngine.isRunning {
             audioEngine.stop()
         }
+        audioEngine.reset()
         fileWriteLock.lock()
         stateLock.lock()
         let failedRecordingURL = recordingURL
@@ -603,6 +676,12 @@ final class AudioRecorder: NSObject, ObservableObject {
             name: .AVAudioEngineConfigurationChange,
             object: audioEngine
         )
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleMediaServicesWereReset),
+            name: AVAudioSession.mediaServicesWereResetNotification,
+            object: AVAudioSession.sharedInstance()
+        )
     }
 
     @objc private func handleAudioSessionInterruption(_ notification: Notification) {
@@ -628,6 +707,12 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     @objc private func handleAudioEngineConfigurationChange(_ notification: Notification) {
         let message = String(localized: "Recording stopped because the audio input changed. The saved part is available for transcription.")
+        stopRecordingAfterUnexpectedAudioChange(message: message)
+    }
+
+    @objc private func handleMediaServicesWereReset(_ notification: Notification) {
+        AppLogger.error("Audio media services were reset", context: "AudioRecorder")
+        let message = String(localized: "Recording stopped because audio services were reset. The saved part is available for transcription.")
         stopRecordingAfterUnexpectedAudioChange(message: message)
     }
 

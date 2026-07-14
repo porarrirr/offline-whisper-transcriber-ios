@@ -307,14 +307,14 @@ final class RecordingService: ObservableObject {
                         )
                     },
                     startAudioRecording: {
-                        try await self.audioRecorder.startRecording()
+                        try await self.audioRecorder.startRecording(context: .backgroundIntent)
                     },
                     endLiveActivity: {
                         await RecordingLiveActivityManager.shared.endRecordingActivity()
                     }
                 )
             } else {
-                try await audioRecorder.startRecording()
+                try await audioRecorder.startRecording(context: .foreground)
             }
 
             recordingStartedAt = startedAt
@@ -332,6 +332,14 @@ final class RecordingService: ObservableObject {
 
             return .started
         } catch {
+            if requiresLiveActivity {
+                let diagnostics = RecordingLiveActivityManager.shared.activityDiagnosticsDescription()
+                AppLogger.error(
+                    "Background intent recording start failed: \(diagnostics)",
+                    context: "RecordingService",
+                    error: error
+                )
+            }
             errorMessage = error.localizedDescription
             recordingStartedAt = nil
             isRecording = false
