@@ -1,44 +1,61 @@
 import SwiftUI
 
+/// LCD上を右から左へ流れる実レベル波形。録音停止中は暗い中心線のみ表示する。
 struct WaveformView: View {
     var audioLevel: Float
-    
-    @State private var randomSeed: [CGFloat] = []
-    let barCount = 30
-    
-    init(audioLevel: Float) {
-        self.audioLevel = audioLevel
-    }
-    
+    var isActive: Bool
+
+    @State private var history: [CGFloat] = []
+    private let capacity = 96
+
     var body: some View {
-        GeometryReader { geometry in
-            HStack(spacing: 4) {
-                ForEach(0..<barCount, id: \.self) { index in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(
-                            LinearGradient(
-                                gradient: Gradient(colors: [AppColors.accent, AppColors.accentSecondary]),
-                                startPoint: .bottom,
-                                endPoint: .top
-                            )
-                        )
-                        .frame(width: (geometry.size.width - CGFloat(barCount - 1) * 4) / CGFloat(barCount))
-                        .frame(height: barHeight(for: index, in: geometry.size.height))
-                        .animation(.easeInOut(duration: 0.1), value: audioLevel)
-                }
+        Canvas { context, size in
+            let midY = size.height / 2
+            let barWidth: CGFloat = 2.5
+            let spacing: CGFloat = 1.5
+            let step = barWidth + spacing
+            let count = min(history.count, Int(size.width / step))
+
+            // 中心線
+            var centerLine = Path()
+            centerLine.move(to: CGPoint(x: 0, y: midY))
+            centerLine.addLine(to: CGPoint(x: size.width, y: midY))
+            context.stroke(centerLine, with: .color(Theme.displayDim.opacity(0.5)), lineWidth: 1)
+
+            guard isActive, count > 0 else { return }
+
+            let recent = history.suffix(count)
+            for (index, level) in recent.enumerated() {
+                let x = size.width - CGFloat(recent.count - index) * step
+                let halfHeight = max(1.5, level * midY * 0.92)
+                let rect = CGRect(
+                    x: x,
+                    y: midY - halfHeight,
+                    width: barWidth,
+                    height: halfHeight * 2
+                )
+                context.fill(
+                    Path(roundedRect: rect, cornerRadius: 1),
+                    with: .color(Theme.displayAmber)
+                )
             }
-            .frame(maxHeight: .infinity, alignment: .center)
         }
-        .onAppear {
-            randomSeed = (0..<barCount).map { _ in CGFloat.random(in: 0.3...1.0) }
+        .onChange(of: audioLevel) { _, newLevel in
+            guard isActive else { return }
+            history.append(normalized(newLevel))
+            if history.count > capacity {
+                history.removeFirst(history.count - capacity)
+            }
         }
+        .onChange(of: isActive) { _, active in
+            if !active {
+                history = []
+            }
+        }
+        .accessibilityHidden(true)
     }
-    
-    private func barHeight(for index: Int, in maxHeight: CGFloat) -> CGFloat {
-        guard index < randomSeed.count else { return 4 }
-        let normalizedLevel = min(max((audioLevel + 60) / 60, 0), 1)
-        let baseHeight = maxHeight * 0.2
-        let dynamicHeight = maxHeight * 0.8 * CGFloat(normalizedLevel) * randomSeed[index]
-        return baseHeight + dynamicHeight
+
+    private func normalized(_ level: Float) -> CGFloat {
+        CGFloat(min(max((level + 60) / 60, 0), 1))
     }
 }

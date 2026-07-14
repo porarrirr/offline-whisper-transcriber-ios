@@ -35,7 +35,7 @@ struct MainTabView: View {
             }
             .tag(2)
         }
-        .tint(AppColors.accent)
+        .tint(Theme.amber)
         .task {
             await checkForAppStoreUpdate()
         }

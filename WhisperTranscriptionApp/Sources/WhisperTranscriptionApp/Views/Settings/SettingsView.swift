@@ -18,7 +18,7 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section(header: Text("Model Settings")) {
+            Section {
                 Picker("Model", selection: $settings.selectedTranscriptionModel) {
                     ForEach(modelPickerOptions) { model in
                         Text(model.displayName).tag(model)
@@ -31,41 +31,45 @@ struct SettingsView: View {
 
                 if modelManager.isTranscriptionInProgress {
                     Label("Model changes are disabled while transcription is running.", systemImage: "lock.fill")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(Theme.sans(12))
+                        .foregroundColor(Theme.textSecondary)
                 }
 
                 HStack {
-                    Image(systemName: modelManager.isModelReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                        .foregroundColor(modelManager.isModelReady ? AppColors.accent : AppColors.warning)
+                    LEDDot(
+                        isOn: true,
+                        onColor: modelManager.isModelReady ? Theme.amber : Theme.rec
+                    )
                     Text(modelStatusText)
                     Spacer()
                     if let size = modelManager.getModelSize() {
                         Text(size)
-                            .foregroundColor(.secondary)
+                            .font(Theme.mono(13))
+                            .foregroundColor(Theme.textSecondary)
                     }
                 }
 
                 if let accelerationWarning = modelManager.whisperAccelerationWarningMessage() {
                     Label(accelerationWarning, systemImage: "speedometer")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(Theme.sans(12))
+                        .foregroundColor(Theme.textSecondary)
                     if !modelManager.isDownloading {
                         Button(action: { modelManager.downloadModel() }) {
                             Label("Download Core ML Encoder", systemImage: "arrow.down.circle.fill")
+                                .foregroundColor(Theme.amber)
                         }
                     }
                 }
 
                 if modelManager.isDownloading {
-                    ProgressView(value: modelManager.downloadProgress)
-                        .tint(AppColors.accent)
+                    ProgressBar(progress: modelManager.downloadProgress)
+                        .frame(height: 6)
                     Text(LocalizedStringKey(modelManager.downloadStatusText))
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                        .font(Theme.sans(12))
+                        .foregroundColor(Theme.textSecondary)
                     Button(action: { modelManager.cancelDownload() }) {
                         Label("Cancel Download", systemImage: "xmark.circle.fill")
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.rec)
                     }
                 } else if !modelManager.isModelReady && settings.usesWhisperBackend {
                     Button(action: { modelManager.downloadModel() }) {
@@ -73,38 +77,43 @@ struct SettingsView: View {
                             "Download \(settings.selectedTranscriptionModel.approximateSize)",
                             systemImage: "arrow.down.circle.fill"
                         )
+                        .foregroundColor(Theme.amber)
                     }
                 } else if !modelManager.isModelReady && settings.usesAppleSpeechBackend {
                     Button(action: { modelManager.downloadModel() }) {
                         Label("Prepare Speech Model", systemImage: "arrow.down.circle.fill")
+                            .foregroundColor(Theme.amber)
                     }
                 }
 
                 if let error = modelManager.downloadError {
                     Text(error)
-                        .font(.caption)
-                        .foregroundColor(.red)
+                        .font(Theme.sans(12))
+                        .foregroundColor(Theme.rec)
                 }
 
                 if settings.usesWhisperBackend {
                     Button(action: { showDeleteConfirmation = true }) {
                         Label("Delete Model", systemImage: "trash.fill")
-                            .foregroundColor(.red)
+                            .foregroundColor(Theme.rec)
                     }
                     .disabled(modelManager.isTranscriptionInProgress)
                 }
+            } header: {
+                TechLabel(text: "Model Settings")
             }
+            .listRowBackground(Theme.panel)
 
             if settings.usesWhisperBackend {
-                Section(header: Text("Language Settings")) {
+                Section {
                     Button(action: { showLanguagePicker = true }) {
                         HStack {
                             Text("Transcription Language")
-                                .foregroundColor(.primary)
+                                .foregroundColor(Theme.textPrimary)
                             Spacer()
                             if let language = AppSettings.supportedLanguages.first(where: { $0.code == settings.selectedLanguage }) {
                                 Text(LocalizedStringKey(language.name))
-                                    .foregroundColor(.secondary)
+                                    .foregroundColor(Theme.textSecondary)
                             }
                         }
                     }
@@ -113,27 +122,35 @@ struct SettingsView: View {
                         VStack(alignment: .leading) {
                             Text("Translate to English")
                             Text("Translate transcription results to English")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(Theme.sans(12))
+                                .foregroundColor(Theme.textSecondary)
                         }
                     }
-                    .tint(AppColors.accent)
+                    .tint(Theme.amberFill)
+                } header: {
+                    TechLabel(text: "Language Settings")
                 }
+                .listRowBackground(Theme.panel)
 
-                Section(header: Text("Prompt"), footer: Text("Example: \"Hello, today we will talk about technology.\"")) {
+                Section {
                     TextEditor(text: $settings.promptText)
                         .frame(minHeight: 80)
                         .focused($isPromptEditorFocused)
+                } header: {
+                    TechLabel(text: "Prompt")
+                } footer: {
+                    Text("Example: \"Hello, today we will talk about technology.\"")
                 }
+                .listRowBackground(Theme.panel)
             } else if settings.usesAppleSpeechBackend {
-                Section(header: Text("Language Settings")) {
+                Section {
                     Button(action: { showSpeechLocalePicker = true }) {
                         HStack {
                             Text("SpeechTranscriber Language")
-                                .foregroundColor(.primary)
+                                .foregroundColor(Theme.textPrimary)
                             Spacer()
                             Text(selectedSpeechLocaleName)
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Theme.textSecondary)
                         }
                     }
                     .disabled(modelManager.isTranscriptionInProgress || speechLocaleOptions.isEmpty)
@@ -141,82 +158,92 @@ struct SettingsView: View {
                     if isLoadingSpeechLocaleOptions {
                         HStack {
                             ProgressView()
+                                .tint(Theme.amber)
                             Text("Loading SpeechTranscriber languages...")
-                                .foregroundColor(.secondary)
+                                .foregroundColor(Theme.textSecondary)
                         }
                     } else if speechLocaleOptions.isEmpty {
                         Text("No SpeechTranscriber languages are available on this device.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(Theme.sans(12))
+                            .foregroundColor(Theme.textSecondary)
                     }
+                } header: {
+                    TechLabel(text: "Language Settings")
                 }
+                .listRowBackground(Theme.panel)
             }
 
-            Section(header: Text("Appearance")) {
+            Section {
                 Picker("Theme", selection: $settings.appAppearance) {
                     ForEach(AppAppearance.allCases) { appearance in
                         Text(LocalizedStringKey(appearance.displayName)).tag(appearance)
                     }
                 }
                 .pickerStyle(.segmented)
+            } header: {
+                TechLabel(text: "Appearance")
             }
+            .listRowBackground(Theme.panel)
 
-            Section(header: Text("Advanced Settings")) {
+            Section {
                 if settings.usesWhisperBackend {
                     Toggle(isOn: $settings.useFlashAttention) {
                         VStack(alignment: .leading) {
                             Text("Flash Attention")
                             Text("Optimize processing speed and memory usage")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(Theme.sans(12))
+                                .foregroundColor(Theme.textSecondary)
                         }
                     }
-                    .tint(AppColors.accent)
+                    .tint(Theme.amberFill)
                     .disabled(modelManager.isTranscriptionInProgress)
 
                     Toggle(isOn: $settings.useVAD) {
                         VStack(alignment: .leading) {
                             Text("Skip Silence (VAD)")
                             Text("Automatically skip portions with no audio")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(Theme.sans(12))
+                                .foregroundColor(Theme.textSecondary)
                         }
                     }
-                    .tint(AppColors.accent)
+                    .tint(Theme.amberFill)
                     .disabled(modelManager.isTranscriptionInProgress)
 
                     if settings.useVAD {
                         HStack {
-                            Image(systemName: modelManager.isVADModelReady ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                                .foregroundColor(modelManager.isVADModelReady ? AppColors.accent : AppColors.warning)
+                            LEDDot(
+                                isOn: true,
+                                onColor: modelManager.isVADModelReady ? Theme.amber : Theme.rec
+                            )
                             Text(modelManager.isVADModelReady ? LocalizedStringKey("VAD Model Ready") : LocalizedStringKey("Please download VAD model"))
                         }
 
                         if modelManager.isVADDownloading {
                             HStack {
-                                ProgressView(value: modelManager.vadDownloadProgress)
-                                    .tint(AppColors.accent)
+                                ProgressBar(progress: modelManager.vadDownloadProgress)
+                                    .frame(height: 6)
                                 Button(action: { modelManager.cancelVADDownload() }) {
                                     Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(.red)
+                                        .foregroundColor(Theme.rec)
                                 }
                             }
                         } else if !modelManager.isVADModelReady {
                             Button(action: { modelManager.downloadVADModel() }) {
                                 Label("Download VAD Model", systemImage: "arrow.down.circle.fill")
+                                    .foregroundColor(Theme.amber)
                             }
                         } else {
                             Button(action: { modelManager.deleteVADModel() }) {
                                 Label("Delete VAD Model", systemImage: "trash")
-                                    .foregroundColor(.red)
+                                    .foregroundColor(Theme.rec)
                             }
                             .disabled(modelManager.isTranscriptionInProgress)
                         }
 
                         if let error = modelManager.vadDownloadError {
                             Text(error)
-                                .font(.caption)
-                                .foregroundColor(.red)
+                                .font(Theme.sans(12))
+                                .foregroundColor(Theme.rec)
                         }
                     }
                 }
@@ -226,47 +253,51 @@ struct SettingsView: View {
                         VStack(alignment: .leading) {
                             Text("Include Timestamps")
                             Text("Include timestamps in the transcription result")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                                .font(Theme.sans(12))
+                                .foregroundColor(Theme.textSecondary)
                         }
                     }
-                    .tint(AppColors.accent)
+                    .tint(Theme.amberFill)
                 }
 
                 Toggle(isOn: $settings.keepScreenOn) {
                     VStack(alignment: .leading) {
                         Text("Keep Screen On")
                         Text("Keep the screen on during transcription")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(Theme.sans(12))
+                            .foregroundColor(Theme.textSecondary)
                     }
                 }
-                .tint(AppColors.accent)
+                .tint(Theme.amberFill)
 
                 Toggle(isOn: $settings.autoDeleteRecordings) {
                     VStack(alignment: .leading) {
                         Text("Auto-Delete Recordings")
                         Text("Automatically delete recording files after 7 days")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+                            .font(Theme.sans(12))
+                            .foregroundColor(Theme.textSecondary)
                     }
                 }
-                .tint(AppColors.accent)
+                .tint(Theme.amberFill)
+            } header: {
+                TechLabel(text: "Advanced Settings")
             }
+            .listRowBackground(Theme.panel)
 
-            Section(header: Text("Logs")) {
+            Section {
                 if logger.entries.isEmpty {
                     Text("No logs yet")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Theme.textSecondary)
                 } else {
                     NavigationLink("View Logs") {
                         ScrollView {
                             Text(logger.latestPreview)
-                                .font(.system(.caption, design: .monospaced))
+                                .font(Theme.mono(11))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding()
                                 .textSelection(.enabled)
                         }
+                        .background(Theme.background)
                         .navigationTitle("Logs")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
@@ -284,15 +315,26 @@ struct SettingsView: View {
                         }
                     }
                 }
+            } header: {
+                TechLabel(text: "Logs")
             }
+            .listRowBackground(Theme.panel)
 
-            Section(header: Text("Support & Policies"), footer: LegalDisclaimerFootnote()) {
+            Section {
                 Link("About App", destination: AppLegalURLs.marketing)
                 Link("Support", destination: AppLegalURLs.support)
                 Link("Privacy Policy", destination: AppLegalURLs.privacyPolicy)
                 Link("Disclaimer & Terms", destination: AppLegalURLs.disclaimer)
+            } header: {
+                TechLabel(text: "Support & Policies")
+            } footer: {
+                LegalDisclaimerFootnote()
             }
+            .listRowBackground(Theme.panel)
         }
+        .scrollContentBackground(.hidden)
+        .background(Theme.background)
+        .tint(Theme.amber)
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -393,16 +435,19 @@ struct LanguagePickerView: View {
                     }) {
                         HStack {
                             Text(LocalizedStringKey(language.name))
-                                .foregroundColor(.primary)
+                                .foregroundColor(Theme.textPrimary)
                             Spacer()
                             if selectedLanguage == language.code {
                                 Image(systemName: "checkmark")
-                                    .foregroundColor(AppColors.accent)
+                                    .foregroundColor(Theme.amber)
                             }
                         }
                     }
+                    .listRowBackground(Theme.panel)
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.background)
             .navigationTitle("Select Language")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -429,12 +474,15 @@ struct SpeechTranscriberLanguagePickerView: View {
                 if isLoading && locales.isEmpty {
                     HStack {
                         ProgressView()
+                            .tint(Theme.amber)
                         Text("Loading SpeechTranscriber languages...")
-                            .foregroundColor(.secondary)
+                            .foregroundColor(Theme.textSecondary)
                     }
+                    .listRowBackground(Theme.panel)
                 } else if locales.isEmpty {
                     Text("No SpeechTranscriber languages are available on this device.")
-                        .foregroundColor(.secondary)
+                        .foregroundColor(Theme.textSecondary)
+                        .listRowBackground(Theme.panel)
                 } else {
                     ForEach(locales) { locale in
                         Button(action: {
@@ -444,21 +492,24 @@ struct SpeechTranscriberLanguagePickerView: View {
                             HStack {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(locale.localizedLocaleName)
-                                        .foregroundColor(.primary)
+                                        .foregroundColor(Theme.textPrimary)
                                     Text(locale.localeIdentifier.replacingOccurrences(of: "_", with: "-"))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                                        .font(Theme.mono(11))
+                                        .foregroundColor(Theme.textSecondary)
                                 }
                                 Spacer()
                                 if selectedLocale == locale {
                                     Image(systemName: "checkmark")
-                                        .foregroundColor(AppColors.accent)
+                                        .foregroundColor(Theme.amber)
                                 }
                             }
                         }
+                        .listRowBackground(Theme.panel)
                     }
                 }
             }
+            .scrollContentBackground(.hidden)
+            .background(Theme.background)
             .navigationTitle("Select Language")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

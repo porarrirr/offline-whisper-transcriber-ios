@@ -14,248 +14,85 @@ struct TranscribeView: View {
     @AppStorage(WhisperAppDestination.pendingLiveRecordingKey) private var pendingLiveRecording = false
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var recordingService: RecordingService
-    
+
     var body: some View {
         ZStack {
-            AppColors.background.ignoresSafeArea()
-            
-            VStack(spacing: 0) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Transcribe")
-                            .font(AppFonts.largeTitle)
-                            .foregroundColor(AppColors.textPrimary)
-                        
-                        Text("Record or select a file")
-                            .font(AppFonts.body)
-                            .foregroundColor(AppColors.textSecondary)
+            Theme.background.ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 14) {
+                    statusHeader
+
+                    lcdDisplay
+
+                    if viewModel.isProcessing {
+                        TranscriptionProgressPanel(
+                            progress: viewModel.transcriptionProgress,
+                            statusText: viewModel.processingStatusText,
+                            usesDeterminateProgress: viewModel.usesDeterminateProgress,
+                            onCancel: {
+                                viewModel.cancelTranscription()
+                            }
+                        )
                     }
-                    
-                    Spacer()
-                }
-                .padding(.horizontal)
-                .padding(.top, 20)
-                
-                ScrollView {
-                    VStack(spacing: 24) {
-                        if viewModel.isProcessing {
-                            TranscriptionProgressPanel(
-                                progress: viewModel.transcriptionProgress,
-                                statusText: viewModel.processingStatusText,
-                                usesDeterminateProgress: viewModel.usesDeterminateProgress,
-                                onCancel: {
-                                    viewModel.cancelTranscription()
-                                }
-                            )
-                            .padding(.horizontal)
-                            .padding(.top, 8)
-                        }
 
-                        if let readinessError = modelReadinessError {
-                            ModelReadinessPanel(
-                                modelName: modelManager.currentTranscriptionModel.displayName,
-                                message: readinessError,
-                                actionTitle: modelReadinessActionTitle,
-                                onAction: modelReadinessAction
-                            )
-                            .padding(.horizontal)
-                            .padding(.top, 8)
-                        } else if let accelerationWarning = modelAccelerationWarning {
-                            ModelReadinessPanel(
-                                modelName: modelManager.currentTranscriptionModel.displayName,
-                                message: accelerationWarning,
-                                actionTitle: modelAccelerationActionTitle,
-                                onAction: modelAccelerationAction
-                            )
-                            .padding(.horizontal)
-                            .padding(.top, 8)
-                        }
-
-                        VStack(spacing: 20) {
-                            if recordingService.isRecording {
-                                WaveformView(audioLevel: recordingService.audioLevel)
-                                    .frame(height: 100)
-                                    .padding(.horizontal)
-                                
-                                Text(formatTime(recordingService.currentTime))
-                                    .font(AppFonts.title2)
-                                    .foregroundColor(AppColors.accent)
-                                    .monospacedDigit()
-                            }
-
-                            LiveTranscriptionToggle(
-                                isOn: liveTranscriptionBinding,
-                                isAvailable: recordingService.canStartLiveTranscription,
-                                unavailableMessage: recordingService.liveUnavailableMessage,
-                                isRecording: recordingService.isRecording
-                            )
-                            .padding(.horizontal)
-
-                            if shouldShowLivePanel {
-                                LiveTranscriptionPanel(
-                                    finalizedText: recordingService.liveFinalizedText,
-                                    volatileText: recordingService.liveVolatileText,
-                                    state: recordingService.liveState
-                                )
-                                .padding(.horizontal)
-                            }
-                            
-                            RecordingButton(isRecording: recordingService.isRecording) {
-                                if recordingService.isRecording {
-                                    viewModel.stopRecordingAndTranscribe(recordingService: recordingService, modelContext: modelContext)
-                                } else {
-                                    viewModel.startRecording(recordingService: recordingService)
-                                }
-                            }
-                            .disabled(recordingButtonDisabled)
-                            .opacity(recordingButtonDisabled ? 0.5 : 1)
-                            
-                            Text(recordingService.isRecording ? LocalizedStringKey("Tap to Stop") : LocalizedStringKey("Tap to Start Recording"))
-                                .font(AppFonts.callout)
-                                .foregroundColor(AppColors.textSecondary)
-                        }
-                        .padding(.vertical, 20)
-                        .opacity(viewModel.isProcessing ? 0.28 : 1)
-                        
-                        Divider()
-                            .background(AppColors.surface)
-                            .padding(.horizontal)
-                        
-                        Button(action: {
-                            if let modelReadinessError {
-                                viewModel.setError(modelReadinessError)
-                            } else {
-                                showFileImporter = true
-                            }
-                        }) {
-                            HStack {
-                                Image(systemName: "doc.text.fill")
-                                    .font(.title2)
-                                    .foregroundColor(AppColors.accent)
-                                
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Select File")
-                                        .font(AppFonts.headline)
-                                        .foregroundColor(AppColors.textPrimary)
-                                    
-                                    Text("Supported: audio and video files")
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                                
-                                Spacer()
-                                
-                                Image(systemName: "chevron.right")
-                                    .foregroundColor(AppColors.textSecondary)
-                            }
-                            .padding()
-                            .background(.regularMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
-                        }
-                        .padding(.horizontal)
-                        .disabled(inputSelectionDisabled)
-                        .opacity(inputSelectionDisabled ? 0.5 : 1)
-
-                        PhotosPicker(
-                            selection: $selectedVideoItem,
-                            matching: .videos,
-                            photoLibrary: .shared()
-                        ) {
-                            HStack {
-                                Image(systemName: "photo.on.rectangle.angled")
-                                    .font(.title2)
-                                    .foregroundColor(AppColors.accent)
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("Select Video from Photos")
-                                        .font(AppFonts.headline)
-                                        .foregroundColor(AppColors.textPrimary)
-
-                                    Text("Only the selected video's audio is transcribed")
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-
-                                Spacer()
-
-                                Image(systemName: "chevron.right")
-                                    .foregroundColor(AppColors.textSecondary)
-                            }
-                            .padding()
-                            .background(.regularMaterial)
-                            .clipShape(RoundedRectangle(cornerRadius: 16))
-                            .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
-                        }
-                        .padding(.horizontal)
-                        .disabled(inputSelectionDisabled)
-                        .opacity(inputSelectionDisabled ? 0.5 : 1)
-                        
-                        if let error = displayedError {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(AppColors.warning)
-                                Text(error)
-                                    .font(AppFonts.callout)
-                                    .foregroundColor(AppColors.warning)
-                            }
-                            .padding()
-                            .background(AppColors.warning.opacity(0.1))
-                            .cornerRadius(12)
-                            .padding(.horizontal)
-                        }
-
-                        if recordingService.hasInterruptedRecording {
-                            Button(action: {
-                                viewModel.transcribeInterruptedRecording(recordingService: recordingService, modelContext: modelContext)
-                            }) {
-                                HStack {
-                                    Image(systemName: "waveform.badge.magnifyingglass")
-                                        .font(.title2)
-                                        .foregroundColor(AppColors.accent)
-
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text("Transcribe Interrupted Recording")
-                                            .font(AppFonts.headline)
-                                            .foregroundColor(AppColors.textPrimary)
-
-                                        Text("Transcribe the part that was saved before interruption")
-                                            .font(AppFonts.caption)
-                                            .foregroundColor(AppColors.textSecondary)
-                                    }
-
-                                    Spacer()
-
-                                    Image(systemName: "chevron.right")
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                                .padding()
-                                .background(.regularMaterial)
-                                .clipShape(RoundedRectangle(cornerRadius: 16))
-                                .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
-                            }
-                            .padding(.horizontal)
-                            .disabled(viewModel.isProcessing || modelReadinessError != nil)
-                            .opacity(viewModel.isProcessing || modelReadinessError != nil ? 0.5 : 1)
-                        }
-                        
-                        if viewModel.isProcessing {
-                            Text("Processing will continue while this screen is open.")
-                                .font(AppFonts.caption)
-                                .foregroundColor(AppColors.textSecondary)
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal, 32)
-                                .accessibilityHidden(true)
-                        }
-                        
-                        LegalDisclaimerFootnote()
-                            .padding(.horizontal)
-
-                        Spacer(minLength: 40)
+                    if let readinessError = modelReadinessError {
+                        WarningStrip(
+                            message: readinessError,
+                            actionTitle: modelReadinessActionTitle,
+                            action: modelReadinessAction
+                        )
+                    } else if let accelerationWarning = modelAccelerationWarning {
+                        WarningStrip(
+                            message: accelerationWarning,
+                            actionTitle: modelAccelerationActionTitle,
+                            action: modelAccelerationAction
+                        )
                     }
+
+                    LiveTranscriptionToggle(
+                        isOn: liveTranscriptionBinding,
+                        isAvailable: recordingService.canStartLiveTranscription,
+                        unavailableMessage: recordingService.liveUnavailableMessage,
+                        isRecording: recordingService.isRecording
+                    )
+
+                    if shouldShowLivePanel {
+                        LiveTranscriptionPanel(
+                            finalizedText: recordingService.liveFinalizedText,
+                            volatileText: recordingService.liveVolatileText,
+                            state: recordingService.liveState
+                        )
+                    }
+
+                    transport
+                        .opacity(viewModel.isProcessing ? 0.35 : 1)
+
+                    inputSection
+
+                    if let error = displayedError {
+                        WarningStrip(message: error)
+                    }
+
+                    if viewModel.isProcessing {
+                        Text("Processing will continue while this screen is open.")
+                            .font(Theme.sans(12))
+                            .foregroundColor(Theme.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, 24)
+                            .accessibilityHidden(true)
+                    }
+
+                    LegalDisclaimerFootnote()
+                        .padding(.top, 8)
+
+                    Spacer(minLength: 24)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
         }
+        .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $viewModel.showResult) {
             ResultView(
                 title: viewModel.transcriptionTitle,
@@ -306,13 +143,185 @@ struct TranscribeView: View {
             }
         }
     }
-    
-    private func formatTime(_ time: TimeInterval) -> String {
-        let hours = Int(time) / 3600
-        let minutes = (Int(time) % 3600) / 60
-        let seconds = Int(time) % 60
-        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+
+    // MARK: - Sections
+
+    /// 上部ステータス列: 状態LED + 状態トークン / モデル名チップ
+    private var statusHeader: some View {
+        HStack(spacing: 8) {
+            LEDDot(isOn: recordingService.isRecording || viewModel.isProcessing,
+                   onColor: recordingService.isRecording ? Theme.rec : Theme.amber)
+
+            Text(statusToken)
+                .font(Theme.mono(12, weight: .semibold))
+                .tracking(2.0)
+                .foregroundStyle(recordingService.isRecording ? Theme.rec : Theme.textSecondary)
+                .contentTransition(.identity)
+
+            Spacer()
+
+            Text(modelManager.currentTranscriptionModel.displayName)
+                .font(Theme.mono(11, weight: .medium))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(Theme.panelInset)
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule().strokeBorder(Theme.stroke, lineWidth: 1)
+                }
+        }
+        .padding(.horizontal, 2)
+        .accessibilityElement(children: .combine)
     }
+
+    private var statusToken: String {
+        if recordingService.isRecording { return "REC" }
+        if viewModel.isProcessing { return "BUSY" }
+        return "STANDBY"
+    }
+
+    /// LCDディスプレイ: 波形 + タイムコード
+    private var lcdDisplay: some View {
+        VStack(spacing: 10) {
+            WaveformView(
+                audioLevel: recordingService.audioLevel,
+                isActive: recordingService.isRecording
+            )
+            .frame(height: 64)
+
+            Text(formatTimecode(recordingService.isRecording ? recordingService.currentTime : 0))
+                .font(Theme.mono(46, weight: .medium))
+                .foregroundStyle(recordingService.isRecording ? Theme.displayAmber : Theme.displayDim)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .minimumScaleFactor(0.6)
+                .lineLimit(1)
+
+            HStack {
+                Text("MIC")
+                    .font(Theme.mono(10, weight: .semibold))
+                    .tracking(1.5)
+                    .foregroundStyle(Theme.displayTextDim)
+
+                Spacer()
+
+                if recordingService.isLiveTranscriptionActive {
+                    Text("LIVE")
+                        .font(Theme.mono(10, weight: .bold))
+                        .tracking(1.5)
+                        .foregroundStyle(Theme.display)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Theme.displayAmber)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                } else {
+                    Text("OFFLINE")
+                        .font(Theme.mono(10, weight: .medium))
+                        .tracking(1.5)
+                        .foregroundStyle(Theme.displayTextDim)
+                }
+            }
+        }
+        .displayPanel(padding: 18)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(recordingService.isRecording ? "Tap to Stop" : "Tap to Start Recording"))
+    }
+
+    /// 録音トランスポート
+    private var transport: some View {
+        VStack(spacing: 6) {
+            RecordingButton(isRecording: recordingService.isRecording) {
+                if recordingService.isRecording {
+                    viewModel.stopRecordingAndTranscribe(recordingService: recordingService, modelContext: modelContext)
+                } else {
+                    viewModel.startRecording(recordingService: recordingService)
+                }
+            }
+            .disabled(recordingButtonDisabled)
+            .opacity(recordingButtonDisabled ? 0.45 : 1)
+
+            Text(recordingService.isRecording ? LocalizedStringKey("Tap to Stop") : LocalizedStringKey("Tap to Start Recording"))
+                .font(Theme.mono(12, weight: .medium))
+                .foregroundColor(Theme.textSecondary)
+        }
+        .padding(.vertical, 6)
+    }
+
+    /// ファイル入力ソース
+    private var inputSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TechLabel(text: "Input")
+                .padding(.horizontal, 4)
+
+            VStack(spacing: 0) {
+                Button {
+                    if let modelReadinessError {
+                        viewModel.setError(modelReadinessError)
+                    } else {
+                        showFileImporter = true
+                    }
+                } label: {
+                    RecorderActionRow(
+                        icon: "doc.text",
+                        title: "Select File",
+                        subtitle: "Supported: audio and video files"
+                    )
+                    .padding(14)
+                }
+                .buttonStyle(.plain)
+                .disabled(inputSelectionDisabled)
+                .opacity(inputSelectionDisabled ? 0.45 : 1)
+
+                Divider().overlay(Theme.stroke)
+                    .padding(.leading, 62)
+
+                PhotosPicker(
+                    selection: $selectedVideoItem,
+                    matching: .videos,
+                    photoLibrary: .shared()
+                ) {
+                    RecorderActionRow(
+                        icon: "photo.on.rectangle.angled",
+                        title: "Select Video from Photos",
+                        subtitle: "Only the selected video's audio is transcribed"
+                    )
+                    .padding(14)
+                }
+                .buttonStyle(.plain)
+                .disabled(inputSelectionDisabled)
+                .opacity(inputSelectionDisabled ? 0.45 : 1)
+
+                if recordingService.hasInterruptedRecording {
+                    Divider().overlay(Theme.stroke)
+                        .padding(.leading, 62)
+
+                    Button {
+                        viewModel.transcribeInterruptedRecording(recordingService: recordingService, modelContext: modelContext)
+                    } label: {
+                        RecorderActionRow(
+                            icon: "waveform.badge.magnifyingglass",
+                            title: "Transcribe Interrupted Recording",
+                            subtitle: "Transcribe the part that was saved before interruption"
+                        )
+                        .padding(14)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(viewModel.isProcessing || modelReadinessError != nil)
+                    .opacity(viewModel.isProcessing || modelReadinessError != nil ? 0.45 : 1)
+                }
+            }
+            .background(Theme.panel)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Theme.stroke, lineWidth: 1)
+            }
+        }
+    }
+
+    // MARK: - State helpers
 
     private var displayedError: String? {
         viewModel.errorMessage ?? recordingService.liveMessage ?? recordingService.interruptionMessage ?? recordingService.errorMessage
@@ -463,45 +472,7 @@ struct TranscribeView: View {
     }
 }
 
-private struct ModelReadinessPanel: View {
-    let modelName: String
-    let message: String
-    let actionTitle: LocalizedStringKey?
-    let onAction: (() -> Void)?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.title3)
-                    .foregroundColor(AppColors.warning)
-
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(modelName)
-                        .font(AppFonts.headline)
-                        .foregroundColor(AppColors.textPrimary)
-                    Text(message)
-                        .font(AppFonts.callout)
-                        .foregroundColor(AppColors.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Spacer(minLength: 0)
-            }
-
-            if let actionTitle, let onAction {
-                Button(action: onAction) {
-                    Label(actionTitle, systemImage: "arrow.down.circle.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            }
-        }
-        .padding()
-        .background(AppColors.warning.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-}
+// MARK: - Live transcription
 
 private struct LiveTranscriptionToggle: View {
     @Binding var isOn: Bool
@@ -512,34 +483,34 @@ private struct LiveTranscriptionToggle: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle(isOn: $isOn) {
-                Label {
-                    VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 10) {
+                    Image(systemName: "quote.bubble")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Theme.amber)
+
+                    VStack(alignment: .leading, spacing: 2) {
                         Text("Live Transcribe")
-                            .font(AppFonts.headline)
-                            .foregroundColor(AppColors.textPrimary)
+                            .font(Theme.sans(15, weight: .semibold))
+                            .foregroundColor(Theme.textPrimary)
                         Text(isRecording ? "Toggle live transcription while recording" : "Start recording with live transcription")
-                            .font(AppFonts.caption)
-                            .foregroundColor(AppColors.textSecondary)
+                            .font(Theme.sans(12))
+                            .foregroundColor(Theme.textSecondary)
                     }
-                } icon: {
-                    Image(systemName: "quote.bubble.fill")
-                        .foregroundColor(AppColors.accent)
                 }
             }
             .toggleStyle(.switch)
+            .tint(Theme.amberFill)
             .disabled(!isAvailable)
-            .opacity(isAvailable ? 1 : 0.55)
+            .opacity(isAvailable ? 1 : 0.5)
 
             if let unavailableMessage {
                 Text(LocalizedStringKey(unavailableMessage))
-                    .font(AppFonts.caption)
-                    .foregroundColor(AppColors.textSecondary)
+                    .font(Theme.sans(12))
+                    .foregroundColor(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .recorderPanel(padding: 14)
     }
 }
 
@@ -571,29 +542,32 @@ private struct LiveTranscriptionPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Label {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(state == .recording ? Theme.displayAmber : Theme.displayDim)
+                    .frame(width: 6, height: 6)
+
                 Text(statusText)
-                    .font(AppFonts.callout)
-                    .foregroundColor(AppColors.textSecondary)
-            } icon: {
-                Image(systemName: "quote.bubble.fill")
-                    .foregroundColor(AppColors.accent)
+                    .font(Theme.mono(11, weight: .semibold))
+                    .tracking(1.2)
+                    .textCase(.uppercase)
+                    .foregroundColor(Theme.displayTextDim)
             }
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(visibleFinalText)
-                        .font(.system(size: 20, weight: .regular, design: .default))
-                        .foregroundColor(finalizedText.isEmpty ? AppColors.textSecondary : AppColors.textPrimary)
+                        .font(Theme.sans(18))
+                        .foregroundColor(finalizedText.isEmpty ? Theme.displayTextDim : Theme.displayText)
                         .lineSpacing(5)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
 
                     if !volatileText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Text(volatileText)
-                            .font(.system(size: 18, weight: .regular, design: .default))
-                            .foregroundColor(AppColors.textSecondary.opacity(0.72))
+                            .font(Theme.sans(17))
+                            .foregroundColor(Theme.displayTextDim)
                             .lineSpacing(4)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
@@ -602,15 +576,11 @@ private struct LiveTranscriptionPanel: View {
             }
             .frame(minHeight: 84, maxHeight: 180)
         }
-        .padding(16)
-        .background(AppColors.cardBackground.opacity(0.82))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(AppColors.accent.opacity(0.18), lineWidth: 1)
-        }
+        .displayPanel(padding: 14)
     }
 }
+
+// MARK: - Processing
 
 private struct TranscriptionProgressPanel: View {
     let progress: Double
@@ -631,91 +601,66 @@ private struct TranscriptionProgressPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .center, spacing: 14) {
-                ZStack {
-                    Circle()
-                        .fill(AppColors.accent.opacity(0.16))
-                        .frame(width: 58, height: 58)
-
-                    Image(systemName: "waveform.and.magnifyingglass")
-                        .font(.system(size: 26, weight: .semibold))
-                        .foregroundColor(AppColors.accent)
-                        .symbolEffect(.pulse, options: .repeating, value: animationValue)
-                }
-
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Transcription in progress")
-                        .font(AppFonts.title2)
-                        .foregroundColor(AppColors.textPrimary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    TechLabel(text: "Transcription in progress", color: Theme.amber)
 
                     Text(visibleStatusText)
-                        .font(AppFonts.callout)
-                        .foregroundColor(AppColors.textSecondary)
+                        .font(Theme.sans(13))
+                        .foregroundColor(Theme.textSecondary)
                 }
 
                 Spacer(minLength: 8)
 
-                VStack(alignment: .trailing, spacing: 8) {
-                    if usesDeterminateProgress {
-                        Text(percentText)
-                            .font(.title2.weight(.bold).monospacedDigit())
-                            .foregroundColor(AppColors.accent)
-                            .accessibilityLabel(Text("Transcription progress"))
-                            .accessibilityValue(Text(percentText))
-                    } else {
-                        ProgressView()
-                            .tint(AppColors.accent)
-                            .controlSize(.regular)
-                            .accessibilityLabel(Text("Transcription in progress"))
-                    }
-
-                    Button(role: .cancel, action: onCancel) {
-                        Label("Cancel", systemImage: "xmark.circle")
-                    }
-                    .font(AppFonts.callout)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+                if usesDeterminateProgress {
+                    Text(percentText)
+                        .font(Theme.mono(30, weight: .semibold))
+                        .foregroundColor(Theme.amber)
+                        .accessibilityLabel(Text("Transcription progress"))
+                        .accessibilityValue(Text(percentText))
+                } else {
+                    ProgressView()
+                        .tint(Theme.amber)
+                        .accessibilityLabel(Text("Transcription in progress"))
                 }
             }
 
             if usesDeterminateProgress {
-                ProgressView(value: clampedProgress)
-                    .tint(AppColors.accent)
-                    .scaleEffect(x: 1, y: 2.4)
-                    .padding(.vertical, 4)
+                ProgressBar(progress: clampedProgress)
+                    .frame(height: 6)
             } else {
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Image(systemName: "cpu")
-                        .foregroundColor(AppColors.accent)
+                        .font(.system(size: 12))
+                        .foregroundColor(Theme.amber)
                     Text("On-device speech recognition is processing.")
-                        .font(AppFonts.callout)
-                        .foregroundColor(AppColors.textSecondary)
+                        .font(Theme.sans(12))
+                        .foregroundColor(Theme.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .padding(.vertical, 4)
             }
 
-            Text("Please keep the app open until this finishes.")
-                .font(AppFonts.callout)
-                .foregroundColor(AppColors.textPrimary)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Text("Please keep the app open until this finishes.")
+                    .font(Theme.sans(12))
+                    .foregroundColor(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Spacer(minLength: 8)
+
+                Button(role: .cancel, action: onCancel) {
+                    Text("Cancel")
+                }
+                .buttonStyle(.recorderQuiet)
+            }
         }
-        .padding(20)
-        .background(AppColors.cardBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16)
-                .stroke(AppColors.accent.opacity(0.25), lineWidth: 1)
-        }
+        .recorderPanel()
         .accessibilityElement(children: .combine)
     }
-
-    private var animationValue: String {
-        usesDeterminateProgress ? percentText : statusText
-    }
 }
+
+// MARK: - Photos picker payload
 
 private struct PickedVideoFile: Transferable {
     let url: URL

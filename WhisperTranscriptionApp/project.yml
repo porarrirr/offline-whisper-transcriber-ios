@@ -68,6 +68,12 @@ targets:
       - sdk: Speech.framework
       - target: RecordingActivityWidget
         embed: true
+    preBuildScripts:
+      - name: Set Build Version
+        script: "\"${SRCROOT}/Scripts/set-build-version.sh\" \"${SRCROOT}/Info.plist\" \"${SRCROOT}/Sources/RecordingActivityWidget/Info.plist\""
+        outputFiles:
+          - "$(SRCROOT)/Info.plist"
+        basedOnDependencyAnalysis: false
     scheme:
       testTargets:
         - WhisperTranscriptionAppTests
@@ -124,3 +130,9 @@ targets:
       - sdk: ActivityKit.framework
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
+    preBuildScripts:
+      - name: Set Build Version
+        script: "\"${SRCROOT}/Scripts/set-build-version.sh\" \"${SRCROOT}/Sources/RecordingActivityWidget/Info.plist\""
+        outputFiles:
+          - "$(SRCROOT)/Sources/RecordingActivityWidget/Info.plist"
+        basedOnDependencyAnalysis: false

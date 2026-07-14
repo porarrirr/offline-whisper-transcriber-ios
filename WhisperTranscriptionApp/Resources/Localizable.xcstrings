@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "" : {
+
+    },
     "--- With Timestamps ---" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -788,6 +791,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "確定要刪除這條轉寫記錄嗎？"
+          }
+        }
+      }
+    },
+    "Audio" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音频"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音訊"
           }
         }
       }
@@ -2210,6 +2248,41 @@
         }
       }
     },
+    "Edit Title" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editar título"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifier le titre"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タイトルを編集"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "编辑标题"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "編輯標題"
+          }
+        }
+      }
+    },
     "English" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2641,41 +2714,6 @@
         }
       }
     },
-    "Failed to delete recording file" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No se pudo eliminar el archivo de grabación"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Échec de la suppression du fichier d’enregistrement"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "録音ファイルの削除に失敗しました"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "删除录音文件失败"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "刪除錄音檔案失敗"
-          }
-        }
-      }
-    },
     "Failed to delete old recordings" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2707,6 +2745,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "刪除舊錄音失敗"
+          }
+        }
+      }
+    },
+    "Failed to delete recording file" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo eliminar el archivo de grabación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Échec de la suppression du fichier d’enregistrement"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音ファイルの削除に失敗しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除录音文件失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "刪除錄音檔案失敗"
           }
         }
       }
@@ -3026,41 +3099,6 @@
         }
       }
     },
-    "Failed to start audio playback" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Error al iniciar la reproducción de audio"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Échec du démarrage de la lecture audio"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音声再生の開始に失敗しました"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "启动音频播放失败"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "啟動音訊播放失敗"
-          }
-        }
-      }
-    },
     "Failed to save history" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3127,6 +3165,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "儲存錄音失敗"
+          }
+        }
+      }
+    },
+    "Failed to start audio playback" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error al iniciar la reproducción de audio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Échec du démarrage de la lecture audio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声再生の開始に失敗しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "启动音频播放失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "啟動音訊播放失敗"
           }
         }
       }
@@ -3658,6 +3731,41 @@
         }
       }
     },
+    "Input" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entrada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Entrée"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "入力"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "输入"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "輸入"
+          }
+        }
+      }
+    },
     "iOS SpeechTranscriber (English)" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -3889,6 +3997,9 @@
           }
         }
       }
+    },
+    "LANG" : {
+
     },
     "Language" : {
       "extractionState" : "manual",
@@ -4135,6 +4246,9 @@
         }
       }
     },
+    "LENGTH" : {
+
+    },
     "Light" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4180,6 +4294,9 @@
           }
         }
       }
+    },
+    "LIVE" : {
+
     },
     "Live Meeting Notes" : {
       "extractionState" : "manual",
@@ -4412,6 +4529,9 @@
         }
       }
     },
+    "MIC" : {
+
+    },
     "Microphone permission is required" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4443,6 +4563,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要麥克風權限"
+          }
+        }
+      }
+    },
+    "Model" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modelo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modèle"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデル"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "模型"
           }
         }
       }
@@ -4787,6 +4942,9 @@
         }
       }
     },
+    "No transcription yet" : {
+
+    },
     "No transcriptions yet" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4868,6 +5026,9 @@
         }
       }
     },
+    "OFFLINE" : {
+
+    },
     "OK" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4890,6 +5051,7 @@
       }
     },
     "Only the selected video's audio is transcribed" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -5251,10 +5413,6 @@
         }
       }
     },
-    "Prepare Speech Model" : {
-      "comment" : "A button to prepare the speech model.",
-      "isCommentAutoGenerated" : true
-    },
     "Preparing audio" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -5473,6 +5631,17 @@
         }
       }
     },
+    "Recording stopped because the audio input changed. The saved part is available for transcription." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声入力が変更されたため録音を停止しました。保存済み部分は文字起こしできます。"
+          }
+        }
+      }
+    },
     "Recording stopped, but the recording file was not saved." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5491,17 +5660,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "別の音声アプリにより録音が中断されました。保存済み部分は文字起こしできます。"
-          }
-        }
-      }
-    },
-    "Recording stopped because the audio input changed. The saved part is available for transcription." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "音声入力が変更されたため録音を停止しました。保存済み部分は文字起こしできます。"
           }
         }
       }
@@ -5607,6 +5765,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "俄語"
+          }
+        }
+      }
+    },
+    "Save" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存"
           }
         }
       }
@@ -5773,10 +5966,6 @@
         }
       }
     },
-    "Select Model" : {
-      "comment" : "A label displayed above a picker that lets the user select a transcription model.",
-      "isCommentAutoGenerated" : true
-    },
     "Select Model Size" : {
       "comment" : "A label displayed above a picker that lets the user select the size of the model to download.",
       "extractionState" : "stale",
@@ -5791,6 +5980,7 @@
       }
     },
     "Select Video from Photos" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -6323,6 +6513,7 @@
       }
     },
     "Supported: audio and video files" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -6729,9 +6920,6 @@
           }
         }
       }
-    },
-    "Title" : {
-
     },
     "Toggle live transcription while recording" : {
       "extractionState" : "manual",
@@ -7843,7 +8031,39 @@
     },
     "Will download %@ and the Core ML encoder.\nWi-Fi connection is recommended." : {
       "comment" : "A label that describes the download process of a speech recognition model.",
-      "isCommentAutoGenerated" : true
+      "isCommentAutoGenerated" : true,
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se descargará %@ y el codificador Core ML.\nSe recomienda una conexión Wi-Fi."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ et l'encodeur Core ML seront téléchargés.\nUne connexion Wi-Fi est recommandée."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "初回に%@とCore MLエンコーダーをダウンロードします。\nWi-Fi接続をおすすめします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将下载%@和Core ML编码器。\n建议使用Wi-Fi连接。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將下載%@與Core ML編碼器。\n建議使用Wi-Fi連線。"
+          }
+        }
+      }
     },
     "Will download %@ for the first time.\nWi-Fi connection is recommended." : {
       "extractionState" : "manual",

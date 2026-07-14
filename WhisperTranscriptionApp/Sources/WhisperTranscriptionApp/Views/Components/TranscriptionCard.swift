@@ -22,56 +22,52 @@ struct TranscriptionCard: View {
     private var textOnlyDisplayText: String {
         TranscriptionSegment.plainText(from: segments, fallback: text)
     }
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Image(systemName: "text.quote")
-                    .foregroundColor(AppColors.accent)
-                
-                Text("Transcription Result")
-                    .font(AppFonts.headline)
-                    .foregroundColor(AppColors.textPrimary)
-                
+                TechLabel(text: "Transcription Result")
+
                 Spacer()
-                
+
                 if isLoading {
                     ProgressView()
-                        .tint(AppColors.accent)
+                        .tint(Theme.amber)
+                        .controlSize(.small)
                 }
             }
-            
+
             if isLoading && text.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(AppColors.surface)
-                        .frame(height: 16)
+                        .fill(Theme.panelInset)
+                        .frame(height: 15)
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(AppColors.surface)
-                        .frame(height: 16)
+                        .fill(Theme.panelInset)
+                        .frame(height: 15)
                     RoundedRectangle(cornerRadius: 4)
-                        .fill(AppColors.surface)
-                        .frame(width: 200, height: 16)
+                        .fill(Theme.panelInset)
+                        .frame(width: 200, height: 15)
                 }
                 .shimmer()
             } else {
                 if showTimestamps && !segments.isEmpty {
-                    LazyVStack(alignment: .leading, spacing: 10) {
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(segments) { segment in
                             TranscriptionSegmentRow(segment: segment)
                         }
                     }
                 } else if !textOnlyDisplayText.isEmpty && textChunks.isEmpty {
                     ProgressView()
-                        .tint(AppColors.accent)
+                        .tint(Theme.amber)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(textChunks) { chunk in
                             Text(chunk.text)
-                                .font(AppFonts.body)
-                                .foregroundColor(AppColors.textPrimary)
-                                .lineSpacing(6)
+                                .font(Theme.sans(16))
+                                .foregroundColor(Theme.textPrimary)
+                                .lineSpacing(7)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                         }
@@ -82,10 +78,7 @@ struct TranscriptionCard: View {
         .task(id: textOnlyDisplayText) {
             await updateTextChunks(for: textOnlyDisplayText)
         }
-        .padding()
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .shadow(color: Color.black.opacity(0.05), radius: 10, x: 0, y: 4)
+        .recorderPanel()
     }
 
     @MainActor
@@ -108,14 +101,13 @@ private struct TranscriptionSegmentRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(segment.formattedTimestamp)
-                .font(AppFonts.caption)
-                .foregroundColor(AppColors.accent)
-                .monospacedDigit()
+                .font(Theme.mono(12, weight: .semibold))
+                .foregroundColor(Theme.amber)
 
             Text(segment.text)
-                .font(AppFonts.body)
-                .foregroundColor(AppColors.textPrimary)
-                .lineSpacing(6)
+                .font(Theme.sans(16))
+                .foregroundColor(Theme.textPrimary)
+                .lineSpacing(7)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -170,7 +162,7 @@ private struct TranscriptionTextChunk: Identifiable, Sendable {
 
 struct ShimmerModifier: ViewModifier {
     @State private var phase: CGFloat = 0
-    
+
     func body(content: Content) -> some View {
         content
             .overlay(
@@ -178,7 +170,7 @@ struct ShimmerModifier: ViewModifier {
                     LinearGradient(
                         gradient: Gradient(stops: [
                             .init(color: .clear, location: 0),
-                            .init(color: AppColors.accent.opacity(0.2), location: 0.5),
+                            .init(color: Theme.amber.opacity(0.25), location: 0.5),
                             .init(color: .clear, location: 1)
                         ]),
                         startPoint: .leading,

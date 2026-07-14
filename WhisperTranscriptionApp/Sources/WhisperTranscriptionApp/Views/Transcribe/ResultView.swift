@@ -8,12 +8,12 @@ struct ResultView: View {
     let duration: Double
     let language: String?
     let onDismiss: () -> Void
-    
+
     @State private var showCopyConfirmation = false
     @State private var showExportSheet = false
     @State private var showTimestampView = false
     @State private var sharePayload: SharePayload?
-    
+
     @MainActor
     init(
         title: String = String(localized: "Export"),
@@ -31,70 +31,38 @@ struct ResultView: View {
         self.onDismiss = onDismiss
         _showTimestampView = State(initialValue: AppSettings.shared.includeTimestamps && !segments.isEmpty)
     }
-    
+
     private func currentDisplayText() -> String {
         if showTimestampView && !segments.isEmpty {
             return TranscriptionSegment.timestampedText(from: segments)
         }
         return TranscriptionSegment.plainText(from: segments, fallback: text)
     }
-    
+
     var body: some View {
         NavigationStack {
-            List {
-                if let language = language {
-                    Section {
-                        HStack {
-                            Image(systemName: "globe")
-                                .foregroundColor(.accentColor)
-                            Text("Detected Language: \(language)")
-                        }
-                    }
-                }
-                
-                Section {
+            ScrollView {
+                VStack(spacing: 14) {
+                    metaDisplay
+
                     TranscriptionCard(
                         text: text,
                         segments: segments,
                         showTimestamps: showTimestampView,
                         isLoading: false
                     )
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-                }
-                
-                Section {
-                    if !segments.isEmpty {
-                        Button(action: { showTimestampView.toggle() }) {
-                            Label(showTimestampView ? "Show Text Only" : "Show with Timestamps", systemImage: showTimestampView ? "text.alignleft" : "clock")
-                        }
-                    }
-                    
-                    Button(action: {
-                        UIPasteboard.general.string = currentDisplayText()
-                        showCopyConfirmation = true
-                    }) {
-                        Label("Copy", systemImage: "doc.on.doc")
-                    }
-                    
-                    Button(action: {
-                        sharePayload = .text(currentDisplayText())
-                    }) {
-                        Label("Share", systemImage: "square.and.arrow.up")
-                    }
-                    
-                    Button(action: {
-                        showExportSheet = true
-                    }) {
-                        Label("Export", systemImage: "arrow.down.doc")
-                    }
-                }
-                
-                Section {
+
+                    actionsPanel
+
                     LegalDisclaimerFootnote()
-                        .listRowBackground(Color.clear)
+                        .padding(.top, 4)
+
+                    Spacer(minLength: 20)
                 }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
+            .background(Theme.background)
             .navigationTitle("Result")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -123,6 +91,132 @@ struct ResultView: View {
             }
         }
     }
+
+    /// 結果メタ情報のLCD表示
+    private var metaDisplay: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("LENGTH")
+                    .font(Theme.mono(10, weight: .semibold))
+                    .tracking(1.5)
+                    .foregroundStyle(Theme.displayTextDim)
+
+                Text(formatTimecode(duration))
+                    .font(Theme.mono(24, weight: .medium))
+                    .foregroundStyle(Theme.displayAmber)
+            }
+
+            Spacer()
+
+            if let language {
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("LANG")
+                        .font(Theme.mono(10, weight: .semibold))
+                        .tracking(1.5)
+                        .foregroundStyle(Theme.displayTextDim)
+
+                    Text(language.uppercased())
+                        .font(Theme.mono(24, weight: .medium))
+                        .foregroundStyle(Theme.displayText)
+                }
+            }
+        }
+        .displayPanel(padding: 14)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(language.map { Text("Detected Language: \($0)") } ?? Text(""))
+    }
+
+    private var actionsPanel: some View {
+        VStack(spacing: 10) {
+            if !segments.isEmpty {
+                Button(action: { showTimestampView.toggle() }) {
+                    Label(showTimestampView ? "Show Text Only" : "Show with Timestamps", systemImage: showTimestampView ? "text.alignleft" : "clock")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.recorderQuiet)
+            }
+
+            HStack(spacing: 10) {
+                Button(action: {
+                    UIPasteboard.general.string = currentDisplayText()
+                    showCopyConfirmation = true
+                }) {
+                    Label("Copy", systemImage: "doc.on.doc")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.recorderQuiet)
+
+                Button(action: {
+                    sharePayload = .text(currentDisplayText())
+                }) {
+                    Label("Share", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.recorderQuiet)
+            }
+
+            Button(action: {
+                showExportSheet = true
+            }) {
+                Label("Export", systemImage: "arrow.down.doc")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.recorderQuiet)
+        }
+        .recorderPanel(padding: 14)
+    }
+}
+
+/// エクスポート形式の選択リスト(Result/Historyの共通部品)
+struct ExportFormatList: View {
+    let onSelect: (ExportFormat) -> Void
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 8) {
+                TechLabel(text: "Select Export Format")
+                    .padding(.horizontal, 4)
+
+                VStack(spacing: 0) {
+                    ForEach(Array(ExportFormat.allCases.enumerated()), id: \.element) { index, format in
+                        if index > 0 {
+                            Divider().overlay(Theme.stroke)
+                                .padding(.leading, 62)
+                        }
+
+                        Button {
+                            onSelect(format)
+                        } label: {
+                            RecorderActionRow(
+                                icon: Self.icon(for: format),
+                                title: Text(format.displayName),
+                                subtitle: Text(verbatim: ".\(format.fileExtension)")
+                            )
+                            .padding(14)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .background(Theme.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Theme.stroke, lineWidth: 1)
+                }
+            }
+            .padding(16)
+        }
+        .background(Theme.background)
+    }
+
+    static func icon(for format: ExportFormat) -> String {
+        switch format {
+        case .txt: return "doc.text"
+        case .json: return "curlybraces"
+        case .csv: return "tablecells"
+        case .srt: return "captions.bubble"
+        }
+    }
 }
 
 struct ExportSheetView: View {
@@ -132,43 +226,22 @@ struct ExportSheetView: View {
     let duration: Double
     let language: String?
     let onExport: (URL?) -> Void
-    
+
     @Environment(\.dismiss) private var dismiss
-    
+
     var body: some View {
         NavigationStack {
-            List {
-                Section(header: Text("Select Export Format")) {
-                    ForEach(ExportFormat.allCases) { format in
-                        Button(action: {
-                            let url = TranscriptionExporter.export(
-                                title: title.isEmpty ? String(localized: "Export") : title,
-                                text: text,
-                                duration: duration,
-                                segments: segments,
-                                language: language,
-                                format: format
-                            )
-                            dismiss()
-                            onExport(url)
-                        }) {
-                            HStack {
-                                Image(systemName: iconForFormat(format))
-                                    .foregroundColor(.accentColor)
-                                    .frame(width: 30)
-                                
-                                VStack(alignment: .leading) {
-                                    Text(format.displayName)
-                                        .foregroundColor(.primary)
-                                    Text(extensionForFormat(format))
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                                Spacer()
-                            }
-                        }
-                    }
-                }
+            ExportFormatList { format in
+                let url = TranscriptionExporter.export(
+                    title: title.isEmpty ? String(localized: "Export") : title,
+                    text: text,
+                    duration: duration,
+                    segments: segments,
+                    language: language,
+                    format: format
+                )
+                dismiss()
+                onExport(url)
             }
             .navigationTitle("Export")
             .navigationBarTitleDisplayMode(.inline)
@@ -178,19 +251,6 @@ struct ExportSheetView: View {
                 }
             }
         }
-    }
-    
-    private func iconForFormat(_ format: ExportFormat) -> String {
-        switch format {
-        case .txt: return "doc.text"
-        case .json: return "curlybraces"
-        case .csv: return "tablecells"
-        case .srt: return "captions.bubble"
-        }
-    }
-    
-    private func extensionForFormat(_ format: ExportFormat) -> String {
-        ".\(format.fileExtension)"
     }
 }
 
@@ -223,10 +283,10 @@ struct SharePayload: Identifiable {
 
 struct ShareSheet: UIViewControllerRepresentable {
     let activityItems: [Any]
-    
+
     func makeUIViewController(context: Context) -> UIActivityViewController {
         UIActivityViewController(activityItems: activityItems, applicationActivities: nil)
     }
-    
+
     func updateUIViewController(_ uiViewController: UIActivityViewController, context: Context) {}
 }

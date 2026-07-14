@@ -73,27 +73,27 @@ private struct DataStoreUnavailableView: View {
 
     var body: some View {
         ZStack {
-            AppColors.background.ignoresSafeArea()
+            Theme.background.ignoresSafeArea()
 
             VStack(spacing: 18) {
                 Image(systemName: "externaldrive.badge.exclamationmark")
                     .font(.system(size: 56))
-                    .foregroundColor(AppColors.warning)
+                    .foregroundColor(Theme.rec)
 
                 Text("History Store Unavailable")
-                    .font(AppFonts.title2)
-                    .foregroundColor(AppColors.textPrimary)
+                    .font(Theme.sans(20, weight: .bold))
+                    .foregroundColor(Theme.textPrimary)
 
                 Text("The saved history database could not be opened. Existing recording files are left untouched.")
-                    .font(AppFonts.callout)
-                    .foregroundColor(AppColors.textSecondary)
+                    .font(Theme.sans(15))
+                    .foregroundColor(Theme.textSecondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
 
                 if let errorMessage {
                     Text(errorMessage)
-                        .font(AppFonts.caption)
-                        .foregroundColor(AppColors.warning)
+                        .font(Theme.sans(12))
+                        .foregroundColor(Theme.rec)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                 }

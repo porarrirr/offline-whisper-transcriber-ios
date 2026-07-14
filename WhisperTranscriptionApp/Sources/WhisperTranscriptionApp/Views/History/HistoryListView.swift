@@ -4,75 +4,88 @@ import SwiftData
 struct HistoryListView: View {
     @StateObject private var viewModel = HistoryViewModel()
     @Environment(\.modelContext) private var modelContext
-    
+
     var body: some View {
         List {
             if let error = viewModel.errorMessage {
-                Section {
-                    HStack {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .foregroundColor(AppColors.warning)
-                        Text(error)
-                            .font(AppFonts.callout)
-                            .foregroundColor(AppColors.warning)
-                    }
-                }
+                WarningStrip(message: error)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+
+            if !viewModel.records.isEmpty {
+                Text("\(viewModel.records.count) Records")
+                    .font(Theme.mono(11, weight: .semibold))
+                    .tracking(1.2)
+                    .foregroundColor(Theme.textSecondary)
+                    .listRowInsets(EdgeInsets(top: 2, leading: 20, bottom: 2, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
             }
 
             if !viewModel.availableTags.isEmpty {
-                Section {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 8) {
-                            ForEach(viewModel.availableTags, id: \.self) { tag in
-                                Button {
-                                    viewModel.toggleTagFilter(tag)
-                                } label: {
-                                    TagPillLabel(
-                                        tag: tag,
-                                        isSelected: viewModel.selectedTag == tag
-                                    )
-                                }
-                                .buttonStyle(.plain)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(viewModel.availableTags, id: \.self) { tag in
+                            Button {
+                                viewModel.toggleTagFilter(tag)
+                            } label: {
+                                TagPillLabel(
+                                    tag: tag,
+                                    isSelected: viewModel.selectedTag == tag
+                                )
                             }
-
-                            if viewModel.selectedTag != nil {
-                                Button {
-                                    viewModel.clearTagFilter()
-                                } label: {
-                                    Label("Clear Tag Filter", systemImage: "xmark.circle.fill")
-                                        .font(AppFonts.caption)
-                                        .foregroundColor(AppColors.textSecondary)
-                                }
-                                .buttonStyle(.plain)
-                            }
+                            .buttonStyle(.plain)
                         }
-                        .padding(.vertical, 2)
+
+                        if viewModel.selectedTag != nil {
+                            Button {
+                                viewModel.clearTagFilter()
+                            } label: {
+                                Label("Clear Tag Filter", systemImage: "xmark.circle.fill")
+                                    .font(Theme.sans(12))
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
-                    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 0))
-                } header: {
-                    Text("Tags")
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 2)
                 }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             }
-            
+
             if viewModel.records.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "doc.text.magnifyingglass")
-                        .font(.system(size: 60))
+                VStack(spacing: 14) {
+                    Image(systemName: "waveform.slash")
+                        .font(.system(size: 44, weight: .light))
                         .symbolRenderingMode(.hierarchical)
-                        .foregroundColor(AppColors.textSecondary.opacity(0.5))
-                    
+                        .foregroundColor(Theme.textSecondary.opacity(0.6))
+
                     Text(viewModel.searchText.isEmpty ? LocalizedStringKey("No transcriptions yet") : LocalizedStringKey("No search results"))
-                        .font(AppFonts.headline)
-                        .foregroundColor(AppColors.textSecondary)
+                        .font(Theme.mono(13, weight: .medium))
+                        .foregroundColor(Theme.textSecondary)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 60)
+                .padding(.vertical, 70)
                 .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
             } else {
                 ForEach(viewModel.records) { record in
-                    NavigationLink(destination: HistoryDetailView(record: record, viewModel: viewModel)) {
+                    ZStack {
+                        NavigationLink(destination: HistoryDetailView(record: record, viewModel: viewModel)) {
+                            EmptyView()
+                        }
+                        .opacity(0)
+
                         HistoryRow(record: record)
                     }
+                    .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
                 }
                 .onDelete { indexSet in
                     let recordsToDelete = indexSet.map { viewModel.records[$0] }
@@ -80,7 +93,9 @@ struct HistoryListView: View {
                 }
             }
         }
-        .listStyle(.insetGrouped)
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .background(Theme.background)
         .navigationTitle("History")
         .searchable(text: $viewModel.searchText, prompt: "Search title, text, or tags")
         .onChange(of: viewModel.searchText) { _, _ in
@@ -93,13 +108,8 @@ struct HistoryListView: View {
                     viewModel.fetchRecords()
                 }) {
                     Image(systemName: viewModel.filterFavorite ? "star.fill" : "star")
-                        .foregroundColor(viewModel.filterFavorite ? AppColors.accent : AppColors.textSecondary)
+                        .foregroundColor(viewModel.filterFavorite ? Theme.amber : Theme.textSecondary)
                 }
-            }
-            ToolbarItem(placement: .navigationBarLeading) {
-                Text("\(viewModel.records.count) Records")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
         }
         .onAppear {
@@ -110,45 +120,52 @@ struct HistoryListView: View {
 
 struct HistoryRow: View {
     let record: TranscriptionRecord
-    
+
     var body: some View {
         let tags = record.tags
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(record.displayTitle)
-                    .font(AppFonts.headline)
-                    .foregroundColor(AppColors.textPrimary)
+                    .font(Theme.sans(15, weight: .semibold))
+                    .foregroundColor(Theme.textPrimary)
                     .lineLimit(1)
-                
-                Spacer()
-                
+
+                Spacer(minLength: 4)
+
                 if record.isFavorite {
                     Image(systemName: "star.fill")
-                        .foregroundColor(AppColors.accent)
-                        .font(.caption)
+                        .foregroundColor(Theme.amber)
+                        .font(.system(size: 11))
                 }
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Theme.textSecondary.opacity(0.5))
             }
-            
-            HStack {
+
+            HStack(spacing: 6) {
                 Image(systemName: record.sourceTypeEnum == .recording ? "mic.fill" : "doc.fill")
-                    .font(.caption2)
-                    .foregroundColor(AppColors.textSecondary)
-                
+                    .font(.system(size: 9))
+                    .foregroundColor(Theme.amber)
+
                 Text(record.formattedDate)
-                    .font(AppFonts.caption)
-                    .foregroundColor(AppColors.textSecondary)
-                
+                    .font(Theme.mono(11, weight: .medium))
+                    .foregroundColor(Theme.textSecondary)
+
                 Spacer()
-                
+
                 Text("\(record.text.count) characters")
-                    .font(AppFonts.caption)
-                    .foregroundColor(AppColors.accent)
+                    .font(Theme.mono(11, weight: .medium))
+                    .foregroundColor(Theme.textSecondary)
             }
-            
-            Text(previewText)
-                .font(AppFonts.callout)
-                .foregroundColor(AppColors.textSecondary)
-                .lineLimit(2)
+
+            if !previewText.isEmpty {
+                Text(previewText)
+                    .font(Theme.sans(13))
+                    .foregroundColor(Theme.textSecondary)
+                    .lineLimit(2)
+                    .lineSpacing(3)
+            }
 
             if !tags.isEmpty {
                 HStack(spacing: 6) {
@@ -158,13 +175,13 @@ struct HistoryRow: View {
 
                     if tags.count > 3 {
                         Text("+\(tags.count - 3)")
-                            .font(AppFonts.caption)
-                            .foregroundColor(AppColors.textSecondary)
+                            .font(Theme.mono(11))
+                            .foregroundColor(Theme.textSecondary)
                     }
                 }
             }
         }
-        .padding(.vertical, 4)
+        .recorderPanel(padding: 14)
     }
 
     private var previewText: String {
@@ -179,15 +196,15 @@ struct TagPillLabel: View {
 
     var body: some View {
         Label(tag, systemImage: "tag.fill")
-            .font(AppFonts.caption)
+            .font(Theme.mono(11, weight: .medium))
             .lineLimit(1)
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .foregroundColor(isSelected ? AppColors.textOnAccent : AppColors.textSecondary)
-            .background(isSelected ? AppColors.accent : AppColors.surface, in: Capsule())
+            .foregroundColor(isSelected ? Theme.onAmber : Theme.textSecondary)
+            .background(isSelected ? Theme.amberFill : Theme.panelInset, in: Capsule())
             .overlay {
                 Capsule()
-                    .stroke(AppColors.textSecondary.opacity(isSelected ? 0 : 0.25), lineWidth: 1)
+                    .strokeBorder(isSelected ? Color.clear : Theme.stroke, lineWidth: 1)
             }
     }
 }
