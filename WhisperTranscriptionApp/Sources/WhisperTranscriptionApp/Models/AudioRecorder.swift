@@ -387,14 +387,11 @@ final class AudioRecorder: NSObject, ObservableObject {
         context: RecordingStartContext
     ) -> AVAudioSession.CategoryOptions {
         if usesBluetoothHFP {
-            return [.allowBluetoothHFP]
+            return context == .backgroundIntent
+                ? [.allowBluetoothHFP, .mixWithOthers]
+                : [.allowBluetoothHFP]
         }
-        switch context {
-        case .foreground:
-            return [.defaultToSpeaker, .mixWithOthers]
-        case .backgroundIntent:
-            return [.defaultToSpeaker]
-        }
+        return [.defaultToSpeaker, .mixWithOthers]
     }
 
     private func preferredRecordingSampleRate(usesBluetoothHFP: Bool) -> Double {

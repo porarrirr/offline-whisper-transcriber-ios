@@ -88,23 +88,23 @@ final class AudioRecorderStartTests: XCTestCase {
         XCTAssertTrue(options.contains(.mixWithOthers))
     }
 
-    func testBackgroundIntentNonBluetoothCategoryOptionsDisableMixing() {
+    func testBackgroundIntentNonBluetoothCategoryOptionsKeepMixing() {
         let options = AudioRecorder.recordingCategoryOptions(
             usesBluetoothHFP: false,
             context: .backgroundIntent
         )
-        XCTAssertEqual(options, [.defaultToSpeaker])
-        XCTAssertFalse(options.contains(.mixWithOthers))
+        XCTAssertEqual(options, [.defaultToSpeaker, .mixWithOthers])
+        XCTAssertTrue(options.contains(.mixWithOthers))
     }
 
-    func testBluetoothCategoryOptionsUseOnlyHFPInBothContexts() {
+    func testBluetoothCategoryOptionsUseHFPAndMixOnlyForBackgroundIntent() {
         XCTAssertEqual(
             AudioRecorder.recordingCategoryOptions(usesBluetoothHFP: true, context: .foreground),
             [.allowBluetoothHFP]
         )
         XCTAssertEqual(
             AudioRecorder.recordingCategoryOptions(usesBluetoothHFP: true, context: .backgroundIntent),
-            [.allowBluetoothHFP]
+            [.allowBluetoothHFP, .mixWithOthers]
         )
     }
 }
