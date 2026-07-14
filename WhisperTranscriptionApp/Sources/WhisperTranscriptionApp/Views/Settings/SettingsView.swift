@@ -19,15 +19,7 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
-                Picker("Model", selection: $settings.selectedTranscriptionModel) {
-                    ForEach(modelPickerOptions) { model in
-                        Text(model.displayName).tag(model)
-                    }
-                }
-                .disabled(modelManager.isTranscriptionInProgress)
-                .onChange(of: settings.selectedTranscriptionModel) { _, newValue in
-                    modelManager.switchModel(model: newValue)
-                }
+                modelSelectionMenu
 
                 if modelManager.isTranscriptionInProgress {
                     Label("Model changes are disabled while transcription is running.", systemImage: "lock.fill")
@@ -99,13 +91,8 @@ struct SettingsView: View {
                     }
                     .disabled(modelManager.isTranscriptionInProgress)
                 }
-            } header: {
-                TechLabel(text: "Model Settings")
-            }
-            .listRowBackground(Theme.panel)
 
-            if settings.usesWhisperBackend {
-                Section {
+                if settings.usesWhisperBackend {
                     Button(action: { showLanguagePicker = true }) {
                         HStack {
                             Text("Transcription Language")
@@ -127,23 +114,7 @@ struct SettingsView: View {
                         }
                     }
                     .tint(Theme.amberFill)
-                } header: {
-                    TechLabel(text: "Language Settings")
-                }
-                .listRowBackground(Theme.panel)
-
-                Section {
-                    TextEditor(text: $settings.promptText)
-                        .frame(minHeight: 80)
-                        .focused($isPromptEditorFocused)
-                } header: {
-                    TechLabel(text: "Prompt")
-                } footer: {
-                    Text("Example: \"Hello, today we will talk about technology.\"")
-                }
-                .listRowBackground(Theme.panel)
-            } else if settings.usesAppleSpeechBackend {
-                Section {
+                } else if settings.usesAppleSpeechBackend {
                     Button(action: { showSpeechLocalePicker = true }) {
                         HStack {
                             Text("SpeechTranscriber Language")
@@ -151,6 +122,7 @@ struct SettingsView: View {
                             Spacer()
                             Text(selectedSpeechLocaleName)
                                 .foregroundColor(Theme.textSecondary)
+                                .multilineTextAlignment(.trailing)
                         }
                     }
                     .disabled(modelManager.isTranscriptionInProgress || speechLocaleOptions.isEmpty)
@@ -167,26 +139,27 @@ struct SettingsView: View {
                             .font(Theme.sans(12))
                             .foregroundColor(Theme.textSecondary)
                     }
+                }
+            } header: {
+                TechLabel(text: "Transcription")
+            }
+            .listRowBackground(Theme.panel)
+
+            if settings.usesWhisperBackend {
+                Section {
+                    TextEditor(text: $settings.promptText)
+                        .frame(minHeight: 80)
+                        .focused($isPromptEditorFocused)
                 } header: {
-                    TechLabel(text: "Language Settings")
+                    TechLabel(text: "Prompt")
+                } footer: {
+                    Text("Example: \"Hello, today we will talk about technology.\"")
                 }
                 .listRowBackground(Theme.panel)
             }
 
-            Section {
-                Picker("Theme", selection: $settings.appAppearance) {
-                    ForEach(AppAppearance.allCases) { appearance in
-                        Text(LocalizedStringKey(appearance.displayName)).tag(appearance)
-                    }
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                TechLabel(text: "Appearance")
-            }
-            .listRowBackground(Theme.panel)
-
-            Section {
-                if settings.usesWhisperBackend {
+            if settings.usesWhisperBackend {
+                Section {
                     Toggle(isOn: $settings.useFlashAttention) {
                         VStack(alignment: .leading) {
                             Text("Flash Attention")
@@ -246,9 +219,6 @@ struct SettingsView: View {
                                 .foregroundColor(Theme.rec)
                         }
                     }
-                }
-
-                if settings.usesWhisperBackend {
                     Toggle(isOn: $settings.includeTimestamps) {
                         VStack(alignment: .leading) {
                             Text("Include Timestamps")
@@ -258,8 +228,13 @@ struct SettingsView: View {
                         }
                     }
                     .tint(Theme.amberFill)
+                } header: {
+                    TechLabel(text: "Processing")
                 }
+                .listRowBackground(Theme.panel)
+            }
 
+            Section {
                 Toggle(isOn: $settings.keepScreenOn) {
                     VStack(alignment: .leading) {
                         Text("Keep Screen On")
@@ -280,15 +255,29 @@ struct SettingsView: View {
                 }
                 .tint(Theme.amberFill)
             } header: {
-                TechLabel(text: "Advanced Settings")
+                TechLabel(text: "Recording & Storage")
             }
             .listRowBackground(Theme.panel)
 
             Section {
-                if logger.entries.isEmpty {
-                    Text("No logs yet")
-                        .foregroundColor(Theme.textSecondary)
-                } else {
+                Picker("Theme", selection: $settings.appAppearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(LocalizedStringKey(appearance.displayName)).tag(appearance)
+                    }
+                }
+                .pickerStyle(.segmented)
+            } header: {
+                TechLabel(text: "Appearance")
+            }
+            .listRowBackground(Theme.panel)
+
+            Section {
+                Link("About App", destination: AppLegalURLs.marketing)
+                Link("Support", destination: AppLegalURLs.support)
+                Link("Privacy Policy", destination: AppLegalURLs.privacyPolicy)
+                Link("Disclaimer & Terms", destination: AppLegalURLs.disclaimer)
+
+                if !logger.entries.isEmpty {
                     NavigationLink("View Logs") {
                         ScrollView {
                             Text(logger.latestPreview)
@@ -315,16 +304,6 @@ struct SettingsView: View {
                         }
                     }
                 }
-            } header: {
-                TechLabel(text: "Logs")
-            }
-            .listRowBackground(Theme.panel)
-
-            Section {
-                Link("About App", destination: AppLegalURLs.marketing)
-                Link("Support", destination: AppLegalURLs.support)
-                Link("Privacy Policy", destination: AppLegalURLs.privacyPolicy)
-                Link("Disclaimer & Terms", destination: AppLegalURLs.disclaimer)
             } header: {
                 TechLabel(text: "Support & Policies")
             } footer: {
@@ -378,6 +357,44 @@ struct SettingsView: View {
                 selectSpeechLocale(locale)
             }
         }
+    }
+
+    private var modelSelectionMenu: some View {
+        Menu {
+            ForEach(modelPickerOptions) { model in
+                Button {
+                    settings.selectedTranscriptionModel = model
+                    modelManager.switchModel(model: model)
+                } label: {
+                    if model == settings.selectedTranscriptionModel {
+                        Label(model.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(model.displayName)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 12) {
+                Text("Model")
+                    .foregroundColor(Theme.textPrimary)
+
+                Spacer(minLength: 8)
+
+                Text(settings.selectedTranscriptionModel.displayName)
+                    .foregroundColor(Theme.amber)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.85)
+
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(Theme.amber)
+            }
+            .contentShape(Rectangle())
+        }
+        .disabled(modelManager.isTranscriptionInProgress)
+        .accessibilityLabel(Text("Model"))
+        .accessibilityValue(Text(settings.selectedTranscriptionModel.displayName))
     }
 
     private var modelPickerOptions: [TranscriptionModel] {

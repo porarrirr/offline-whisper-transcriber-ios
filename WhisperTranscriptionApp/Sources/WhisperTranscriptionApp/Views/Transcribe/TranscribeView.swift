@@ -21,8 +21,6 @@ struct TranscribeView: View {
 
             ScrollView {
                 VStack(spacing: 14) {
-                    statusHeader
-
                     lcdDisplay
 
                     if viewModel.isProcessing {
@@ -89,7 +87,7 @@ struct TranscribeView: View {
                     Spacer(minLength: 24)
                 }
                 .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .padding(.top, 12)
             }
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -145,42 +143,6 @@ struct TranscribeView: View {
     }
 
     // MARK: - Sections
-
-    /// 上部ステータス列: 状態LED + 状態トークン / モデル名チップ
-    private var statusHeader: some View {
-        HStack(spacing: 8) {
-            LEDDot(isOn: recordingService.isRecording || viewModel.isProcessing,
-                   onColor: recordingService.isRecording ? Theme.rec : Theme.amber)
-
-            Text(statusToken)
-                .font(Theme.mono(12, weight: .semibold))
-                .tracking(2.0)
-                .foregroundStyle(recordingService.isRecording ? Theme.rec : Theme.textSecondary)
-                .contentTransition(.identity)
-
-            Spacer()
-
-            Text(modelManager.currentTranscriptionModel.displayName)
-                .font(Theme.mono(11, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
-                .lineLimit(1)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Theme.panelInset)
-                .clipShape(Capsule())
-                .overlay {
-                    Capsule().strokeBorder(Theme.stroke, lineWidth: 1)
-                }
-        }
-        .padding(.horizontal, 2)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var statusToken: String {
-        if recordingService.isRecording { return "REC" }
-        if viewModel.isProcessing { return "BUSY" }
-        return "STANDBY"
-    }
 
     /// LCDディスプレイ: 波形 + タイムコード
     private var lcdDisplay: some View {
