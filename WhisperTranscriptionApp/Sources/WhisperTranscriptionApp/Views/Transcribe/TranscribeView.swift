@@ -17,11 +17,13 @@ struct TranscribeView: View {
 
     var body: some View {
         ZStack {
-            Theme.background.ignoresSafeArea()
+            Color(uiColor: .systemBackground).ignoresSafeArea()
 
             ScrollView {
-                VStack(spacing: 14) {
-                    lcdDisplay
+                VStack(spacing: 20) {
+                    header
+
+                    recorderDisplay
 
                     if viewModel.isProcessing {
                         TranscriptionProgressPanel(
@@ -48,6 +50,9 @@ struct TranscribeView: View {
                         )
                     }
 
+                    transport
+                        .opacity(viewModel.isProcessing ? 0.35 : 1)
+
                     LiveTranscriptionToggle(
                         isOn: liveTranscriptionBinding,
                         isAvailable: recordingService.canStartLiveTranscription,
@@ -62,9 +67,6 @@ struct TranscribeView: View {
                             state: recordingService.liveState
                         )
                     }
-
-                    transport
-                        .opacity(viewModel.isProcessing ? 0.35 : 1)
 
                     inputSection
 
@@ -82,12 +84,13 @@ struct TranscribeView: View {
                     }
 
                     LegalDisclaimerFootnote()
-                        .padding(.top, 8)
+                        .padding(.horizontal, 8)
+                        .padding(.top, 4)
 
-                    Spacer(minLength: 24)
+                    Spacer(minLength: 12)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
             }
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -144,80 +147,75 @@ struct TranscribeView: View {
 
     // MARK: - Sections
 
-    /// LCDディスプレイ: 波形 + タイムコード
-    private var lcdDisplay: some View {
-        VStack(spacing: 10) {
+    private var header: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 7) {
+                Text("Transcribe")
+                    .font(Theme.sans(34, weight: .bold))
+                    .foregroundStyle(Theme.textPrimary)
+
+                Label("Processed Offline", systemImage: "checkmark.circle.fill")
+                    .font(Theme.sans(13, weight: .semibold))
+                    .foregroundStyle(Theme.amber)
+            }
+
+            Spacer(minLength: 8)
+
+            NavigationLink {
+                SettingsView()
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.panelInset.opacity(0.7), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Settings"))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 波形とタイムコードだけを主役にした、フラットな録音表示。
+    private var recorderDisplay: some View {
+        VStack(spacing: 18) {
             WaveformView(
                 audioLevel: recordingService.audioLevel,
                 isActive: recordingService.isRecording
             )
-            .frame(height: 64)
+            .frame(height: 92)
 
             Text(formatTimecode(recordingService.isRecording ? recordingService.currentTime : 0))
-                .font(Theme.mono(46, weight: .medium))
-                .foregroundStyle(recordingService.isRecording ? Theme.displayAmber : Theme.displayDim)
+                .font(.system(size: 58, weight: .medium))
+                .foregroundStyle(Theme.textPrimary)
                 .monospacedDigit()
                 .contentTransition(.numericText())
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.7)
                 .lineLimit(1)
-
-            HStack {
-                Text("MIC")
-                    .font(Theme.mono(10, weight: .semibold))
-                    .tracking(1.5)
-                    .foregroundStyle(Theme.displayTextDim)
-
-                Spacer()
-
-                if recordingService.isLiveTranscriptionActive {
-                    Text("LIVE")
-                        .font(Theme.mono(10, weight: .bold))
-                        .tracking(1.5)
-                        .foregroundStyle(Theme.display)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Theme.displayAmber)
-                        .clipShape(RoundedRectangle(cornerRadius: 3))
-                } else {
-                    Text("OFFLINE")
-                        .font(Theme.mono(10, weight: .medium))
-                        .tracking(1.5)
-                        .foregroundStyle(Theme.displayTextDim)
-                }
-            }
         }
-        .displayPanel(padding: 18)
+        .padding(.vertical, 16)
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text(recordingService.isRecording ? "Tap to Stop" : "Tap to Start Recording"))
     }
 
     /// 録音トランスポート
     private var transport: some View {
-        VStack(spacing: 6) {
-            RecordingButton(isRecording: recordingService.isRecording) {
-                if recordingService.isRecording {
-                    viewModel.stopRecordingAndTranscribe(recordingService: recordingService, modelContext: modelContext)
-                } else {
-                    viewModel.startRecording(recordingService: recordingService)
-                }
+        RecordingButton(isRecording: recordingService.isRecording) {
+            if recordingService.isRecording {
+                viewModel.stopRecordingAndTranscribe(recordingService: recordingService, modelContext: modelContext)
+            } else {
+                viewModel.startRecording(recordingService: recordingService)
             }
-            .disabled(recordingButtonDisabled)
-            .opacity(recordingButtonDisabled ? 0.45 : 1)
-
-            Text(recordingService.isRecording ? LocalizedStringKey("Tap to Stop") : LocalizedStringKey("Tap to Start Recording"))
-                .font(Theme.mono(12, weight: .medium))
-                .foregroundColor(Theme.textSecondary)
         }
-        .padding(.vertical, 6)
+        .disabled(recordingButtonDisabled)
+        .opacity(recordingButtonDisabled ? 0.45 : 1)
     }
 
     /// ファイル入力ソース
     private var inputSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            TechLabel(text: "Input")
-                .padding(.horizontal, 4)
-
-            VStack(spacing: 0) {
+        VStack(spacing: 12) {
+            HStack(alignment: .top, spacing: 12) {
                 Button {
                     if let modelReadinessError {
                         viewModel.setError(modelReadinessError)
@@ -225,60 +223,54 @@ struct TranscribeView: View {
                         showFileImporter = true
                     }
                 } label: {
-                    RecorderActionRow(
+                    ImportActionTile(
                         icon: "doc.text",
                         title: "Select File",
                         subtitle: "Supported: audio and video files"
                     )
-                    .padding(14)
                 }
                 .buttonStyle(.plain)
                 .disabled(inputSelectionDisabled)
                 .opacity(inputSelectionDisabled ? 0.45 : 1)
-
-                Divider().overlay(Theme.stroke)
-                    .padding(.leading, 62)
+                .frame(maxWidth: .infinity)
 
                 PhotosPicker(
                     selection: $selectedVideoItem,
                     matching: .videos,
                     photoLibrary: .shared()
                 ) {
-                    RecorderActionRow(
+                    ImportActionTile(
                         icon: "photo.on.rectangle.angled",
                         title: "Select Video from Photos",
                         subtitle: "Only the selected video's audio is transcribed"
                     )
-                    .padding(14)
                 }
                 .buttonStyle(.plain)
                 .disabled(inputSelectionDisabled)
                 .opacity(inputSelectionDisabled ? 0.45 : 1)
-
-                if recordingService.hasInterruptedRecording {
-                    Divider().overlay(Theme.stroke)
-                        .padding(.leading, 62)
-
-                    Button {
-                        viewModel.transcribeInterruptedRecording(recordingService: recordingService, modelContext: modelContext)
-                    } label: {
-                        RecorderActionRow(
-                            icon: "waveform.badge.magnifyingglass",
-                            title: "Transcribe Interrupted Recording",
-                            subtitle: "Transcribe the part that was saved before interruption"
-                        )
-                        .padding(14)
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(viewModel.isProcessing || modelReadinessError != nil)
-                    .opacity(viewModel.isProcessing || modelReadinessError != nil ? 0.45 : 1)
-                }
+                .frame(maxWidth: .infinity)
             }
-            .background(Theme.panel)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Theme.stroke, lineWidth: 1)
+
+            if recordingService.hasInterruptedRecording {
+                Button {
+                    viewModel.transcribeInterruptedRecording(recordingService: recordingService, modelContext: modelContext)
+                } label: {
+                    RecorderActionRow(
+                        icon: "waveform.badge.magnifyingglass",
+                        title: "Transcribe Interrupted Recording",
+                        subtitle: "Transcribe the part that was saved before interruption"
+                    )
+                    .padding(14)
+                }
+                .buttonStyle(.plain)
+                .background(Theme.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .strokeBorder(Theme.stroke, lineWidth: 1)
+                }
+                .disabled(viewModel.isProcessing || modelReadinessError != nil)
+                .opacity(viewModel.isProcessing || modelReadinessError != nil ? 0.45 : 1)
             }
         }
     }
@@ -473,6 +465,43 @@ private struct LiveTranscriptionToggle: View {
             }
         }
         .recorderPanel(padding: 14)
+    }
+}
+
+private struct ImportActionTile: View {
+    let icon: String
+    let title: LocalizedStringKey
+    let subtitle: LocalizedStringKey
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 30, weight: .medium))
+                .foregroundStyle(Theme.amber)
+                .frame(height: 36)
+
+            Text(title)
+                .font(Theme.sans(15, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+                .multilineTextAlignment(.center)
+                .lineLimit(2)
+
+            Text(subtitle)
+                .font(Theme.sans(12))
+                .foregroundStyle(Theme.textSecondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(3)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 18)
+        .frame(maxWidth: .infinity, minHeight: 164, alignment: .top)
+        .background(Theme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .strokeBorder(Theme.stroke, lineWidth: 1)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
