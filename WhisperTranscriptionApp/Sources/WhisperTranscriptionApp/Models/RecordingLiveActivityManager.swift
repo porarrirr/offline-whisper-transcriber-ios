@@ -53,19 +53,29 @@ final class RecordingLiveActivityManager {
         )
 
         lastActivityRequestedAt = Date()
-        activity = try Activity.request(
+        let requestedActivity = try Activity.request(
             attributes: attributes,
             content: ActivityContent(state: state, staleDate: nil),
             pushType: nil
         )
+        activity = requestedActivity
+        AppLogger.info(
+            "Recording Live Activity requested: id=\(requestedActivity.id), state=\(requestedActivity.activityState)",
+            context: "RecordingLiveActivity"
+        )
     }
 
     func activityDiagnosticsDescription() -> String {
-        let state = activity.map { String(describing: $0.activityState) } ?? "none"
+        let trackedState = activity.map {
+            "\($0.id):\($0.activityState)"
+        } ?? "none"
+        let systemStates = Activity<RecordingActivityAttributes>.activities.map {
+            "\($0.id):\($0.activityState)"
+        }.joined(separator: ",")
         let elapsed = lastActivityRequestedAt.map {
             Int(Date().timeIntervalSince($0) * 1_000)
         }
-        return "activityState=\(state), msSinceRequest=\(elapsed.map(String.init) ?? "none")"
+        return "activityState=\(trackedState), systemActivities=[\(systemStates)], msSinceRequest=\(elapsed.map(String.init) ?? "none")"
     }
 
     func endRecordingActivity(dismissalPolicy: ActivityUIDismissalPolicy = .immediate) async {
@@ -88,11 +98,25 @@ final class RecordingLiveActivityManager {
             status: String(localized: "Recording stopped")
         )
         let content = ActivityContent(state: state, staleDate: nil)
+        let activityIDsToEnd = Set(activitiesToEnd.map(\.id))
 
         for activeActivity in activitiesToEnd {
             await activeActivity.end(content, dismissalPolicy: dismissalPolicy)
         }
-        activity = nil
+        if Self.shouldClearTrackedActivity(
+            currentID: activity?.id,
+            endedIDs: activityIDsToEnd
+        ) {
+            activity = nil
+        }
+    }
+
+    static func shouldClearTrackedActivity(
+        currentID: String?,
+        endedIDs: Set<String>
+    ) -> Bool {
+        guard let currentID else { return false }
+        return endedIDs.contains(currentID)
     }
 }
 

@@ -174,10 +174,34 @@ final class RecordingService: ObservableObject {
     /// `onChange(of:scenePhase)` does not fire for the initial `.active` value,
     /// so this is also invoked from the view's `onAppear`.
     func handleBecameActive() {
+        handleBecameActive(applicationState: UIApplication.shared.applicationState)
+    }
+
+    func handleBecameActive(applicationState: UIApplication.State) {
+        guard applicationState == .active else {
+            AppLogger.info(
+                "Skipping foreground recording maintenance while applicationState=\(applicationState.rawValue)",
+                context: "RecordingService"
+            )
+            return
+        }
+
         guard isRecording else {
             // Not recording: dismiss any stale recording Live Activity left over
             // from a previous session (e.g. the app was terminated mid-recording).
-            Task {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard Self.shouldEndStaleRecordingActivity(
+                    applicationState: UIApplication.shared.applicationState,
+                    isRecording: self.isRecording,
+                    isChangingRecordingState: self.isChangingRecordingState
+                ) else {
+                    AppLogger.info(
+                        "Skipped stale Live Activity cleanup because recording state changed",
+                        context: "RecordingService"
+                    )
+                    return
+                }
                 await RecordingLiveActivityManager.shared.endRecordingActivity()
             }
             return
@@ -188,6 +212,14 @@ final class RecordingService: ObservableObject {
         Task {
             await RecordingLiveActivityManager.shared.ensureRecordingActivity(startedAt: startedAt)
         }
+    }
+
+    static func shouldEndStaleRecordingActivity(
+        applicationState: UIApplication.State,
+        isRecording: Bool,
+        isChangingRecordingState: Bool
+    ) -> Bool {
+        applicationState == .active && !isRecording && !isChangingRecordingState
     }
 
     func startLiveTranscription() {

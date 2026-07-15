@@ -1,8 +1,47 @@
 import XCTest
+import UIKit
 @testable import WhisperTranscriptionApp
 
 @MainActor
 final class RecordingServiceTests: XCTestCase {
+    func testStaleActivityCleanupOnlyRunsForStableForegroundIdleState() {
+        XCTAssertTrue(RecordingService.shouldEndStaleRecordingActivity(
+            applicationState: .active,
+            isRecording: false,
+            isChangingRecordingState: false
+        ))
+        XCTAssertFalse(RecordingService.shouldEndStaleRecordingActivity(
+            applicationState: .background,
+            isRecording: false,
+            isChangingRecordingState: false
+        ))
+        XCTAssertFalse(RecordingService.shouldEndStaleRecordingActivity(
+            applicationState: .active,
+            isRecording: false,
+            isChangingRecordingState: true
+        ))
+        XCTAssertFalse(RecordingService.shouldEndStaleRecordingActivity(
+            applicationState: .active,
+            isRecording: true,
+            isChangingRecordingState: false
+        ))
+    }
+
+    func testEndingOlderActivityDoesNotClearNewTrackedActivity() {
+        XCTAssertTrue(RecordingLiveActivityManager.shouldClearTrackedActivity(
+            currentID: "old",
+            endedIDs: ["old"]
+        ))
+        XCTAssertFalse(RecordingLiveActivityManager.shouldClearTrackedActivity(
+            currentID: "new",
+            endedIDs: ["old"]
+        ))
+        XCTAssertFalse(RecordingLiveActivityManager.shouldClearTrackedActivity(
+            currentID: nil,
+            endedIDs: ["old"]
+        ))
+    }
+
     func testRequiredLiveActivityStartsBeforeAudioRecording() async throws {
         var events: [String] = []
 
