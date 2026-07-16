@@ -88,24 +88,60 @@ final class AudioRecorderStartTests: XCTestCase {
         XCTAssertTrue(options.contains(.mixWithOthers))
     }
 
-    func testBackgroundIntentNonBluetoothCategoryOptionsKeepMixing() {
+    func testBackgroundIntentNonBluetoothCategoryOptionsDisableMixing() {
         let options = AudioRecorder.recordingCategoryOptions(
             usesBluetoothHFP: false,
             context: .backgroundIntent
         )
-        XCTAssertEqual(options, [.defaultToSpeaker, .mixWithOthers])
-        XCTAssertTrue(options.contains(.mixWithOthers))
+        XCTAssertEqual(options, [.defaultToSpeaker])
+        XCTAssertFalse(options.contains(.mixWithOthers))
     }
 
-    func testBluetoothCategoryOptionsUseHFPAndMixOnlyForBackgroundIntent() {
+    func testBluetoothCategoryOptionsUseOnlyHFPInBothContexts() {
         XCTAssertEqual(
             AudioRecorder.recordingCategoryOptions(usesBluetoothHFP: true, context: .foreground),
             [.allowBluetoothHFP]
         )
         XCTAssertEqual(
             AudioRecorder.recordingCategoryOptions(usesBluetoothHFP: true, context: .backgroundIntent),
-            [.allowBluetoothHFP, .mixWithOthers]
+            [.allowBluetoothHFP]
         )
+    }
+
+    func testBackgroundSessionActivationDenialMatchesKnownDenialCodes() {
+        // '!int' cannotInterruptOthers and '!rec' cannotStartRecording, as
+        // observed when a background intent tries to activate the session.
+        XCTAssertEqual(AVAudioSession.ErrorCode.cannotInterruptOthers.rawValue, 560_557_684)
+        XCTAssertEqual(AVAudioSession.ErrorCode.cannotStartRecording.rawValue, 561_145_187)
+
+        XCTAssertTrue(AudioRecorder.isBackgroundSessionActivationDenial(
+            context: .backgroundIntent,
+            domain: NSOSStatusErrorDomain,
+            code: 560_557_684
+        ))
+        XCTAssertTrue(AudioRecorder.isBackgroundSessionActivationDenial(
+            context: .backgroundIntent,
+            domain: NSOSStatusErrorDomain,
+            code: 561_145_187
+        ))
+    }
+
+    func testBackgroundSessionActivationDenialIgnoresOtherErrorsAndContexts() {
+        XCTAssertFalse(AudioRecorder.isBackgroundSessionActivationDenial(
+            context: .backgroundIntent,
+            domain: NSOSStatusErrorDomain,
+            code: -50
+        ))
+        XCTAssertFalse(AudioRecorder.isBackgroundSessionActivationDenial(
+            context: .backgroundIntent,
+            domain: NSURLErrorDomain,
+            code: 560_557_684
+        ))
+        XCTAssertFalse(AudioRecorder.isBackgroundSessionActivationDenial(
+            context: .foreground,
+            domain: NSOSStatusErrorDomain,
+            code: 560_557_684
+        ))
     }
 }
 

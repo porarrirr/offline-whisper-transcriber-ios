@@ -66,17 +66,16 @@ struct StartBackgroundRecordingIntent: AppIntent, AudioRecordingIntent, LiveActi
     static var openAppWhenRun = false
 
     @available(iOS 26.0, *)
-    static var supportedModes: IntentModes { .background }
+    static var supportedModes: IntentModes { [.background, .foreground(.dynamic)] }
 
     @MainActor
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         do {
-            switch try await RecordingService.shared.startRecordingFromIntent() {
-            case .started:
-                return .result(value: String(localized: "Recording started."))
-            case .alreadyRecording:
-                return .result(value: String(localized: "Recording is already in progress."))
-            }
+            let result = try await RecordingService.shared.startRecordingFromIntent()
+            return .result(value: Self.message(for: result))
+        } catch AudioRecorderError.backgroundSessionActivationDenied {
+            let result = try await startRecordingByContinuingInForeground()
+            return .result(value: Self.message(for: result))
         } catch AudioRecorderError.microphonePermissionRequired {
             throw IntentError.microphonePermissionRequired
         } catch AudioRecorderError.stopInProgress {
@@ -85,6 +84,59 @@ struct StartBackgroundRecordingIntent: AppIntent, AudioRecordingIntent, LiveActi
             throw IntentError.liveActivityRequired
         } catch {
             AppLogger.error("Failed to start recording from shortcut", context: "StartBackgroundRecordingIntent", error: error)
+            throw IntentError.recordingStartFailed(error.localizedDescription)
+        }
+    }
+
+    private static func message(for result: RecordingStartResult) -> String {
+        switch result {
+        case .started:
+            return String(localized: "Recording started.")
+        case .alreadyRecording:
+            return String(localized: "Recording is already in progress.")
+        }
+    }
+
+    /// iOS refuses to activate a recording audio session from the background,
+    /// even for an AudioRecordingIntent with an active Live Activity. The only
+    /// supported continuation is bringing the app to the foreground and
+    /// starting the recording there.
+    @MainActor
+    private func startRecordingByContinuingInForeground() async throws -> RecordingStartResult {
+        guard #available(iOS 26.0, *) else {
+            AppLogger.error(
+                "Background session activation denied and foreground continuation requires iOS 26",
+                context: "StartBackgroundRecordingIntent"
+            )
+            throw IntentError.foregroundRequiredToStartRecording
+        }
+
+        guard systemContext.currentMode.canContinueInForeground else {
+            AppLogger.error(
+                "Background session activation denied and the system refused foreground continuation",
+                context: "StartBackgroundRecordingIntent"
+            )
+            throw IntentError.foregroundRequiredToStartRecording
+        }
+
+        AppLogger.info(
+            "Background session activation denied; continuing recording start in the foreground",
+            context: "StartBackgroundRecordingIntent"
+        )
+        try await continueInForeground(alwaysConfirm: false)
+
+        do {
+            return try await RecordingService.shared.startRecordingFromApp()
+        } catch AudioRecorderError.microphonePermissionRequired {
+            throw IntentError.microphonePermissionRequired
+        } catch AudioRecorderError.stopInProgress {
+            throw IntentError.recordingBusy
+        } catch {
+            AppLogger.error(
+                "Failed to start recording after foreground continuation",
+                context: "StartBackgroundRecordingIntent",
+                error: error
+            )
             throw IntentError.recordingStartFailed(error.localizedDescription)
         }
     }
@@ -334,6 +386,7 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case recordingBusy
     case recordingStartFailed(String)
     case liveActivityRequired
+    case foregroundRequiredToStartRecording
     case invalidHistoryLimit
     
     var localizedStringResource: LocalizedStringResource {
@@ -364,6 +417,8 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
             return "Failed to start recording: \(detail)"
         case .liveActivityRequired:
             return "Live Activities must be enabled to start recording from a shortcut."
+        case .foregroundRequiredToStartRecording:
+            return "iOS does not allow starting recording while the app is in the background. Open the app to start recording."
         case .invalidHistoryLimit:
             return "History count must be between 1 and 100."
         }

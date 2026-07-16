@@ -372,8 +372,24 @@ final class AudioRecorder: NSObject, ObservableObject {
             try session.setPreferredSampleRate(preferredSampleRate)
         }
 
-        try performAudioSessionStep("activate session") {
+        do {
             try session.setActive(true)
+            AppLogger.info("Recording audio session step completed: activate session", context: "AudioRecorder")
+        } catch {
+            let nsError = error as NSError
+            if Self.isBackgroundSessionActivationDenial(
+                context: context,
+                domain: nsError.domain,
+                code: nsError.code
+            ) {
+                AppLogger.error(
+                    "Audio session activation denied while app is in background: domain=\(nsError.domain), code=\(nsError.code); foreground continuation is required to start recording",
+                    context: "AudioRecorder",
+                    error: error
+                )
+                throw AudioRecorderError.backgroundSessionActivationDenied
+            }
+            throw makeRecordingStartError(stage: "activate session", error: error)
         }
         if let bluetoothInput {
             try selectBluetoothHFPInput(bluetoothInput, session: session)
@@ -382,16 +398,37 @@ final class AudioRecorder: NSObject, ObservableObject {
         logCurrentAudioRoute(session: session, event: "Recording audio session activated")
     }
 
+    // iOS never lets a third-party app activate a recording session from the
+    // background — not even inside an AudioRecordingIntent with an active Live
+    // Activity. The denial surfaces as '!int' (cannotInterruptOthers) or
+    // '!rec' (cannotStartRecording); callers must continue in the foreground.
+    static func isBackgroundSessionActivationDenial(
+        context: RecordingStartContext,
+        domain: String,
+        code: Int
+    ) -> Bool {
+        guard context == .backgroundIntent, domain == NSOSStatusErrorDomain else { return false }
+        return code == AVAudioSession.ErrorCode.cannotInterruptOthers.rawValue
+            || code == AVAudioSession.ErrorCode.cannotStartRecording.rawValue
+    }
+
     static func recordingCategoryOptions(
         usesBluetoothHFP: Bool,
         context: RecordingStartContext
     ) -> AVAudioSession.CategoryOptions {
-        if usesBluetoothHFP {
-            return context == .backgroundIntent
-                ? [.allowBluetoothHFP, .mixWithOthers]
-                : [.allowBluetoothHFP]
+        // iOS refuses to start recording I/O from the background when the
+        // session is mixable (AUIOClient_StartIO fails with 'what' 2003329396),
+        // so background-intent starts must use a non-mixable session.
+        switch context {
+        case .foreground:
+            return usesBluetoothHFP
+                ? [.allowBluetoothHFP]
+                : [.defaultToSpeaker, .mixWithOthers]
+        case .backgroundIntent:
+            return usesBluetoothHFP
+                ? [.allowBluetoothHFP]
+                : [.defaultToSpeaker]
         }
-        return [.defaultToSpeaker, .mixWithOthers]
     }
 
     private func preferredRecordingSampleRate(usesBluetoothHFP: Bool) -> Double {
@@ -791,6 +828,7 @@ enum AudioRecorderError: LocalizedError {
     case stopInProgress
     case recordingEncodingFailed(String)
     case microphonePermissionRequired
+    case backgroundSessionActivationDenied
 
     var errorDescription: String? {
         switch self {
@@ -810,6 +848,8 @@ enum AudioRecorderError: LocalizedError {
             return message
         case .microphonePermissionRequired:
             return String(localized: "Microphone permission is required")
+        case .backgroundSessionActivationDenied:
+            return String(localized: "iOS does not allow starting recording while the app is in the background. Open the app to start recording.")
         }
     }
 }
