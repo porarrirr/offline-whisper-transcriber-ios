@@ -60,24 +60,16 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertTrue(AppleSpeechLocale.jaJP.displayName.contains("SpeechTranscriber"))
     }
 
-    func testRequiredDownloadBytesIncludesOnlyMissingArtifactsAndSafetyBuffer() {
+    func testRequiredDownloadBytesSkipsCoreMLWhenPolicyDoesNotRequestIt() {
         let size = WhisperModelSize.largeV3TurboQ5_0
         let buffer = WhisperModelSize.downloadSafetyBufferBytes
 
         XCTAssertEqual(
-            size.requiredDownloadBytes(modelExists: false, encoderExists: false),
-            buffer + size.modelFileSizeBytes + size.coreMLEncoderPeakBytes
-        )
-        XCTAssertEqual(
-            size.requiredDownloadBytes(modelExists: true, encoderExists: false),
-            buffer + size.coreMLEncoderPeakBytes
-        )
-        XCTAssertEqual(
-            size.requiredDownloadBytes(modelExists: false, encoderExists: true),
+            size.requiredDownloadBytes(modelExists: false, encoderExists: false, includeCoreML: false),
             buffer + size.modelFileSizeBytes
         )
         XCTAssertEqual(
-            size.requiredDownloadBytes(modelExists: true, encoderExists: true),
+            size.requiredDownloadBytes(modelExists: true, encoderExists: false, includeCoreML: false),
             buffer
         )
     }

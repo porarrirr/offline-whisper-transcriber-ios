@@ -5,6 +5,7 @@ struct SettingsView: View {
     @StateObject private var settings = AppSettings.shared
     @StateObject private var modelManager = ModelManager.shared
     @StateObject private var logger = AppLogger.shared
+    @StateObject private var runtimeStatus = WhisperRuntimeStatus.shared
 
     @State private var showModelDownload = false
     @State private var showDeleteConfirmation = false
@@ -45,12 +46,19 @@ struct SettingsView: View {
                     Label(accelerationWarning, systemImage: "speedometer")
                         .font(Theme.sans(12))
                         .foregroundColor(Theme.textSecondary)
-                    if !modelManager.isDownloading {
+                    if !modelManager.isDownloading && modelManager.canDownloadCoreMLEncoder {
                         Button(action: { modelManager.downloadModel() }) {
                             Label("Download Core ML Encoder", systemImage: "arrow.down.circle.fill")
                                 .foregroundColor(Theme.amber)
                         }
                     }
+                }
+
+                if settings.usesWhisperBackend {
+                    Label(runtimeStatus.accelerationMode.description, systemImage: "cpu")
+                        .font(Theme.sans(12))
+                        .foregroundColor(Theme.textSecondary)
+                        .accessibilityIdentifier("whisperAccelerationStatus")
                 }
 
                 if modelManager.isDownloading {

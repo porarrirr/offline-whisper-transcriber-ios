@@ -29,6 +29,8 @@ struct HistoryDetailView: View {
     }
 
     var body: some View {
+        // This screen intentionally uses ScrollView: TranscriptionCard changes height
+        // asynchronously and must not participate in List/Form cell self-sizing.
         ScrollView {
             VStack(spacing: 14) {
                 headerPanel
@@ -46,6 +48,7 @@ struct HistoryDetailView: View {
                         showTimestamps: showTimestampView,
                         isLoading: false
                     )
+                    .accessibilityIdentifier("historyTranscriptionCard")
                 } else {
                     HStack(spacing: 10) {
                         Image(systemName: "text.quote")
@@ -359,6 +362,7 @@ struct HistoryDetailView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.recorderQuiet)
+                .accessibilityIdentifier("historyTimestampToggle")
             }
 
             HStack(spacing: 10) {

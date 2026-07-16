@@ -41,6 +41,8 @@ struct ResultView: View {
 
     var body: some View {
         NavigationStack {
+            // Keep dynamically sized, asynchronously chunked transcription content out
+            // of List/Form. UICollectionView self-sizing can enter a feedback loop.
             ScrollView {
                 VStack(spacing: 14) {
                     metaDisplay
@@ -51,6 +53,7 @@ struct ResultView: View {
                         showTimestamps: showTimestampView,
                         isLoading: false
                     )
+                    .accessibilityIdentifier("resultTranscriptionCard")
 
                     actionsPanel
 
@@ -134,6 +137,7 @@ struct ResultView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.recorderQuiet)
+                .accessibilityIdentifier("resultTimestampToggle")
             }
 
             HStack(spacing: 10) {

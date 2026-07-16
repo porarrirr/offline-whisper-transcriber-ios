@@ -1,0 +1,25 @@
+name: Publish Core ML encoders
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: macos-15
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build and publish immutable iOS 17 encoder assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        working-directory: WhisperTranscriptionApp
+        run: Scripts/CoreML/build-and-publish.sh --publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CoreMLEncoderManifest
+          path: WhisperTranscriptionApp/build/coreml-encoder-v2026.1/CoreMLEncoderManifest.json

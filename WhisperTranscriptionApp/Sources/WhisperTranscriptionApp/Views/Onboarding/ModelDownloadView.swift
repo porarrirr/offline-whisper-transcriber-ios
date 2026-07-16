@@ -147,7 +147,9 @@ struct ModelDownloadView: View {
                 }
 
                 if settings.usesWhisperBackend {
-                    Text("Will download \(settings.selectedTranscriptionModel.approximateSize) and the Core ML encoder.\nWi-Fi connection is recommended.")
+                    Text(ModelManager.shared.canDownloadCoreMLEncoder
+                         ? "Will download \(settings.selectedTranscriptionModel.approximateSize) and the Core ML encoder.\nWi-Fi connection is recommended."
+                         : "Will download \(settings.selectedTranscriptionModel.approximateSize).\nMetal acceleration will be used on this OS version.")
                         .font(Theme.sans(12))
                         .foregroundColor(Theme.textSecondary)
                         .multilineTextAlignment(.center)

@@ -17,37 +17,33 @@ enum WhisperModelServiceError: LocalizedError {
 actor WhisperModelService {
     static let shared = WhisperModelService()
 
-    enum ProbeState: Sendable {
-        case pending
-        case resolved(useCoreML: Bool, summary: String)
-    }
-
     private let context = WhisperContext()
-    private var probeState: ProbeState = .pending
-    private var sessionModelPath: String?
-    private var sessionEncoderPath: String?
-    private var sessionUseFlashAttention = false
-    private var sessionGeneration: UInt64 = 0
-    private var probeTask: Task<Void, Never>?
+    private var accelerationMode: WhisperAccelerationMode = .metal(reason: .encoderMissing)
     private var loadTask: Task<Void, Error>?
     private var loadGeneration: UInt64 = 0
     private var activeTranscriptionCount = 0
 
     private init() {}
 
-    func startSession(modelPath: String, encoderPath: String?, useFlashAttention: Bool, coreMLMelBinCount: Int) {
-        sessionGeneration += 1
-        let generation = sessionGeneration
-        sessionModelPath = modelPath
-        sessionEncoderPath = encoderPath
-        sessionUseFlashAttention = useFlashAttention
-        probeState = .pending
+    /// Resolves acceleration exactly once for the session. Core ML is never probed or
+    /// loaded before the OS policy and the versioned encoder have both been validated.
+    func startSession(
+        modelPath: String,
+        encoderPath: String?,
+        useFlashAttention: Bool,
+        coreMLMelBinCount: Int
+    ) {
+        _ = modelPath
+        _ = useFlashAttention
+        _ = coreMLMelBinCount
+        accelerationMode = CoreMLCompatibilityPolicy.accelerationMode(
+            hasVerifiedEncoder: encoderPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
+        )
+        AppLogger.info(
+            "Whisper acceleration policy: \(accelerationMode.description)",
+            context: "WhisperModelService"
+        )
         Task { await publishRuntimeSnapshot(isLoadingModel: false) }
-
-        probeTask?.cancel()
-        probeTask = Task {
-            await self.runProbe(encoderPath: encoderPath, melBinCount: coreMLMelBinCount, generation: generation)
-        }
     }
 
     func ensureModelLoaded(path: String, useFlashAttention: Bool) async throws {
@@ -55,17 +51,22 @@ actor WhisperModelService {
             throw WhisperModelServiceError.modelFileMissing
         }
 
-        let useCoreML = useCoreMLForLoad()
-        if context.isLoaded(path: path, useFlashAttention: useFlashAttention, useCoreML: useCoreML) {
-            AppLogger.info("Whisper model already resident: useCoreML=\(useCoreML)", context: "WhisperModelService")
+        if context.isLoaded(
+            path: path,
+            useFlashAttention: useFlashAttention,
+            useCoreML: accelerationMode.usesCoreML
+        ) {
             await publishRuntimeSnapshot(isLoadingModel: false)
             return
         }
 
         if let loadTask {
             try await loadTask.value
-            let stillUseCoreML = useCoreMLForLoad()
-            guard context.isLoaded(path: path, useFlashAttention: useFlashAttention, useCoreML: stillUseCoreML) else {
+            guard context.isLoaded(
+                path: path,
+                useFlashAttention: useFlashAttention,
+                useCoreML: accelerationMode.usesCoreML
+            ) else {
                 throw WhisperModelServiceError.modelLoadFailed
             }
             return
@@ -73,29 +74,52 @@ actor WhisperModelService {
 
         let generation = loadGeneration + 1
         loadGeneration = generation
-
         await publishRuntimeSnapshot(isLoadingModel: true)
 
+        let requestedMode = accelerationMode
         let task = Task<Void, Error> {
-            try await self.context.loadModel(
-                path: path,
-                useFlashAttention: useFlashAttention,
-                useCoreML: useCoreML
-            )
+            do {
+                try await self.context.loadModel(
+                    path: path,
+                    useFlashAttention: useFlashAttention,
+                    useCoreML: requestedMode.usesCoreML
+                )
+            } catch {
+                guard requestedMode.usesCoreML else { throw error }
+
+                // This is the single explicitly authorised fallback. It only handles
+                // errors returned by whisper/Core ML; OS-level exit()/abort failures are
+                // prevented by CoreMLCompatibilityPolicy before this point.
+                self.accelerationMode = .metal(reason: .coreMLLoadFailed)
+                await MainActor.run {
+                    AppLogger.error(
+                        "Core ML load failed; retrying this session once with Metal",
+                        context: "WhisperModelService",
+                        error: error
+                    )
+                }
+                try await self.context.loadModel(
+                    path: path,
+                    useFlashAttention: useFlashAttention,
+                    useCoreML: false
+                )
+            }
         }
         loadTask = task
 
         do {
             try await task.value
             loadTask = nil
-            guard generation == loadGeneration else {
-                throw CancellationError()
-            }
-            guard context.isLoaded(path: path, useFlashAttention: useFlashAttention, useCoreML: useCoreML) else {
+            guard generation == loadGeneration else { throw CancellationError() }
+            guard context.isLoaded(
+                path: path,
+                useFlashAttention: useFlashAttention,
+                useCoreML: accelerationMode.usesCoreML
+            ) else {
                 throw WhisperModelServiceError.modelLoadFailed
             }
             AppLogger.info(
-                "Whisper model load completed: useCoreML=\(useCoreML), probe=\(probeStateLabel)",
+                "Whisper model load completed: \(accelerationMode.description)",
                 context: "WhisperModelService"
             )
             await publishRuntimeSnapshot(isLoadingModel: false)
@@ -118,8 +142,7 @@ actor WhisperModelService {
         activeTranscriptionCount += 1
         defer { activeTranscriptionCount -= 1 }
 
-        let processor = TranscriptionChunkProcessor()
-        return try await processor.transcribe(
+        return try await TranscriptionChunkProcessor().transcribe(
             inputURL: inputURL,
             whisperContext: context,
             language: language,
@@ -132,17 +155,13 @@ actor WhisperModelService {
     }
 
     func releaseForRecording() async {
-        sessionGeneration += 1
-        probeTask?.cancel()
-        probeTask = nil
-
         AppLogger.info("Whisper model release requested: reason=recording started", context: "WhisperModelService")
         await cancelAndWaitForInFlightLoads()
 
         guard activeTranscriptionCount == 0 else {
             await publishRuntimeSnapshot(isLoadingModel: false)
             AppLogger.info(
-                "Whisper model release deferred: reason=recording started, activeTranscriptions=\(activeTranscriptionCount)",
+                "Whisper model release deferred: activeTranscriptions=\(activeTranscriptionCount)",
                 context: "WhisperModelService"
             )
             return
@@ -150,19 +169,14 @@ actor WhisperModelService {
 
         await context.unloadModelAndWait()
         await publishRuntimeSnapshot(isLoadingModel: false)
-        AppLogger.info("Whisper model released: reason=recording started", context: "WhisperModelService")
     }
 
     func invalidateAndUnload() async {
-        probeTask?.cancel()
         await cancelAndWaitForInFlightLoads()
         await waitForActiveTranscriptionsToFinish()
         await context.unloadModelAndWait()
-        probeState = .pending
-        sessionModelPath = nil
-        sessionEncoderPath = nil
-        sessionGeneration += 1
-        Task { await publishRuntimeSnapshot(isLoadingModel: false) }
+        accelerationMode = .metal(reason: .encoderMissing)
+        await publishRuntimeSnapshot(isLoadingModel: false)
     }
 
     func cancelLoad() async {
@@ -170,87 +184,6 @@ actor WhisperModelService {
         if activeTranscriptionCount == 0 {
             await context.unloadModelAndWait()
             await publishRuntimeSnapshot(isLoadingModel: false)
-        }
-    }
-
-    private func runProbe(encoderPath: String?, melBinCount: Int, generation: UInt64) async {
-        #if targetEnvironment(simulator)
-        guard generation == sessionGeneration else { return }
-        await applyProbeResolved(useCoreML: false, summary: "Core ML encoder disabled on Simulator")
-        #else
-        guard let encoderPath, FileManager.default.fileExists(atPath: encoderPath) else {
-            guard generation == sessionGeneration else { return }
-            await applyProbeResolved(useCoreML: false, summary: "encoder package missing")
-            return
-        }
-
-        let result = await CoreMLProbeRunner.run(encoderPath: encoderPath, melBinCount: melBinCount)
-        guard !Task.isCancelled, generation == sessionGeneration else { return }
-        let useCoreML = result.ok && result.elapsedMS < CoreMLProbeRunner.slowProbeThresholdMS
-        let summary = result.summary
-
-        await MainActor.run {
-            AppLogger.info("Core ML encoder probe: \(summary)", context: "CoreMLProbeRunner")
-        }
-
-        await applyProbeResolved(useCoreML: useCoreML, summary: summary)
-
-        if useCoreML {
-            await reloadIfIdle(useCoreML: true)
-        }
-        #endif
-    }
-
-    private func applyProbeResolved(useCoreML: Bool, summary: String) async {
-        probeState = .resolved(useCoreML: useCoreML, summary: summary)
-        await MainActor.run {
-            AppLogger.info(
-                "Core ML session policy: useCoreML=\(useCoreML) (\(summary))",
-                context: "WhisperModelService"
-            )
-        }
-        await publishRuntimeSnapshot(isLoadingModel: false)
-    }
-
-    private func reloadIfIdle(useCoreML: Bool) async {
-        guard activeTranscriptionCount == 0 else { return }
-        guard let path = sessionModelPath else { return }
-        guard context.isModelLoaded else { return }
-        guard !context.isLoaded(
-            path: path,
-            useFlashAttention: sessionUseFlashAttention,
-            useCoreML: useCoreML
-        ) else { return }
-
-        AppLogger.info(
-            "Reloading Whisper model for Core ML policy change: useCoreML=\(useCoreML)",
-            context: "WhisperModelService"
-        )
-        await context.unloadModelAndWait()
-        do {
-            try await ensureModelLoaded(path: path, useFlashAttention: sessionUseFlashAttention)
-        } catch {
-            await MainActor.run {
-                AppLogger.error("Whisper reload after probe failed", context: "WhisperModelService", error: error)
-            }
-        }
-    }
-
-    private func useCoreMLForLoad() -> Bool {
-        switch probeState {
-        case .pending:
-            return false
-        case .resolved(let useCoreML, _):
-            return useCoreML
-        }
-    }
-
-    private var probeStateLabel: String {
-        switch probeState {
-        case .pending:
-            return "pending"
-        case .resolved(let useCoreML, let summary):
-            return "resolved(useCoreML=\(useCoreML), \(summary))"
         }
     }
 
@@ -263,19 +196,15 @@ actor WhisperModelService {
     }
 
     private func cancelAndWaitForInFlightLoads() async {
-        while let cancelledLoadTask = cancelInFlightLoad() {
-            await waitForCancelledLoadToFinish(cancelledLoadTask)
-        }
-    }
-
-    private func waitForCancelledLoadToFinish(_ task: Task<Void, Error>) async {
-        do {
-            try await task.value
-        } catch is CancellationError {
-            return
-        } catch {
-            await MainActor.run {
-                AppLogger.error("Cancelled Whisper model load finished with error", context: "WhisperModelService", error: error)
+        while let task = cancelInFlightLoad() {
+            do {
+                try await task.value
+            } catch is CancellationError {
+                continue
+            } catch {
+                await MainActor.run {
+                    AppLogger.error("Cancelled model load finished with error", context: "WhisperModelService", error: error)
+                }
             }
         }
     }
@@ -287,22 +216,11 @@ actor WhisperModelService {
     }
 
     private func publishRuntimeSnapshot(isLoadingModel: Bool) async {
-        let useCoreML: Bool
-        let probeDescription: String
-        switch probeState {
-        case .pending:
-            useCoreML = false
-            probeDescription = "pending"
-        case .resolved(let resolvedUseCoreML, let summary):
-            useCoreML = resolvedUseCoreML
-            probeDescription = summary
-        }
-
+        let mode = accelerationMode
         await MainActor.run {
             WhisperRuntimeStatus.shared.applySnapshot(
                 isLoadingModel: isLoadingModel,
-                probeStateDescription: probeDescription,
-                useCoreMLForSession: useCoreML
+                accelerationMode: mode
             )
         }
     }

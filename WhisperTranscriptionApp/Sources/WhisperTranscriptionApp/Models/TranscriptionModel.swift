@@ -39,18 +39,18 @@ enum WhisperModelSize: String, CaseIterable, Identifiable {
     }
 
     var coreMLEncoderDirectoryName: String {
-        "ggml-\(coreMLModelName)-encoder.mlmodelc"
+        "ggml-\(coreMLModelID)-encoder.mlmodelc"
     }
 
     var coreMLEncoderArchiveName: String {
         "\(coreMLEncoderDirectoryName).zip"
     }
 
-    var coreMLEncoderDownloadURL: URL? {
-        URL(string: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/\(coreMLEncoderArchiveName)")
+    var coreMLEncoderArtifact: CoreMLEncoderArtifact? {
+        CoreMLEncoderManifest.current.artifact(for: coreMLModelID)
     }
 
-    private var coreMLModelName: String {
+    var coreMLModelID: String {
         switch self {
         case .tiny, .tinyQ5_1:
             return "tiny"
@@ -99,30 +99,15 @@ enum WhisperModelSize: String, CaseIterable, Identifiable {
 
     /// Peak disk use while downloading and extracting the Core ML encoder zip (archive + extracted tree).
     var coreMLEncoderPeakBytes: Int64 {
-        let zipBytes: Int64
-        switch coreMLModelName {
-        case "tiny":
-            zipBytes = 15_037_446
-        case "base":
-            zipBytes = 37_922_638
-        case "small":
-            zipBytes = 163_083_239
-        case "medium":
-            zipBytes = 567_829_413
-        case "large-v3-turbo":
-            zipBytes = 1_173_393_014
-        default:
-            zipBytes = 0
-        }
-        return zipBytes * 2
+        coreMLEncoderArtifact?.requiredInstallationBytes ?? 0
     }
 
-    func requiredDownloadBytes(modelExists: Bool, encoderExists: Bool) -> Int64 {
+    func requiredDownloadBytes(modelExists: Bool, encoderExists: Bool, includeCoreML: Bool = true) -> Int64 {
         var total = Self.downloadSafetyBufferBytes
         if !modelExists {
             total += modelFileSizeBytes
         }
-        if !encoderExists {
+        if includeCoreML && !encoderExists {
             total += coreMLEncoderPeakBytes
         }
         return total

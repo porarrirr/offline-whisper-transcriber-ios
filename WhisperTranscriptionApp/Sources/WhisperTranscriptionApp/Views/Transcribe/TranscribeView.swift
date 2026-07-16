@@ -308,7 +308,7 @@ struct TranscribeView: View {
     }
 
     private var modelAccelerationActionTitle: LocalizedStringKey? {
-        guard !modelManager.isDownloading else { return nil }
+        guard !modelManager.isDownloading, modelManager.canDownloadCoreMLEncoder else { return nil }
         return "Download Core ML Encoder"
     }
 

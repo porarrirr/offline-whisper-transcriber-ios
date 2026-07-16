@@ -97,8 +97,17 @@ class ModelManager: NSObject, ObservableObject {
     func whisperAccelerationWarningMessage() -> String? {
         guard let size = currentTranscriptionModel.whisperModelSize else { return nil }
         let readiness = whisperReadiness(for: size)
-        guard readiness.modelExists, !readiness.encoderExists else { return nil }
-        return String(localized: "Core ML encoder is not installed, so transcription may be slower.")
+        guard readiness.modelExists else { return nil }
+        let mode = CoreMLCompatibilityPolicy.accelerationMode(hasVerifiedEncoder: readiness.encoderExists)
+        guard case .metal = mode else { return nil }
+        return mode.description
+    }
+
+    var canDownloadCoreMLEncoder: Bool {
+        guard CoreMLCompatibilityPolicy.currentOperatingSystemAllowsCoreML,
+              let size = currentTranscriptionModel.whisperModelSize,
+              size.coreMLEncoderArtifact != nil else { return false }
+        return !whisperReadiness(for: size).encoderExists
     }
 
     func currentTranscriptionReadinessError() -> String? {
@@ -234,6 +243,8 @@ class ModelManager: NSObject, ObservableObject {
         guard !isDownloading else { return }
 
         let readiness = whisperReadiness(for: size)
+        let includeCoreML = CoreMLCompatibilityPolicy.currentOperatingSystemAllowsCoreML
+            && size.coreMLEncoderArtifact != nil
         guard !readiness.isReady else {
             isModelReady = true
             downloadProgress = 1
@@ -244,11 +255,18 @@ class ModelManager: NSObject, ObservableObject {
 
         let requiredBytes = size.requiredDownloadBytes(
             modelExists: readiness.modelExists,
-            encoderExists: readiness.encoderExists
+            encoderExists: readiness.encoderExists,
+            includeCoreML: includeCoreML
         )
         do {
             try DiskSpaceChecker.ensureAvailable(at: documentsURL, requiredBytes: requiredBytes)
         } catch {
+            if includeCoreML && !readiness.encoderExists {
+                WhisperRuntimeStatus.shared.applySnapshot(
+                    isLoadingModel: false,
+                    accelerationMode: .metal(reason: .insufficientStorage)
+                )
+            }
             setDownloadError((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
             return
         }
@@ -260,8 +278,13 @@ class ModelManager: NSObject, ObservableObject {
         activeWhisperDownloadSize = size
         activeWhisperDownloadIncludesModel = !readiness.modelExists
 
-        if readiness.modelExists {
+        if readiness.modelExists && includeCoreML {
             startWhisperCoreMLEncoderDownload(size: size)
+            return
+        }
+
+        if readiness.modelExists {
+            finishWhisperDownloadIfReady(size: size)
             return
         }
 
@@ -429,6 +452,7 @@ class ModelManager: NSObject, ObservableObject {
             }
         }
         for encoderName in Set(WhisperModelSize.allCases.map(\.coreMLEncoderDirectoryName)) {
+            // Remove pre-manifest encoders as user-requested data deletion, never as migration fallback.
             let encoderURL = documentsPath.appendingPathComponent(encoderName)
             if FileManager.default.fileExists(atPath: encoderURL.path) {
                 do {
@@ -437,6 +461,15 @@ class ModelManager: NSObject, ObservableObject {
                     setDownloadError(String(localized: "Error deleting model") + ": \(error.localizedDescription)")
                     return
                 }
+            }
+        }
+        let versionedEncodersURL = documentsPath.appendingPathComponent("CoreMLEncoders", isDirectory: true)
+        if FileManager.default.fileExists(atPath: versionedEncodersURL.path) {
+            do {
+                try FileManager.default.removeItem(at: versionedEncodersURL)
+            } catch {
+                setDownloadError(String(localized: "Error deleting model") + ": \(error.localizedDescription)")
+                return
             }
         }
         isModelReady = false
@@ -448,13 +481,14 @@ class ModelManager: NSObject, ObservableObject {
     private struct WhisperReadiness {
         let modelFileStatus: WhisperModelFileStatus
         let encoderExists: Bool
+        let encoderRequired: Bool
 
         var modelExists: Bool {
             modelFileStatus == .valid
         }
 
         var isReady: Bool {
-            modelExists && encoderExists
+            modelExists && (!encoderRequired || encoderExists)
         }
     }
 
@@ -465,9 +499,14 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     private func whisperReadiness(for size: WhisperModelSize) -> WhisperReadiness {
-        WhisperReadiness(
+        let artifact = size.coreMLEncoderArtifact
+        let encoderURL = whisperCoreMLEncoderURL(for: size)
+        return WhisperReadiness(
             modelFileStatus: whisperModelFileStatus(for: size, at: whisperModelURL(for: size)),
-            encoderExists: FileManager.default.fileExists(atPath: whisperCoreMLEncoderURL(for: size).path)
+            encoderExists: artifact.map {
+                CoreMLEncoderVerifier.verifyInstalledModel(at: encoderURL, expectedSHA256: $0.sha256)
+            } ?? false,
+            encoderRequired: CoreMLCompatibilityPolicy.currentOperatingSystemAllowsCoreML && artifact != nil
         )
     }
 
@@ -490,14 +529,18 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     private func whisperCoreMLEncoderURL(for size: WhisperModelSize) -> URL {
-        documentsURL.appendingPathComponent(size.coreMLEncoderDirectoryName)
+        documentsURL
+            .appendingPathComponent("CoreMLEncoders", isDirectory: true)
+            .appendingPathComponent(CoreMLEncoderManifest.current.version, isDirectory: true)
+            .appendingPathComponent(size.coreMLEncoderDirectoryName, isDirectory: true)
     }
 
     func scheduleWhisperSessionStartIfNeeded() {
         guard usesWhisperBackend, currentWhisperModelIsReady(),
               let size = currentTranscriptionModel.whisperModelSize else { return }
         let modelPath = modelPath
-        let encoderPath = FileManager.default.fileExists(atPath: coreMLEncoderPath) ? coreMLEncoderPath : nil
+        let readiness = whisperReadiness(for: size)
+        let encoderPath = readiness.encoderExists ? coreMLEncoderPath : nil
         let useFlashAttention = AppSettings.shared.useFlashAttention
         Task {
             await WhisperModelService.shared.startSession(
@@ -520,14 +563,21 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     private func startWhisperCoreMLEncoderDownload(size: WhisperModelSize) {
-        guard let url = size.coreMLEncoderDownloadURL else {
-            setDownloadError(String(localized: "Core ML encoder is not available for this model."))
-            isDownloading = false
+        guard CoreMLCompatibilityPolicy.currentOperatingSystemAllowsCoreML else {
+            finishWhisperDownloadIfReady(size: size)
+            return
+        }
+        guard let artifact = size.coreMLEncoderArtifact else {
+            AppLogger.info(
+                "No verified Core ML release artifact for \(size.coreMLModelID); continuing with Metal",
+                context: "ModelManager"
+            )
+            finishWhisperDownloadIfReady(size: size)
             return
         }
 
         downloadStatusText = "Downloading Core ML encoder..."
-        startWhisperDownload(url: url, taskDescription: "coreMLEncoder")
+        startWhisperDownload(url: artifact.url, taskDescription: "coreMLEncoder")
     }
 
     private func finishWhisperDownloadIfReady(size: WhisperModelSize) {
@@ -542,6 +592,11 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     private func installCoreMLEncoderArchive(from archiveURL: URL, for size: WhisperModelSize) {
+        guard let artifact = size.coreMLEncoderArtifact else {
+            setDownloadError(String(localized: "Core ML encoder release metadata is unavailable."))
+            isDownloading = false
+            return
+        }
         let destinationURL = whisperCoreMLEncoderURL(for: size)
         let archiveCopyURL = documentsURL.appendingPathComponent("\(size.coreMLEncoderArchiveName).download")
         do {
@@ -559,9 +614,23 @@ class ModelManager: NSObject, ObservableObject {
 
         downloadStatusText = "Installing Core ML encoder..."
         downloadProgress = max(downloadProgress, 0.95)
-        coreMLEncoderInstallTask = Task.detached { [archiveCopyURL, destinationURL, size] in
+        coreMLEncoderInstallTask = Task.detached { [archiveCopyURL, destinationURL, size, artifact] in
             do {
+                try CoreMLEncoderVerifier.verifyArchive(
+                    at: archiveCopyURL,
+                    expectedSHA256: artifact.sha256,
+                    expectedBytes: artifact.archiveBytes
+                )
+                try FileManager.default.createDirectory(
+                    at: destinationURL.deletingLastPathComponent(),
+                    withIntermediateDirectories: true
+                )
                 try ZipArchiveExtractor.extractMLModelCArchive(at: archiveCopyURL, to: destinationURL)
+                try CoreMLEncoderVerifier.markInstalledModel(
+                    at: destinationURL,
+                    sha256: artifact.sha256,
+                    expectedBytes: artifact.installedBytes
+                )
                 try? FileManager.default.removeItem(at: archiveCopyURL)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
@@ -572,6 +641,10 @@ class ModelManager: NSObject, ObservableObject {
                 try? FileManager.default.removeItem(at: archiveCopyURL)
                 guard !Task.isCancelled else { return }
                 await MainActor.run {
+                    WhisperRuntimeStatus.shared.applySnapshot(
+                        isLoadingModel: false,
+                        accelerationMode: .metal(reason: .encoderInvalid)
+                    )
                     ModelManager.shared.coreMLEncoderInstallTask = nil
                     ModelManager.shared.setDownloadError(String(localized: "Error installing Core ML encoder") + ": \(error.localizedDescription)")
                     ModelManager.shared.isDownloading = false
@@ -709,7 +782,7 @@ extension ModelManager: @preconcurrency URLSessionDownloadDelegate {
                     isDownloading = false
                     return
                 }
-                if FileManager.default.fileExists(atPath: whisperCoreMLEncoderURL(for: whisperSize).path) {
+                if whisperReadiness(for: whisperSize).isReady {
                     finishWhisperDownloadIfReady(size: whisperSize)
                 } else {
                     startWhisperCoreMLEncoderDownload(size: whisperSize)

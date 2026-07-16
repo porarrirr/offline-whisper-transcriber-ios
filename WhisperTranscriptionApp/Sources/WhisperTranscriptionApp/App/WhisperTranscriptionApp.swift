@@ -11,7 +11,12 @@ struct WhisperTranscriptionApp: App {
 
     init() {
         do {
-            modelContainer = try ModelContainer(for: TranscriptionRecord.self)
+            if ProcessInfo.processInfo.arguments.contains("--ui-test-long-transcription") {
+                let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+                modelContainer = try ModelContainer(for: TranscriptionRecord.self, configurations: configuration)
+            } else {
+                modelContainer = try ModelContainer(for: TranscriptionRecord.self)
+            }
             modelContainerErrorMessage = nil
         } catch {
             AppLogger.error("SwiftDataストアの初期化に失敗しました", context: "App", error: error)
@@ -24,15 +29,25 @@ struct WhisperTranscriptionApp: App {
         WindowGroup {
             Group {
                 if let modelContainer {
-                    ContentView()
+                    Group {
+                        if ProcessInfo.processInfo.arguments.contains("--ui-test-long-transcription") {
+                            LongTranscriptionUITestFixture()
+                        } else {
+                            ContentView()
+                        }
+                    }
                         .modelContainer(modelContainer)
                         .environmentObject(recordingService)
                         .onAppear {
-                            performStartupMaintenance(modelContainer: modelContainer)
-                            recordingService.handleBecameActive()
+                            if !ProcessInfo.processInfo.arguments.contains("--ui-test-long-transcription") {
+                                performStartupMaintenance(modelContainer: modelContainer)
+                                recordingService.handleBecameActive()
+                            }
                         }
                         .onChange(of: scenePhase) { _, newPhase in
-                            recordingService.handleScenePhase(newPhase)
+                            if !ProcessInfo.processInfo.arguments.contains("--ui-test-long-transcription") {
+                                recordingService.handleScenePhase(newPhase)
+                            }
                         }
                 } else {
                     DataStoreUnavailableView(errorMessage: modelContainerErrorMessage)

@@ -1,0 +1,9 @@
+{
+  "version": "2026.1",
+  "releaseTag": "coreml-encoder-v2026.1",
+  "toolchain": {
+    "minimumDeploymentTarget": "iOS17",
+    "status": "Artifacts must be generated and published by Scripts/CoreML/build-and-publish.sh before enabling Core ML"
+  },
+  "models": []
+}
