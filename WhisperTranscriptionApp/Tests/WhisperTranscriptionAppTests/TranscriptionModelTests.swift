@@ -74,6 +74,18 @@ final class TranscriptionModelTests: XCTestCase {
         )
     }
 
+    func testSpeechDownloadPresentationShowsWaitingOnlyAfterZeroProgressThreshold() {
+        XCTAssertFalse(
+            AppleSpeechDownloadPresentation.isWaitingForSystem(progress: 0, elapsedSeconds: 9)
+        )
+        XCTAssertTrue(
+            AppleSpeechDownloadPresentation.isWaitingForSystem(progress: 0, elapsedSeconds: 10)
+        )
+        XCTAssertFalse(
+            AppleSpeechDownloadPresentation.isWaitingForSystem(progress: 0.01, elapsedSeconds: 10)
+        )
+    }
+
     func testInvalidStorageKeysReturnNil() {
         XCTAssertNil(TranscriptionModel(storageKey: ""))
         XCTAssertNil(TranscriptionModel(storageKey: "whisper:missing"))

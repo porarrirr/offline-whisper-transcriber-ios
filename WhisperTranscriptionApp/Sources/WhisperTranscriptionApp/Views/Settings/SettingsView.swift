@@ -62,8 +62,14 @@ struct SettingsView: View {
                 }
 
                 if modelManager.isDownloading {
-                    ProgressBar(progress: modelManager.downloadProgress)
-                        .frame(height: 6)
+                    if modelManager.isWaitingForSpeechAsset {
+                        ProgressView()
+                            .progressViewStyle(.linear)
+                            .tint(Theme.amber)
+                    } else {
+                        ProgressBar(progress: modelManager.downloadProgress)
+                            .frame(height: 6)
+                    }
                     Text(LocalizedStringKey(modelManager.downloadStatusText))
                         .font(Theme.sans(12))
                         .foregroundColor(Theme.textSecondary)

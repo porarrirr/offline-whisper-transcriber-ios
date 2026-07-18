@@ -10,6 +10,7 @@ class DownloadViewModel: ObservableObject {
     @Published var isModelAvailable = false
     @Published var errorMessage: String?
     @Published var statusText = "Preparing model..."
+    @Published var isWaitingForSpeechAsset = false
     
     private var modelManager = ModelManager.shared
     private var cancellables = Set<AnyCancellable>()
@@ -51,6 +52,13 @@ class DownloadViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] progress in
                 self?.progress = progress
+            }
+            .store(in: &cancellables)
+
+        modelManager.$isWaitingForSpeechAsset
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] isWaiting in
+                self?.isWaitingForSpeechAsset = isWaiting
             }
             .store(in: &cancellables)
 

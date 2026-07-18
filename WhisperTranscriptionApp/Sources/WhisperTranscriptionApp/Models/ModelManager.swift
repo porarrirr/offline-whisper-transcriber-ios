@@ -12,6 +12,7 @@ class ModelManager: NSObject, ObservableObject {
     @Published var isDownloading = false
     @Published var downloadError: String?
     @Published var downloadStatusText = "Preparing model..."
+    @Published var isWaitingForSpeechAsset = false
     @Published var currentTranscriptionModel: TranscriptionModel = .whisper(.largeV3TurboQ5_0)
     @Published var isVADModelReady = false
     @Published var vadDownloadProgress: Double = 0
@@ -27,6 +28,7 @@ class ModelManager: NSObject, ObservableObject {
     private var activeWhisperDownloadIncludesModel = false
     private var coreMLEncoderInstallTask: Task<Void, Never>?
     private var speechAssetDownloadTask: Task<Void, Never>?
+    private var speechAssetWaitingTask: Task<Void, Never>?
     private var activeSpeechAssetDownloadID: UUID?
     private var transcriptionOperationCount = 0
     private let vadModelFileName = "ggml-silero-v6.2.0.bin"
@@ -224,7 +226,10 @@ class ModelManager: NSObject, ObservableObject {
         coreMLEncoderInstallTask = nil
         speechAssetDownloadTask?.cancel()
         speechAssetDownloadTask = nil
+        speechAssetWaitingTask?.cancel()
+        speechAssetWaitingTask = nil
         activeSpeechAssetDownloadID = nil
+        isWaitingForSpeechAsset = false
         currentTranscriptionModel = model
         AppSettings.shared.selectedTranscriptionModel = model
         Task {
@@ -329,12 +334,38 @@ class ModelManager: NSObject, ObservableObject {
         speechAssetDownloadTask?.cancel()
         let downloadID = UUID()
         activeSpeechAssetDownloadID = downloadID
+        isWaitingForSpeechAsset = false
+
+        speechAssetWaitingTask?.cancel()
+        speechAssetWaitingTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(AppleSpeechDownloadPresentation.waitingThresholdSeconds))
+            guard !Task.isCancelled,
+                  self.activeSpeechAssetDownloadID == downloadID,
+                  self.isDownloading,
+                  AppleSpeechDownloadPresentation.isWaitingForSystem(
+                    progress: self.downloadProgress,
+                    elapsedSeconds: AppleSpeechDownloadPresentation.waitingThresholdSeconds
+                  ) else { return }
+
+            self.isWaitingForSpeechAsset = true
+            self.downloadStatusText = "Waiting for iOS to start the model download. Connect to Wi-Fi, then wait or cancel and retry."
+            AppLogger.info(
+                "Speech asset progress remained at zero; iOS is waiting for download conditions: locale=\(locale.localeIdentifier)",
+                context: "ModelManager"
+            )
+        }
 
         speechAssetDownloadTask = Task { @MainActor in
             do {
                 try await AppleSpeechTranscriptionService().ensureAssetsInstalled(for: locale) { progress in
                     guard self.activeSpeechAssetDownloadID == downloadID else { return }
                     self.downloadProgress = progress
+                    if progress > 0 {
+                        self.speechAssetWaitingTask?.cancel()
+                        self.speechAssetWaitingTask = nil
+                        self.isWaitingForSpeechAsset = false
+                        self.downloadStatusText = "Downloading speech model..."
+                    }
                 }
                 try Task.checkCancellation()
                 guard self.activeSpeechAssetDownloadID == downloadID,
@@ -353,6 +384,9 @@ class ModelManager: NSObject, ObservableObject {
                 self.isDownloading = false
             }
             if self.activeSpeechAssetDownloadID == downloadID {
+                self.speechAssetWaitingTask?.cancel()
+                self.speechAssetWaitingTask = nil
+                self.isWaitingForSpeechAsset = false
                 self.activeSpeechAssetDownloadID = nil
                 self.speechAssetDownloadTask = nil
             }
@@ -384,7 +418,10 @@ class ModelManager: NSObject, ObservableObject {
         coreMLEncoderInstallTask = nil
         speechAssetDownloadTask?.cancel()
         speechAssetDownloadTask = nil
+        speechAssetWaitingTask?.cancel()
+        speechAssetWaitingTask = nil
         activeSpeechAssetDownloadID = nil
+        isWaitingForSpeechAsset = false
         isDownloading = false
         downloadProgress = 0
         downloadStatusText = "Preparing model..."

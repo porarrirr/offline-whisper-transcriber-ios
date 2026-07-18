@@ -29,7 +29,9 @@ enum AppleSpeechTranscriptionError: LocalizedError {
 
     var recoverySuggestion: String? {
         switch self {
-        case .assetsNotReady, .reservationUpdateFailed:
+        case .assetsNotReady:
+            return String(localized: "Connect to Wi-Fi, then tap Retry. If the problem continues, restart the app and try again.")
+        case .reservationUpdateFailed:
             return String(localized: "Tap Retry. If the problem continues, restart the app and try again.")
         case .localeNotSupported, .transcriptionUnavailable, .emptyTranscription:
             return nil
@@ -50,6 +52,14 @@ enum AppleSpeechReservationPolicy {
             keptTarget = true
             return false
         }
+    }
+}
+
+enum AppleSpeechDownloadPresentation {
+    static let waitingThresholdSeconds: TimeInterval = 10
+
+    static func isWaitingForSystem(progress: Double, elapsedSeconds: TimeInterval) -> Bool {
+        progress <= 0 && elapsedSeconds >= waitingThresholdSeconds
     }
 }
 
@@ -145,6 +155,10 @@ struct AppleSpeechTranscriptionService {
         try await AppleSpeechAssetReservationManager.shared.reserveExclusively(reservedLocale)
 
         let status = await AssetInventory.status(forModules: [transcriber])
+        AppLogger.info(
+            "Speech asset preparation started: locale=\(reservedLocale.identifier), status=\(String(describing: status))",
+            context: "AppleSpeechTranscriptionService"
+        )
         if status == .installed {
             await MainActor.run { onProgress(1) }
             return
@@ -163,16 +177,55 @@ struct AppleSpeechTranscriptionService {
         }
 
         let progress = request.progress
-        let observation = progress.observe(\.fractionCompleted, options: [.initial, .new]) { _, change in
-            let value = change.newValue ?? progress.fractionCompleted
-            Task { @MainActor in
-                onProgress(min(max(value, 0), 1))
+        AppLogger.info(
+            "Speech asset installation request created: locale=\(reservedLocale.identifier), progress=\(progress.fractionCompleted)",
+            context: "AppleSpeechTranscriptionService"
+        )
+        let progressTask = Task {
+            var lastReportedProgress = -1.0
+            while !Task.isCancelled {
+                let value = min(max(progress.fractionCompleted, 0), 1)
+                if abs(value - lastReportedProgress) >= 0.001 {
+                    lastReportedProgress = value
+                    await MainActor.run { onProgress(value) }
+                }
+                try? await Task.sleep(for: .milliseconds(250))
             }
         }
-        defer { observation.invalidate() }
+        defer { progressTask.cancel() }
 
         try await request.downloadAndInstall()
         try Task.checkCancellation()
+
+        var finalStatus = await AssetInventory.status(forModules: [transcriber])
+        var loggedDeferredDownload = false
+        while finalStatus == .downloading {
+            if !loggedDeferredDownload {
+                AppLogger.info(
+                    "Speech asset download is managed by iOS and is waiting or continuing: locale=\(reservedLocale.identifier)",
+                    context: "AppleSpeechTranscriptionService"
+                )
+                loggedDeferredDownload = true
+            }
+            try await Task.sleep(for: .seconds(2))
+            finalStatus = await AssetInventory.status(forModules: [transcriber])
+        }
+
+        guard finalStatus == .installed else {
+            AppLogger.error(
+                "Speech asset installation did not finish: locale=\(reservedLocale.identifier), status=\(String(describing: finalStatus))",
+                context: "AppleSpeechTranscriptionService"
+            )
+            if finalStatus == .unsupported {
+                throw AppleSpeechTranscriptionError.localeNotSupported
+            }
+            throw AppleSpeechTranscriptionError.assetsNotReady
+        }
+
+        AppLogger.info(
+            "Speech asset installation finished: locale=\(reservedLocale.identifier)",
+            context: "AppleSpeechTranscriptionService"
+        )
         await MainActor.run { onProgress(1) }
     }
 

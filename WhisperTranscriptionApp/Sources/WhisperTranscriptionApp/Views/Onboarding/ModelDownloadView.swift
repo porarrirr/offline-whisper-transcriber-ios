@@ -101,13 +101,19 @@ struct ModelDownloadView: View {
 
                     Spacer()
 
-                    Text("\(Int(viewModel.progress * 100))%")
+                    Text(viewModel.isWaitingForSpeechAsset ? "--" : "\(Int(viewModel.progress * 100))%")
                         .font(Theme.mono(24, weight: .semibold))
                         .foregroundColor(Theme.amber)
                 }
 
-                ProgressBar(progress: viewModel.progress)
-                    .frame(height: 6)
+                if viewModel.isWaitingForSpeechAsset {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                        .tint(Theme.amber)
+                } else {
+                    ProgressBar(progress: viewModel.progress)
+                        .frame(height: 6)
+                }
 
                 HStack {
                     Text(LocalizedStringKey(viewModel.statusText))

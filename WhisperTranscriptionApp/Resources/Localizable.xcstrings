@@ -1561,6 +1561,41 @@
         }
       }
     },
+    "Connect to Wi-Fi, then tap Retry. If the problem continues, restart the app and try again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Conéctate a una red Wi-Fi y toca Reintentar. Si el problema continúa, reinicia la app e inténtalo de nuevo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connectez-vous au Wi-Fi, puis touchez Réessayer. Si le problème persiste, redémarrez l’app et réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fiに接続して「再試行」をタップしてください。解消しない場合は、アプリを再起動してもう一度お試しください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连接到 Wi-Fi，然后轻点“重试”。如果问题仍然存在，请重新启动应用后再试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連接 Wi-Fi，然後點一下「重試」。如果問題仍然存在，請重新啟動 App 後再試。"
+          }
+        }
+      }
+    },
     "Could not prepare the live audio format." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8304,6 +8339,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢視記錄"
+          }
+        }
+      }
+    },
+    "Waiting for iOS to start the model download. Connect to Wi-Fi, then wait or cancel and retry." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Esperando a que iOS inicie la descarga del modelo. Conéctate a una red Wi-Fi y espera, o cancela y vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En attente du lancement du téléchargement du modèle par iOS. Connectez-vous au Wi-Fi et patientez, ou annulez et réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOSがモデルのダウンロードを開始するのを待っています。Wi-Fiに接続して待つか、キャンセルして再試行してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待 iOS 开始下载模型。请连接到 Wi-Fi 后等待，或取消并重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在等待 iOS 開始下載模型。請連接 Wi-Fi 後等待，或取消並重試。"
           }
         }
       }
