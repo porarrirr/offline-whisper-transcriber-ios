@@ -35,7 +35,7 @@ struct ModelDownloadView: View {
             .scrollIndicators(.hidden)
         }
         .onAppear {
-            viewModel.checkAvailability()
+            viewModel.checkAvailability(autoPrepareAppleSpeech: true)
         }
         .task {
             await refreshSpeechLocaleOptions()
@@ -94,6 +94,11 @@ struct ModelDownloadView: View {
                 }
             }
             .recorderPanel(padding: 22)
+        } else if settings.usesAppleSpeechBackend {
+            VStack(spacing: 14) {
+                modelPickerCard
+                SpeechAssetStatusCard(modelManager: ModelManager.shared)
+            }
         } else if viewModel.isDownloading {
             VStack(spacing: 16) {
                 HStack {
@@ -186,7 +191,7 @@ struct ModelDownloadView: View {
             .tint(Theme.amber)
             .onChange(of: settings.selectedTranscriptionModel) { _, newValue in
                 ModelManager.shared.switchModel(model: newValue)
-                viewModel.checkAvailability()
+                viewModel.checkAvailability(autoPrepareAppleSpeech: newValue.backend.isAppleSpeech)
             }
 
             if isLoadingSpeechLocaleOptions {

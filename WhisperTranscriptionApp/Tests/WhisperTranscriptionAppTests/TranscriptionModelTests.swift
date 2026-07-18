@@ -48,44 +48,6 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertEqual(cases, [englishUS, frenchFR, japaneseJP])
     }
 
-    func testSpeechReservationPolicyKeepsOnlyFirstEquivalentSelectedLocale() {
-        let japanese = AppleSpeechLocale(localeIdentifier: "ja_JP")
-        let english = AppleSpeechLocale(localeIdentifier: "en_US")
-
-        XCTAssertEqual(
-            AppleSpeechReservationPolicy.releaseIndexes(
-                reservedEquivalentLocales: [english, japanese, nil, japanese],
-                keeping: japanese
-            ),
-            [0, 2, 3]
-        )
-    }
-
-    func testSpeechReservationPolicyReleasesAllWhenSelectedLocaleIsNotReserved() {
-        let japanese = AppleSpeechLocale(localeIdentifier: "ja_JP")
-        let english = AppleSpeechLocale(localeIdentifier: "en_US")
-
-        XCTAssertEqual(
-            AppleSpeechReservationPolicy.releaseIndexes(
-                reservedEquivalentLocales: [english, nil],
-                keeping: japanese
-            ),
-            [0, 1]
-        )
-    }
-
-    func testSpeechDownloadPresentationShowsWaitingOnlyAfterZeroProgressThreshold() {
-        XCTAssertFalse(
-            AppleSpeechDownloadPresentation.isWaitingForSystem(progress: 0, elapsedSeconds: 9)
-        )
-        XCTAssertTrue(
-            AppleSpeechDownloadPresentation.isWaitingForSystem(progress: 0, elapsedSeconds: 10)
-        )
-        XCTAssertFalse(
-            AppleSpeechDownloadPresentation.isWaitingForSystem(progress: 0.01, elapsedSeconds: 10)
-        )
-    }
-
     func testInvalidStorageKeysReturnNil() {
         XCTAssertNil(TranscriptionModel(storageKey: ""))
         XCTAssertNil(TranscriptionModel(storageKey: "whisper:missing"))

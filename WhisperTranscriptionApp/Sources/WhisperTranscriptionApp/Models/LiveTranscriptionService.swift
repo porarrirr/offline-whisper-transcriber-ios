@@ -324,25 +324,11 @@ final class LiveTranscriptionService {
     }
 
     private func ensureAssetsInstalled(for transcriber: SpeechTranscriber) async throws {
-        let reservedLocale = transcriber.selectedLocales.first ?? locale.locale
-        try await AppleSpeechAssetReservationManager.shared.reserveExclusively(reservedLocale)
-
-        let status = await AssetInventory.status(forModules: [transcriber])
-        if status == .installed {
-            return
-        }
-        if status == .unsupported {
-            throw LiveTranscriptionError.unsupportedLocale
-        }
-
-        guard let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) else {
-            let refreshed = await AssetInventory.status(forModules: [transcriber])
-            if refreshed == .installed {
-                return
-            }
+        let selectedLocale = transcriber.selectedLocales.first.map(AppleSpeechLocale.init(locale:)) ?? locale
+        guard await SpeechAssetCoordinator.shared.isReady(locale: selectedLocale) else {
             throw LiveTranscriptionError.assetsNotReady
         }
-        try await request.downloadAndInstall()
+        await SpeechAssetCoordinator.shared.markUsed(locale: selectedLocale)
     }
 
     private func requestSpeechPermission() async throws {

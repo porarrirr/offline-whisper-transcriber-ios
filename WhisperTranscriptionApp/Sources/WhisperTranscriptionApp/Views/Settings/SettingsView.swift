@@ -61,15 +61,18 @@ struct SettingsView: View {
                         .accessibilityIdentifier("whisperAccelerationStatus")
                 }
 
-                if modelManager.isDownloading {
-                    if modelManager.isWaitingForSpeechAsset {
-                        ProgressView()
-                            .progressViewStyle(.linear)
-                            .tint(Theme.amber)
-                    } else {
-                        ProgressBar(progress: modelManager.downloadProgress)
-                            .frame(height: 6)
+                if settings.usesAppleSpeechBackend {
+                    SpeechAssetStatusCard(modelManager: modelManager)
+
+                    NavigationLink {
+                        SpeechAssetManagementView(modelManager: modelManager)
+                    } label: {
+                        Label("Manage SpeechTranscriber Models", systemImage: "externaldrive.badge.plus")
+                            .foregroundColor(Theme.amber)
                     }
+                } else if modelManager.isDownloading {
+                    ProgressBar(progress: modelManager.downloadProgress)
+                        .frame(height: 6)
                     Text(LocalizedStringKey(modelManager.downloadStatusText))
                         .font(Theme.sans(12))
                         .foregroundColor(Theme.textSecondary)
@@ -85,19 +88,10 @@ struct SettingsView: View {
                         )
                         .foregroundColor(Theme.amber)
                     }
-                } else if !modelManager.isModelReady && settings.usesAppleSpeechBackend {
-                    Button(action: { modelManager.downloadModel() }) {
-                        Label("Prepare Speech Model", systemImage: "arrow.down.circle.fill")
-                            .foregroundColor(Theme.amber)
-                    }
                 }
 
                 if let error = modelManager.downloadError {
-                    if settings.usesAppleSpeechBackend {
-                        WarningStrip(message: error, actionTitle: "Retry") {
-                            modelManager.downloadModel()
-                        }
-                    } else {
+                    if !settings.usesAppleSpeechBackend {
                         Text(error)
                             .font(Theme.sans(12))
                             .foregroundColor(Theme.rec)
@@ -433,7 +427,7 @@ struct SettingsView: View {
             return LocalizedStringKey("Model Ready")
         }
         if settings.usesAppleSpeechBackend {
-            return LocalizedStringKey("Preparing speech model...")
+            return LocalizedStringKey(modelManager.speechAssetSnapshot.statusTitle)
         }
         return LocalizedStringKey("Please download model")
     }

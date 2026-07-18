@@ -42,11 +42,15 @@ struct WhisperTranscriptionApp: App {
                             if !ProcessInfo.processInfo.arguments.contains("--ui-test-long-transcription") {
                                 performStartupMaintenance(modelContainer: modelContainer)
                                 recordingService.handleBecameActive()
+                                ModelManager.shared.handleBecameActive()
                             }
                         }
                         .onChange(of: scenePhase) { _, newPhase in
                             if !ProcessInfo.processInfo.arguments.contains("--ui-test-long-transcription") {
                                 recordingService.handleScenePhase(newPhase)
+                                if newPhase == .active {
+                                    ModelManager.shared.handleBecameActive()
+                                }
                             }
                         }
                 } else {

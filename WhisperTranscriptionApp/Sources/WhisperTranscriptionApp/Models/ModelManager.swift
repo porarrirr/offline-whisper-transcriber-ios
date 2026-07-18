@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Speech
 import SwiftData
@@ -13,6 +14,7 @@ class ModelManager: NSObject, ObservableObject {
     @Published var downloadError: String?
     @Published var downloadStatusText = "Preparing model..."
     @Published var isWaitingForSpeechAsset = false
+    @Published private(set) var speechAssetSnapshot = SpeechAssetSnapshot()
     @Published var currentTranscriptionModel: TranscriptionModel = .whisper(.largeV3TurboQ5_0)
     @Published var isVADModelReady = false
     @Published var vadDownloadProgress: Double = 0
@@ -27,9 +29,8 @@ class ModelManager: NSObject, ObservableObject {
     private var activeWhisperDownloadSize: WhisperModelSize?
     private var activeWhisperDownloadIncludesModel = false
     private var coreMLEncoderInstallTask: Task<Void, Never>?
-    private var speechAssetDownloadTask: Task<Void, Never>?
-    private var speechAssetWaitingTask: Task<Void, Never>?
-    private var activeSpeechAssetDownloadID: UUID?
+    private let speechAssetCoordinator = SpeechAssetCoordinator.shared
+    private var cancellables = Set<AnyCancellable>()
     private var transcriptionOperationCount = 0
     private let vadModelFileName = "ggml-silero-v6.2.0.bin"
     private let vadModelURL = URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin")!
@@ -130,7 +131,7 @@ class ModelManager: NSObject, ObservableObject {
             if let downloadError {
                 return downloadError
             }
-            return String(localized: "Preparing speech model...")
+            return "\(speechAssetSnapshot.statusTitle)\n\(speechAssetSnapshot.statusDetail)"
         }
     }
 
@@ -151,6 +152,9 @@ class ModelManager: NSObject, ObservableObject {
     func beginTranscriptionOperation() {
         transcriptionOperationCount += 1
         isTranscriptionInProgress = true
+        if let locale = currentTranscriptionModel.appleSpeechLocale {
+            speechAssetCoordinator.markUsed(locale: locale)
+        }
     }
 
     func endTranscriptionOperation() {
@@ -158,11 +162,89 @@ class ModelManager: NSObject, ObservableObject {
         isTranscriptionInProgress = transcriptionOperationCount > 0
     }
 
+    func recheckSpeechAssets() {
+        speechAssetCoordinator.recheck(locale: currentTranscriptionModel.appleSpeechLocale)
+    }
+
+    func retrySpeechAssetPreparation() {
+        speechAssetCoordinator.retry()
+    }
+
+    func prepareSpeechAsset(locale: AppleSpeechLocale) {
+        guard modelMutationIsAllowed() else { return }
+        speechAssetCoordinator.prepare(locale: locale)
+    }
+
+    func releaseSpeechAssetReservation(_ reservedLocaleIdentifier: String) async -> Bool {
+        guard modelMutationIsAllowed() else { return false }
+        return await speechAssetCoordinator.release(reservedLocaleIdentifier: reservedLocaleIdentifier)
+    }
+
+    func replaceSpeechAssetReservation(
+        releasing reservedLocaleIdentifier: String,
+        with locale: AppleSpeechLocale
+    ) async -> Bool {
+        guard modelMutationIsAllowed() else { return false }
+        return await speechAssetCoordinator.replaceReservation(
+            releasing: reservedLocaleIdentifier,
+            with: locale
+        )
+    }
+
+    func speechAssetDiagnosticReport() -> String {
+        speechAssetCoordinator.diagnosticReport()
+    }
+
+    func handleBecameActive() {
+        speechAssetCoordinator.handleBecameActive(
+            selectedLocale: currentTranscriptionModel.appleSpeechLocale
+        )
+    }
+
     private override init() {
         currentTranscriptionModel = AppSettings.shared.selectedTranscriptionModel
         super.init()
+        bindSpeechAssetCoordinator()
+        speechAssetCoordinator.restorePersistedState(
+            selectedLocale: currentTranscriptionModel.appleSpeechLocale
+        )
         ensureModelAvailability()
         checkVADModelAvailability()
+    }
+
+    private func bindSpeechAssetCoordinator() {
+        speechAssetCoordinator.$snapshot
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] snapshot in
+                guard let self else { return }
+                self.speechAssetSnapshot = snapshot
+                guard let selectedLocale = self.currentTranscriptionModel.appleSpeechLocale else { return }
+
+                let selectedIdentifier = SpeechAssetLocaleIdentifier.canonical(selectedLocale.localeIdentifier)
+                let selectedRecord = snapshot.localeRecords.first {
+                    SpeechAssetLocaleIdentifier.canonical($0.localeIdentifier) == selectedIdentifier
+                }
+                self.isModelReady = selectedRecord?.isInstalled == true && selectedRecord?.isReserved == true
+
+                let activeIdentifier = (snapshot.normalizedLocaleIdentifier ?? snapshot.requestedLocaleIdentifier)
+                    .map(SpeechAssetLocaleIdentifier.canonical)
+                let activeIsSelected = activeIdentifier == selectedIdentifier
+                self.isDownloading = snapshot.isOperationActive && activeIsSelected
+                self.isWaitingForSpeechAsset = activeIsSelected && {
+                    if case .systemManagedPending = snapshot.state { return true }
+                    return false
+                }()
+                self.downloadProgress = activeIsSelected ? (snapshot.measuredProgress ?? (snapshot.isInstalled ? 1 : 0)) : 0
+                self.downloadStatusText = snapshot.statusTitle
+
+                switch snapshot.state {
+                case .failed, .insufficientStorage, .reservationLimitReached, .unsupported:
+                    self.downloadError = activeIsSelected ? snapshot.statusDetail : nil
+                default:
+                    self.downloadError = nil
+                }
+            }
+            .store(in: &cancellables)
     }
 
     func checkModelAvailability() {
@@ -171,7 +253,7 @@ class ModelManager: NSObject, ObservableObject {
 
     func ensureModelAvailability() {
         Task { @MainActor in
-            await refreshModelReadyState(autoInstallSystemAssets: true)
+            await refreshModelReadyState(autoInstallSystemAssets: false)
         }
     }
 
@@ -179,9 +261,6 @@ class ModelManager: NSObject, ObservableObject {
         let targetModel = currentTranscriptionModel
         switch targetModel.backend {
         case .whisper:
-            if #available(iOS 26.0, *) {
-                await AppleSpeechAssetReservationManager.shared.releaseAll()
-            }
             guard currentTranscriptionModel == targetModel else { return }
             isModelReady = currentWhisperModelIsReady()
         case .appleSpeech(let locale):
@@ -189,20 +268,12 @@ class ModelManager: NSObject, ObservableObject {
                 isModelReady = false
                 return
             }
-            do {
-                let installed = try await AppleSpeechTranscriptionService().assetsInstalled(for: locale)
-                guard currentTranscriptionModel == targetModel else { return }
-                isModelReady = installed
-                downloadError = nil
-                if !installed && autoInstallSystemAssets {
-                    downloadAppleSpeechAssets(locale: locale)
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                guard currentTranscriptionModel == targetModel else { return }
-                isModelReady = false
-                setDownloadError(Self.userFacingMessage(for: error))
+            let ready = await speechAssetCoordinator.isReady(locale: locale)
+            guard currentTranscriptionModel == targetModel else { return }
+            isModelReady = ready
+            speechAssetCoordinator.configureSelectedLocale(locale)
+            if !ready && autoInstallSystemAssets {
+                downloadAppleSpeechAssets(locale: locale)
             }
         }
     }
@@ -224,11 +295,9 @@ class ModelManager: NSObject, ObservableObject {
         activeWhisperDownloadIncludesModel = false
         coreMLEncoderInstallTask?.cancel()
         coreMLEncoderInstallTask = nil
-        speechAssetDownloadTask?.cancel()
-        speechAssetDownloadTask = nil
-        speechAssetWaitingTask?.cancel()
-        speechAssetWaitingTask = nil
-        activeSpeechAssetDownloadID = nil
+        if speechAssetSnapshot.isOperationActive {
+            speechAssetCoordinator.cancel()
+        }
         isWaitingForSpeechAsset = false
         currentTranscriptionModel = model
         AppSettings.shared.selectedTranscriptionModel = model
@@ -240,7 +309,7 @@ class ModelManager: NSObject, ObservableObject {
         downloadStatusText = "Preparing model..."
         downloadError = nil
         Task { @MainActor in
-            await refreshModelReadyState(autoInstallSystemAssets: true)
+            await refreshModelReadyState(autoInstallSystemAssets: false)
         }
     }
 
@@ -321,76 +390,12 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     private func downloadAppleSpeechAssets(locale: AppleSpeechLocale) {
-        guard !isDownloading else { return }
         guard #available(iOS 26.0, *) else {
             setDownloadError(AppleSpeechTranscriptionError.transcriptionUnavailable.localizedDescription)
             return
         }
-
-        isDownloading = true
-        downloadProgress = 0
-        downloadStatusText = "Preparing speech model..."
         downloadError = nil
-        speechAssetDownloadTask?.cancel()
-        let downloadID = UUID()
-        activeSpeechAssetDownloadID = downloadID
-        isWaitingForSpeechAsset = false
-
-        speechAssetWaitingTask?.cancel()
-        speechAssetWaitingTask = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(AppleSpeechDownloadPresentation.waitingThresholdSeconds))
-            guard !Task.isCancelled,
-                  self.activeSpeechAssetDownloadID == downloadID,
-                  self.isDownloading,
-                  AppleSpeechDownloadPresentation.isWaitingForSystem(
-                    progress: self.downloadProgress,
-                    elapsedSeconds: AppleSpeechDownloadPresentation.waitingThresholdSeconds
-                  ) else { return }
-
-            self.isWaitingForSpeechAsset = true
-            self.downloadStatusText = "Waiting for iOS to start the model download. Connect to Wi-Fi, then wait or cancel and retry."
-            AppLogger.info(
-                "Speech asset progress remained at zero; iOS is waiting for download conditions: locale=\(locale.localeIdentifier)",
-                context: "ModelManager"
-            )
-        }
-
-        speechAssetDownloadTask = Task { @MainActor in
-            do {
-                try await AppleSpeechTranscriptionService().ensureAssetsInstalled(for: locale) { progress in
-                    guard self.activeSpeechAssetDownloadID == downloadID else { return }
-                    self.downloadProgress = progress
-                    if progress > 0 {
-                        self.speechAssetWaitingTask?.cancel()
-                        self.speechAssetWaitingTask = nil
-                        self.isWaitingForSpeechAsset = false
-                        self.downloadStatusText = "Downloading speech model..."
-                    }
-                }
-                try Task.checkCancellation()
-                guard self.activeSpeechAssetDownloadID == downloadID,
-                      self.currentTranscriptionModel == .appleSpeech(locale) else { return }
-                self.isModelReady = true
-                self.isDownloading = false
-                self.downloadProgress = 1
-                self.downloadStatusText = "Ready!"
-                self.downloadError = nil
-            } catch {
-                guard !Task.isCancelled,
-                      self.activeSpeechAssetDownloadID == downloadID,
-                      self.currentTranscriptionModel == .appleSpeech(locale) else { return }
-                self.setDownloadError(Self.userFacingMessage(for: error))
-                self.isModelReady = false
-                self.isDownloading = false
-            }
-            if self.activeSpeechAssetDownloadID == downloadID {
-                self.speechAssetWaitingTask?.cancel()
-                self.speechAssetWaitingTask = nil
-                self.isWaitingForSpeechAsset = false
-                self.activeSpeechAssetDownloadID = nil
-                self.speechAssetDownloadTask = nil
-            }
-        }
+        speechAssetCoordinator.prepare(locale: locale)
     }
 
     func downloadVADModel() {
@@ -410,17 +415,16 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     func cancelDownload() {
+        if currentTranscriptionModel.backend.isAppleSpeech {
+            speechAssetCoordinator.cancel()
+            return
+        }
         downloadTask?.cancel()
         downloadTask = nil
         activeWhisperDownloadSize = nil
         activeWhisperDownloadIncludesModel = false
         coreMLEncoderInstallTask?.cancel()
         coreMLEncoderInstallTask = nil
-        speechAssetDownloadTask?.cancel()
-        speechAssetDownloadTask = nil
-        speechAssetWaitingTask?.cancel()
-        speechAssetWaitingTask = nil
-        activeSpeechAssetDownloadID = nil
         isWaitingForSpeechAsset = false
         isDownloading = false
         downloadProgress = 0
@@ -478,13 +482,15 @@ class ModelManager: NSObject, ObservableObject {
             Task {
                 await WhisperModelService.shared.invalidateAndUnload()
             }
-        case .appleSpeech:
-            if #available(iOS 26.0, *) {
-                Task { @MainActor in
-                    await AppleSpeechAssetReservationManager.shared.releaseAll()
-                    isModelReady = false
-                    downloadError = nil
-                }
+        case .appleSpeech(let locale):
+            guard let record = speechAssetSnapshot.localeRecords.first(where: {
+                SpeechAssetLocaleIdentifier.canonical($0.localeIdentifier)
+                    == SpeechAssetLocaleIdentifier.canonical(locale.localeIdentifier)
+            }), let reservedLocaleIdentifier = record.reservedLocaleIdentifier else { return }
+            Task { @MainActor in
+                _ = await speechAssetCoordinator.release(reservedLocaleIdentifier: reservedLocaleIdentifier)
+                isModelReady = false
+                downloadError = nil
             }
         }
     }

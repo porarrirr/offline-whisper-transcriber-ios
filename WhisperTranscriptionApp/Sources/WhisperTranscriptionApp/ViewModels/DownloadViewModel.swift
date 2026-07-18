@@ -11,6 +11,7 @@ class DownloadViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var statusText = "Preparing model..."
     @Published var isWaitingForSpeechAsset = false
+    @Published var speechAssetSnapshot = SpeechAssetSnapshot()
     
     private var modelManager = ModelManager.shared
     private var cancellables = Set<AnyCancellable>()
@@ -62,6 +63,17 @@ class DownloadViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        modelManager.$speechAssetSnapshot
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] snapshot in
+                self?.speechAssetSnapshot = snapshot
+                self?.isWaitingForSpeechAsset = {
+                    if case .systemManagedPending = snapshot.state { return true }
+                    return false
+                }()
+            }
+            .store(in: &cancellables)
+
         modelManager.$downloadError
             .receive(on: DispatchQueue.main)
             .sink { [weak self] error in
@@ -75,7 +87,7 @@ class DownloadViewModel: ObservableObject {
         modelManager.downloadModel()
     }
     
-    func checkAvailability() {
+    func checkAvailability(autoPrepareAppleSpeech: Bool = false) {
         modelManager.checkModelAvailability()
         if modelManager.isModelReady {
             isComplete = true
@@ -83,11 +95,28 @@ class DownloadViewModel: ObservableObject {
         } else if AppSettings.shared.usesAppleSpeechBackend {
             isComplete = false
             modelManager.ensureModelAvailability()
-            isDownloading = modelManager.isDownloading
-            statusText = "Preparing speech model..."
+            if autoPrepareAppleSpeech,
+               !modelManager.speechAssetSnapshot.isOperationActive,
+               !modelManager.isModelReady {
+                modelManager.downloadModel()
+            }
+            isDownloading = modelManager.isDownloading || autoPrepareAppleSpeech
+            statusText = modelManager.speechAssetSnapshot.statusTitle
         } else {
             isComplete = false
             isModelAvailable = false
         }
+    }
+
+    func recheckSpeechAsset() {
+        modelManager.recheckSpeechAssets()
+    }
+
+    func retrySpeechAsset() {
+        modelManager.retrySpeechAssetPreparation()
+    }
+
+    func cancelSpeechAsset() {
+        modelManager.cancelDownload()
     }
 }
