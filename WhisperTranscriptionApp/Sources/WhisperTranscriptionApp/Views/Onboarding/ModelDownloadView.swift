@@ -4,6 +4,9 @@ struct ModelDownloadView: View {
     @StateObject private var viewModel = DownloadViewModel()
     @StateObject private var settings = AppSettings.shared
     @Environment(\.dismiss) private var dismiss
+    @State private var speechLocaleOptions: [AppleSpeechLocale] = []
+    @State private var didLoadSpeechLocaleOptions = false
+    @State private var isLoadingSpeechLocaleOptions = false
 
     var isPresentedAsSheet: Bool
 
@@ -33,6 +36,9 @@ struct ModelDownloadView: View {
         }
         .onAppear {
             viewModel.checkAvailability()
+        }
+        .task {
+            await refreshSpeechLocaleOptions()
         }
     }
 
@@ -127,7 +133,9 @@ struct ModelDownloadView: View {
                 }
 
                 if let error = viewModel.errorMessage {
-                    WarningStrip(message: error)
+                    WarningStrip(message: error, actionTitle: "Retry") {
+                        viewModel.startDownload()
+                    }
                 }
 
                 if settings.usesWhisperBackend {
@@ -164,7 +172,7 @@ struct ModelDownloadView: View {
             TechLabel(text: "Select Model")
 
             Picker("Model", selection: $settings.selectedTranscriptionModel) {
-                ForEach(TranscriptionModel.pickerOptions(selectedModel: settings.selectedTranscriptionModel)) { model in
+                ForEach(modelPickerOptions) { model in
                     Text(model.displayName).tag(model)
                 }
             }
@@ -173,6 +181,22 @@ struct ModelDownloadView: View {
             .onChange(of: settings.selectedTranscriptionModel) { _, newValue in
                 ModelManager.shared.switchModel(model: newValue)
                 viewModel.checkAvailability()
+            }
+
+            if isLoadingSpeechLocaleOptions {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .tint(Theme.amber)
+                    Text("Loading SpeechTranscriber languages...")
+                        .font(Theme.sans(12))
+                        .foregroundColor(Theme.textSecondary)
+                }
+            } else if didLoadSpeechLocaleOptions,
+                      speechLocaleOptions.isEmpty,
+                      settings.usesAppleSpeechBackend {
+                Text("No SpeechTranscriber languages are available on this device.")
+                    .font(Theme.sans(12))
+                    .foregroundColor(Theme.textSecondary)
             }
 
             HStack(alignment: .top, spacing: 8) {
@@ -187,6 +211,23 @@ struct ModelDownloadView: View {
             }
         }
         .recorderPanel(padding: 14)
+    }
+
+    private var modelPickerOptions: [TranscriptionModel] {
+        let locales = didLoadSpeechLocaleOptions ? speechLocaleOptions : AppleSpeechLocale.pickerCases
+        return TranscriptionModel.pickerOptions(
+            selectedModel: settings.selectedTranscriptionModel,
+            appleSpeechLocales: locales
+        )
+    }
+
+    @MainActor
+    private func refreshSpeechLocaleOptions() async {
+        guard !didLoadSpeechLocaleOptions, !isLoadingSpeechLocaleOptions else { return }
+        isLoadingSpeechLocaleOptions = true
+        speechLocaleOptions = await AppleSpeechLocale.speechTranscriberSupportedCases()
+        didLoadSpeechLocaleOptions = true
+        isLoadingSpeechLocaleOptions = false
     }
 }
 

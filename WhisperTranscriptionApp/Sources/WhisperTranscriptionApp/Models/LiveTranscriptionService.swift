@@ -324,6 +324,9 @@ final class LiveTranscriptionService {
     }
 
     private func ensureAssetsInstalled(for transcriber: SpeechTranscriber) async throws {
+        let reservedLocale = transcriber.selectedLocales.first ?? locale.locale
+        try await AppleSpeechAssetReservationManager.shared.reserveExclusively(reservedLocale)
+
         let status = await AssetInventory.status(forModules: [transcriber])
         if status == .installed {
             return
@@ -331,9 +334,6 @@ final class LiveTranscriptionService {
         if status == .unsupported {
             throw LiveTranscriptionError.unsupportedLocale
         }
-
-        let reservedLocale = transcriber.selectedLocales.first ?? locale.locale
-        _ = try await AssetInventory.reserve(locale: reservedLocale)
 
         guard let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) else {
             let refreshed = await AssetInventory.status(forModules: [transcriber])

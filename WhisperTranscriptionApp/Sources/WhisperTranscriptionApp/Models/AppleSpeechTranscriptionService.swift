@@ -5,6 +5,7 @@ import Speech
 enum AppleSpeechTranscriptionError: LocalizedError {
     case localeNotSupported
     case assetsNotReady
+    case reservationUpdateFailed(maximum: Int)
     case transcriptionUnavailable
     case emptyTranscription
 
@@ -14,21 +15,120 @@ enum AppleSpeechTranscriptionError: LocalizedError {
             return String(localized: "This language is not supported by on-device speech recognition.")
         case .assetsNotReady:
             return String(localized: "Speech model could not be prepared automatically.")
+        case .reservationUpdateFailed(let maximum):
+            return String(
+                format: String(localized: "Could not update the speech model language slot (this device allows up to %lld)."),
+                maximum
+            )
         case .transcriptionUnavailable:
             return String(localized: "Speech transcription is not available on this device.")
         case .emptyTranscription:
             return String(localized: "Transcription finished, but no text was produced.")
         }
     }
+
+    var recoverySuggestion: String? {
+        switch self {
+        case .assetsNotReady, .reservationUpdateFailed:
+            return String(localized: "Tap Retry. If the problem continues, restart the app and try again.")
+        case .localeNotSupported, .transcriptionUnavailable, .emptyTranscription:
+            return nil
+        }
+    }
+}
+
+enum AppleSpeechReservationPolicy {
+    static func releaseIndexes(
+        reservedEquivalentLocales: [AppleSpeechLocale?],
+        keeping target: AppleSpeechLocale
+    ) -> [Int] {
+        var keptTarget = false
+        return reservedEquivalentLocales.indices.filter { index in
+            guard reservedEquivalentLocales[index] == target, !keptTarget else {
+                return true
+            }
+            keptTarget = true
+            return false
+        }
+    }
+}
+
+@available(iOS 26.0, *)
+actor AppleSpeechAssetReservationManager {
+    static let shared = AppleSpeechAssetReservationManager()
+    private var desiredLocale: AppleSpeechLocale?
+
+    /// This app uses one SpeechTranscriber locale at a time. Keep that reservation and
+    /// release every stale reservation before requesting another asset installation.
+    func reserveExclusively(_ locale: Locale) async throws {
+        try Task.checkCancellation()
+
+        let target = AppleSpeechLocale(locale: locale)
+        desiredLocale = target
+        let reservedLocales = await AssetInventory.reservedLocales
+        try ensureStillDesired(target)
+        var equivalentLocales: [AppleSpeechLocale?] = []
+
+        for reservedLocale in reservedLocales {
+            try Task.checkCancellation()
+            let equivalentLocale = await SpeechTranscriber.supportedLocale(equivalentTo: reservedLocale)
+            try ensureStillDesired(target)
+            equivalentLocales.append(equivalentLocale.map { AppleSpeechLocale(locale: $0) })
+        }
+
+        let releaseIndexes = AppleSpeechReservationPolicy.releaseIndexes(
+            reservedEquivalentLocales: equivalentLocales,
+            keeping: target
+        )
+        for index in releaseIndexes {
+            try Task.checkCancellation()
+            _ = await AssetInventory.release(reservedLocale: reservedLocales[index])
+            try ensureStillDesired(target)
+        }
+
+        guard releaseIndexes.count == reservedLocales.count else { return }
+
+        do {
+            _ = try await AssetInventory.reserve(locale: locale)
+            try ensureStillDesired(target)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            AppLogger.error(
+                "Failed to reserve the selected SpeechTranscriber locale \(locale.identifier)",
+                context: "AppleSpeechAssetReservationManager",
+                error: error
+            )
+            throw AppleSpeechTranscriptionError.reservationUpdateFailed(
+                maximum: AssetInventory.maximumReservedLocales
+            )
+        }
+    }
+
+    func releaseAll() async {
+        desiredLocale = nil
+        let reservedLocales = await AssetInventory.reservedLocales
+        guard desiredLocale == nil else { return }
+        for locale in reservedLocales {
+            guard desiredLocale == nil else { return }
+            _ = await AssetInventory.release(reservedLocale: locale)
+        }
+    }
+
+    private func ensureStillDesired(_ locale: AppleSpeechLocale) throws {
+        guard desiredLocale == locale else { throw CancellationError() }
+    }
 }
 
 @available(iOS 26.0, *)
 struct AppleSpeechTranscriptionService {
-    func assetsInstalled(for locale: AppleSpeechLocale) async -> Bool {
-        guard SpeechTranscriber.isAvailable,
-              let transcriber = try? await makeTranscriber(locale: locale, includeTimestamps: false) else {
-            return false
+    func assetsInstalled(for locale: AppleSpeechLocale) async throws -> Bool {
+        guard SpeechTranscriber.isAvailable else {
+            throw AppleSpeechTranscriptionError.transcriptionUnavailable
         }
+        let transcriber = try await makeTranscriber(locale: locale, includeTimestamps: false)
+        let reservedLocale = transcriber.selectedLocales.first ?? locale.locale
+        try await AppleSpeechAssetReservationManager.shared.reserveExclusively(reservedLocale)
         return await AssetInventory.status(forModules: [transcriber]) == .installed
     }
 
@@ -41,6 +141,9 @@ struct AppleSpeechTranscriptionService {
         }
 
         let transcriber = try await makeTranscriber(locale: locale, includeTimestamps: false)
+        let reservedLocale = transcriber.selectedLocales.first ?? locale.locale
+        try await AppleSpeechAssetReservationManager.shared.reserveExclusively(reservedLocale)
+
         let status = await AssetInventory.status(forModules: [transcriber])
         if status == .installed {
             await MainActor.run { onProgress(1) }
@@ -49,9 +152,6 @@ struct AppleSpeechTranscriptionService {
         if status == .unsupported {
             throw AppleSpeechTranscriptionError.localeNotSupported
         }
-
-        let reservedLocale = transcriber.selectedLocales.first ?? locale.locale
-        _ = try await AssetInventory.reserve(locale: reservedLocale)
 
         guard let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) else {
             let refreshed = await AssetInventory.status(forModules: [transcriber])
@@ -72,6 +172,7 @@ struct AppleSpeechTranscriptionService {
         defer { observation.invalidate() }
 
         try await request.downloadAndInstall()
+        try Task.checkCancellation()
         await MainActor.run { onProgress(1) }
     }
 

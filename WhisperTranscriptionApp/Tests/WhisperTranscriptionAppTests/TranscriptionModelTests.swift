@@ -48,6 +48,32 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertEqual(cases, [englishUS, frenchFR, japaneseJP])
     }
 
+    func testSpeechReservationPolicyKeepsOnlyFirstEquivalentSelectedLocale() {
+        let japanese = AppleSpeechLocale(localeIdentifier: "ja_JP")
+        let english = AppleSpeechLocale(localeIdentifier: "en_US")
+
+        XCTAssertEqual(
+            AppleSpeechReservationPolicy.releaseIndexes(
+                reservedEquivalentLocales: [english, japanese, nil, japanese],
+                keeping: japanese
+            ),
+            [0, 2, 3]
+        )
+    }
+
+    func testSpeechReservationPolicyReleasesAllWhenSelectedLocaleIsNotReserved() {
+        let japanese = AppleSpeechLocale(localeIdentifier: "ja_JP")
+        let english = AppleSpeechLocale(localeIdentifier: "en_US")
+
+        XCTAssertEqual(
+            AppleSpeechReservationPolicy.releaseIndexes(
+                reservedEquivalentLocales: [english, nil],
+                keeping: japanese
+            ),
+            [0, 1]
+        )
+    }
+
     func testInvalidStorageKeysReturnNil() {
         XCTAssertNil(TranscriptionModel(storageKey: ""))
         XCTAssertNil(TranscriptionModel(storageKey: "whisper:missing"))

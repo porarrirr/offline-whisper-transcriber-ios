@@ -87,9 +87,15 @@ struct SettingsView: View {
                 }
 
                 if let error = modelManager.downloadError {
-                    Text(error)
-                        .font(Theme.sans(12))
-                        .foregroundColor(Theme.rec)
+                    if settings.usesAppleSpeechBackend {
+                        WarningStrip(message: error, actionTitle: "Retry") {
+                            modelManager.downloadModel()
+                        }
+                    } else {
+                        Text(error)
+                            .font(Theme.sans(12))
+                            .foregroundColor(Theme.rec)
+                    }
                 }
 
                 if settings.usesWhisperBackend {

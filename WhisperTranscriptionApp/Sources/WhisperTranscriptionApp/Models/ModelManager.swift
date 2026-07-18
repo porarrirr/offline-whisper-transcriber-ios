@@ -27,6 +27,7 @@ class ModelManager: NSObject, ObservableObject {
     private var activeWhisperDownloadIncludesModel = false
     private var coreMLEncoderInstallTask: Task<Void, Never>?
     private var speechAssetDownloadTask: Task<Void, Never>?
+    private var activeSpeechAssetDownloadID: UUID?
     private var transcriptionOperationCount = 0
     private let vadModelFileName = "ggml-silero-v6.2.0.bin"
     private let vadModelURL = URL(string: "https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin")!
@@ -173,18 +174,33 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     func refreshModelReadyState(autoInstallSystemAssets: Bool = false) async {
-        switch currentTranscriptionModel.backend {
+        let targetModel = currentTranscriptionModel
+        switch targetModel.backend {
         case .whisper:
+            if #available(iOS 26.0, *) {
+                await AppleSpeechAssetReservationManager.shared.releaseAll()
+            }
+            guard currentTranscriptionModel == targetModel else { return }
             isModelReady = currentWhisperModelIsReady()
         case .appleSpeech(let locale):
             guard #available(iOS 26.0, *) else {
                 isModelReady = false
                 return
             }
-            let installed = await AppleSpeechTranscriptionService().assetsInstalled(for: locale)
-            isModelReady = installed
-            if !installed && autoInstallSystemAssets {
-                downloadAppleSpeechAssets(locale: locale)
+            do {
+                let installed = try await AppleSpeechTranscriptionService().assetsInstalled(for: locale)
+                guard currentTranscriptionModel == targetModel else { return }
+                isModelReady = installed
+                downloadError = nil
+                if !installed && autoInstallSystemAssets {
+                    downloadAppleSpeechAssets(locale: locale)
+                }
+            } catch is CancellationError {
+                return
+            } catch {
+                guard currentTranscriptionModel == targetModel else { return }
+                isModelReady = false
+                setDownloadError(Self.userFacingMessage(for: error))
             }
         }
     }
@@ -208,6 +224,7 @@ class ModelManager: NSObject, ObservableObject {
         coreMLEncoderInstallTask = nil
         speechAssetDownloadTask?.cancel()
         speechAssetDownloadTask = nil
+        activeSpeechAssetDownloadID = nil
         currentTranscriptionModel = model
         AppSettings.shared.selectedTranscriptionModel = model
         Task {
@@ -310,23 +327,35 @@ class ModelManager: NSObject, ObservableObject {
         downloadStatusText = "Preparing speech model..."
         downloadError = nil
         speechAssetDownloadTask?.cancel()
+        let downloadID = UUID()
+        activeSpeechAssetDownloadID = downloadID
 
         speechAssetDownloadTask = Task { @MainActor in
             do {
                 try await AppleSpeechTranscriptionService().ensureAssetsInstalled(for: locale) { progress in
+                    guard self.activeSpeechAssetDownloadID == downloadID else { return }
                     self.downloadProgress = progress
                 }
+                try Task.checkCancellation()
+                guard self.activeSpeechAssetDownloadID == downloadID,
+                      self.currentTranscriptionModel == .appleSpeech(locale) else { return }
                 self.isModelReady = true
                 self.isDownloading = false
                 self.downloadProgress = 1
                 self.downloadStatusText = "Ready!"
                 self.downloadError = nil
             } catch {
-                self.setDownloadError(error.localizedDescription)
+                guard !Task.isCancelled,
+                      self.activeSpeechAssetDownloadID == downloadID,
+                      self.currentTranscriptionModel == .appleSpeech(locale) else { return }
+                self.setDownloadError(Self.userFacingMessage(for: error))
+                self.isModelReady = false
                 self.isDownloading = false
-                await self.refreshModelReadyState(autoInstallSystemAssets: false)
             }
-            self.speechAssetDownloadTask = nil
+            if self.activeSpeechAssetDownloadID == downloadID {
+                self.activeSpeechAssetDownloadID = nil
+                self.speechAssetDownloadTask = nil
+            }
         }
     }
 
@@ -355,6 +384,7 @@ class ModelManager: NSObject, ObservableObject {
         coreMLEncoderInstallTask = nil
         speechAssetDownloadTask?.cancel()
         speechAssetDownloadTask = nil
+        activeSpeechAssetDownloadID = nil
         isDownloading = false
         downloadProgress = 0
         downloadStatusText = "Preparing model..."
@@ -411,11 +441,12 @@ class ModelManager: NSObject, ObservableObject {
             Task {
                 await WhisperModelService.shared.invalidateAndUnload()
             }
-        case .appleSpeech(let locale):
+        case .appleSpeech:
             if #available(iOS 26.0, *) {
                 Task { @MainActor in
-                    _ = await AssetInventory.release(reservedLocale: locale.locale)
-                    await refreshModelReadyState(autoInstallSystemAssets: false)
+                    await AppleSpeechAssetReservationManager.shared.releaseAll()
+                    isModelReady = false
+                    downloadError = nil
                 }
             }
         }
@@ -684,6 +715,18 @@ class ModelManager: NSObject, ObservableObject {
     private func setDownloadError(_ message: String) {
         downloadError = message
         AppLogger.error(message, context: "ModelManager")
+    }
+
+    private static func userFacingMessage(for error: Error) -> String {
+        guard let localizedError = error as? LocalizedError else {
+            return error.localizedDescription
+        }
+
+        let description = localizedError.errorDescription ?? error.localizedDescription
+        guard let recovery = localizedError.recoverySuggestion, !recovery.isEmpty else {
+            return description
+        }
+        return "\(description)\n\(recovery)"
     }
 
     private func modelMutationIsAllowed() -> Bool {
