@@ -91,7 +91,7 @@ struct SpeechAssetStatusCard: View {
             switch state {
             case .checking:
                 if snapshot.inventoryStatus == .supported {
-                    Button("Prepare") { modelManager.downloadModel() }
+                    Button("Use This Language") { modelManager.downloadModel() }
                         .buttonStyle(.borderedProminent)
                 }
                 Button("Recheck") { modelManager.recheckSpeechAssets() }
@@ -120,7 +120,7 @@ struct SpeechAssetStatusCard: View {
                 }
             case .reservationLimitReached:
                 if showsManagementAction {
-                    Button("Manage Languages") { presentedSheet = .management }
+                    Button("Replace a Language") { presentedSheet = .management }
                         .buttonStyle(.borderedProminent)
                 }
             case .insufficientStorage, .cancelled, .failed:
@@ -130,7 +130,7 @@ struct SpeechAssetStatusCard: View {
                     .buttonStyle(.borderedProminent)
             case .installed:
                 if !modelManager.isModelReady {
-                    Button("Retain for This App") { modelManager.downloadModel() }
+                    Button("Use This Language") { modelManager.downloadModel() }
                         .buttonStyle(.borderedProminent)
                 }
             case .unsupported:
@@ -209,19 +209,32 @@ struct SpeechAssetManagementView: View {
     private var snapshot: SpeechAssetSnapshot { modelManager.speechAssetSnapshot }
     private var reservedCount: Int { snapshot.localeRecords.filter(\.isReserved).count }
 
-    private var filteredRecords: [SpeechLocaleRecord] {
-        guard !searchText.isEmpty else { return snapshot.localeRecords }
-        return snapshot.localeRecords.filter {
+    private var matchingRecords: [SpeechLocaleRecord] {
+        let records: [SpeechLocaleRecord]
+        if searchText.isEmpty {
+            records = snapshot.localeRecords
+        } else {
+            records = snapshot.localeRecords.filter {
             $0.displayName.localizedCaseInsensitiveContains(searchText)
                 || $0.localeIdentifier.localizedCaseInsensitiveContains(searchText)
+            }
         }
+        return records.sorted(by: alphabeticalOrder)
+    }
+
+    private var retainedRecords: [SpeechLocaleRecord] {
+        matchingRecords.filter(\.isReserved)
+    }
+
+    private var otherRecords: [SpeechLocaleRecord] {
+        matchingRecords.filter { !$0.isReserved }
     }
 
     var body: some View {
         List {
             Section {
                 HStack {
-                    Text("Retained languages")
+                    Text("Languages Available to This App")
                     Spacer()
                     Text("\(reservedCount) / \(snapshot.maximumReservedLocales)")
                         .font(Theme.mono(14, weight: .semibold))
@@ -233,33 +246,40 @@ struct SpeechAssetManagementView: View {
                     .listRowInsets(EdgeInsets())
                     .listRowBackground(Color.clear)
             } footer: {
-                Text("A reservation keeps a language available to this app. Releasing it does not immediately delete the system-managed model.")
+                Text("Languages in this section are ready for this app. iOS manages the model files.")
             }
 
-            Section("Available Languages") {
-                if filteredRecords.isEmpty {
+            if matchingRecords.isEmpty {
+                Section {
                     Text("No SpeechTranscriber languages are available on this device.")
                         .foregroundColor(Theme.textSecondary)
-                } else {
-                    ForEach(filteredRecords) { record in
-                        SpeechLocaleManagementRow(
-                            record: record,
-                            isActiveOperation: isActiveOperation(record),
-                            mutationsDisabled: modelManager.isTranscriptionInProgress || snapshot.isOperationActive,
-                            onSelect: { select(record) },
-                            onPrepare: { prepare(record) },
-                            onRelease: { releaseCandidate = record }
-                        )
-                    }
+                }
+            }
+
+            if !retainedRecords.isEmpty {
+                Section("Languages Available to This App") {
+                    localeRows(retainedRecords)
+                }
+            }
+
+            if !otherRecords.isEmpty {
+                Section("Other Languages") {
+                    localeRows(otherRecords)
                 }
             }
         }
         .searchable(text: $searchText, prompt: "Search Languages")
         .scrollContentBackground(.hidden)
         .background(Theme.background)
-        .navigationTitle("Speech Models")
+        .navigationTitle("iOS SpeechTranscriber Models")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                Text("iOS SpeechTranscriber Models")
+                    .font(Theme.sans(14, weight: .semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
                     presentedSheet = .diagnostics(modelManager.speechAssetDiagnosticReport())
@@ -286,11 +306,11 @@ struct SpeechAssetManagementView: View {
         }
         .alert(item: $releaseCandidate) { record in
             Alert(
-                title: Text("Release Language Reservation"),
+                title: Text("Remove Language from This App"),
                 message: Text(record.isSelected
-                    ? LocalizedStringKey("This is the selected language. It will remain selected but transcription will be unavailable until it is prepared again. The model file may remain on the device because iOS manages deletion.")
-                    : LocalizedStringKey("This removes the language reservation for this app. The model file may remain on the device because iOS manages deletion.")),
-                primaryButton: .destructive(Text("Release")) {
+                    ? LocalizedStringKey("This language is currently selected. It will remain selected but cannot be used until it is prepared again. iOS manages the model file.")
+                    : LocalizedStringKey("This language will no longer be available to this app. iOS manages the model file.")),
+                primaryButton: .destructive(Text("Remove from This App")) {
                     Task { _ = await modelManager.releaseSpeechAssetReservation(record.reservedLocaleIdentifier ?? "") }
                 },
                 secondaryButton: .cancel()
@@ -305,16 +325,35 @@ struct SpeechAssetManagementView: View {
             == SpeechAssetLocaleIdentifier.canonical(record.localeIdentifier)
     }
 
-    private func select(_ record: SpeechLocaleRecord) {
-        modelManager.switchModel(model: .appleSpeech(record.locale))
+    @ViewBuilder
+    private func localeRows(_ records: [SpeechLocaleRecord]) -> some View {
+        ForEach(records) { record in
+            SpeechLocaleManagementRow(
+                record: record,
+                isActiveOperation: isActiveOperation(record),
+                mutationsDisabled: modelManager.isTranscriptionInProgress || snapshot.isOperationActive,
+                onUse: { use(record) },
+                onRelease: { releaseCandidate = record }
+            )
+        }
     }
 
-    private func prepare(_ record: SpeechLocaleRecord) {
-        if !record.isReserved, reservedCount >= snapshot.maximumReservedLocales {
+    private func use(_ record: SpeechLocaleRecord) {
+        if !record.isReserved,
+           snapshot.maximumReservedLocales > 0,
+           reservedCount >= snapshot.maximumReservedLocales {
             presentedSheet = .replacement(target: record.locale)
             return
         }
-        modelManager.prepareSpeechAsset(locale: record.locale)
+        modelManager.useSpeechAsset(locale: record.locale)
+    }
+
+    private func alphabeticalOrder(_ lhs: SpeechLocaleRecord, _ rhs: SpeechLocaleRecord) -> Bool {
+        let comparison = lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName)
+        if comparison == .orderedSame {
+            return lhs.localeIdentifier.localizedCaseInsensitiveCompare(rhs.localeIdentifier) == .orderedAscending
+        }
+        return comparison == .orderedAscending
     }
 }
 
@@ -322,8 +361,7 @@ private struct SpeechLocaleManagementRow: View {
     let record: SpeechLocaleRecord
     let isActiveOperation: Bool
     let mutationsDisabled: Bool
-    let onSelect: () -> Void
-    let onPrepare: () -> Void
+    let onUse: () -> Void
     let onRelease: () -> Void
 
     var body: some View {
@@ -345,8 +383,7 @@ private struct SpeechLocaleManagementRow: View {
             }
 
             HStack(spacing: 8) {
-                statusBadge(record.isInstalled ? "Downloaded" : "Not Downloaded", active: record.isInstalled)
-                statusBadge(record.isReserved ? "Retained" : "Not Retained", active: record.isReserved)
+                statusBadge
                 if isActiveOperation {
                     ProgressView()
                         .controlSize(.small)
@@ -355,16 +392,12 @@ private struct SpeechLocaleManagementRow: View {
             }
 
             HStack(spacing: 12) {
-                if !record.isSelected {
-                    Button("Use") { onSelect() }
-                        .buttonStyle(.bordered)
-                }
-                if !record.isInstalled || !record.isReserved {
-                    Button("Add / Prepare") { onPrepare() }
+                if !record.isSelected || !record.isInstalled || !record.isReserved {
+                    Button("Use This Language") { onUse() }
                         .buttonStyle(.borderedProminent)
                 }
                 if record.isReserved {
-                    Button("Release", role: .destructive) { onRelease() }
+                    Button("Remove from This App", role: .destructive) { onRelease() }
                         .buttonStyle(.bordered)
                 }
             }
@@ -374,13 +407,17 @@ private struct SpeechLocaleManagementRow: View {
         .padding(.vertical, 4)
     }
 
-    private func statusBadge(_ text: LocalizedStringKey, active: Bool) -> some View {
-        Text(text)
+    private var statusBadge: some View {
+        let isReady = record.isInstalled && record.isReserved
+        let text: LocalizedStringKey = isActiveOperation
+            ? "Preparing"
+            : (isReady ? "Ready to Use" : "Preparation Required")
+        return Text(text)
             .font(Theme.sans(10, weight: .semibold))
-            .foregroundColor(active ? Theme.amber : Theme.textSecondary)
+            .foregroundColor(isReady || isActiveOperation ? Theme.amber : Theme.textSecondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 4)
-            .background((active ? Theme.amber : Theme.textSecondary).opacity(0.12))
+            .background((isReady || isActiveOperation ? Theme.amber : Theme.textSecondary).opacity(0.12))
             .clipShape(Capsule())
     }
 }
@@ -400,7 +437,7 @@ private struct SpeechReservationReplacementView: View {
             Section {
                 Text(
                     String(
-                        format: String(localized: "To add %@, choose one retained language to release."),
+                        format: String(localized: "To use %@, choose one language to remove from this app."),
                         targetLocale.localizedLocaleName
                     )
                 )
@@ -408,7 +445,7 @@ private struct SpeechReservationReplacementView: View {
                 .foregroundColor(Theme.textSecondary)
             }
 
-            Section("Retained Languages") {
+            Section("Languages Available to This App") {
                 ForEach(reservedRecords) { record in
                     Button {
                         replace(record)
@@ -422,6 +459,15 @@ private struct SpeechReservationReplacementView: View {
                                         .font(Theme.sans(11))
                                         .foregroundColor(Theme.amber)
                                 }
+                                Text(
+                                    String(
+                                        format: String(localized: "Remove %@ and prepare %@"),
+                                        record.displayName,
+                                        targetLocale.localizedLocaleName
+                                    )
+                                )
+                                .font(Theme.sans(11))
+                                .foregroundColor(Theme.textSecondary)
                             }
                             Spacer()
                             Image(systemName: "arrow.triangle.2.circlepath")
@@ -434,7 +480,7 @@ private struct SpeechReservationReplacementView: View {
         }
         .scrollContentBackground(.hidden)
         .background(Theme.background)
-        .navigationTitle("Replace Language")
+        .navigationTitle("Replace a Language")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {

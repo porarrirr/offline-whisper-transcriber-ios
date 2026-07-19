@@ -145,6 +145,16 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertTrue(options.contains(selectedModel))
     }
 
+    func testSpeechCapablePickerKeepsSelectedWhisperTiny() {
+        let selectedModel = TranscriptionModel.whisper(.tiny)
+        let options = TranscriptionModel.pickerOptions(
+            supportsAppleSpeech: true,
+            selectedModel: selectedModel
+        )
+
+        XCTAssertTrue(options.contains(selectedModel))
+    }
+
     func testPickerOptionsUseProvidedAppleSpeechLocales() {
         let englishUS = AppleSpeechLocale(localeIdentifier: "en_US")
         let frenchFR = AppleSpeechLocale(localeIdentifier: "fr_FR")
@@ -179,6 +189,30 @@ final class TranscriptionModelTests: XCTestCase {
                 hadModelSelection: true,
                 selectedModelStorageKey: TranscriptionModel.appleSpeech(.jaJP).storageKey
             )
+        )
+    }
+
+    func testPendingLocaleDefaultDoesNotReplaceAUserWhisperSelection() {
+        XCTAssertFalse(
+            TranscriptionDefaultResolver.shouldApplyResolvedLocaleDefault(
+                expectedModelStorageKey: TranscriptionModel.whisper(.smallQ5_1).storageKey,
+                currentModelStorageKey: TranscriptionModel.whisper(.tiny).storageKey
+            )
+        )
+        XCTAssertTrue(
+            TranscriptionDefaultResolver.shouldApplyResolvedLocaleDefault(
+                expectedModelStorageKey: TranscriptionModel.whisper(.smallQ5_1).storageKey,
+                currentModelStorageKey: TranscriptionModel.whisper(.smallQ5_1).storageKey
+            )
+        )
+    }
+
+    func testPersistedTinyIsAcceptedEvenWhenSpeechCapablePickerOmitsIt() {
+        let tiny = TranscriptionModel.whisper(.tiny)
+        XCTAssertFalse(TranscriptionModel.pickerOptions(supportsAppleSpeech: true).contains(tiny))
+        XCTAssertEqual(
+            TranscriptionDefaultResolver.persistedModel(storageKey: tiny.storageKey),
+            tiny
         )
     }
 }

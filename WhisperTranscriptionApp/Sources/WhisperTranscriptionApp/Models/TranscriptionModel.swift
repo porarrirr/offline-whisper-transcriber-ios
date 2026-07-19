@@ -331,7 +331,14 @@ enum TranscriptionModel: Hashable, Identifiable, Equatable {
             appleSpeechOptions.append(selectedModel)
         }
 
-        return appleSpeechOptions + [smallWhisperOption, qualityWhisperOption]
+        var whisperOptions = [smallWhisperOption, qualityWhisperOption]
+        if let selectedModel,
+           case .whisper = selectedModel,
+           !whisperOptions.contains(selectedModel) {
+            whisperOptions.insert(selectedModel, at: 0)
+        }
+
+        return appleSpeechOptions + whisperOptions
     }
 
     init?(storageKey: String) {

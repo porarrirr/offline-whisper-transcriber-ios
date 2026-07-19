@@ -10,11 +10,7 @@ struct SettingsView: View {
     @State private var showModelDownload = false
     @State private var showDeleteConfirmation = false
     @State private var showLanguagePicker = false
-    @State private var showSpeechLocalePicker = false
     @State private var showLogCopiedConfirmation = false
-    @State private var speechLocaleOptions: [AppleSpeechLocale] = []
-    @State private var didLoadSpeechLocaleOptions = false
-    @State private var isLoadingSpeechLocaleOptions = false
     @FocusState private var isPromptEditorFocused: Bool
 
     var body: some View {
@@ -63,13 +59,6 @@ struct SettingsView: View {
 
                 if settings.usesAppleSpeechBackend {
                     SpeechAssetStatusCard(modelManager: modelManager)
-
-                    NavigationLink {
-                        SpeechAssetManagementView(modelManager: modelManager)
-                    } label: {
-                        Label("Manage SpeechTranscriber Models", systemImage: "externaldrive.badge.plus")
-                            .foregroundColor(Theme.amber)
-                    }
                 } else if modelManager.isDownloading {
                     ProgressBar(progress: modelManager.downloadProgress)
                         .frame(height: 6)
@@ -104,7 +93,20 @@ struct SettingsView: View {
                             .foregroundColor(Theme.rec)
                     }
                     .disabled(modelManager.isTranscriptionInProgress)
+
+                    Button(action: { showModelDownload = true }) {
+                        Label("Add or Manage Whisper Models", systemImage: "externaldrive.badge.plus")
+                            .foregroundColor(Theme.amber)
+                    }
                 }
+
+                NavigationLink {
+                    SpeechAssetManagementView(modelManager: modelManager)
+                } label: {
+                    Label("Manage iOS SpeechTranscriber Models", systemImage: "externaldrive.badge.plus")
+                        .foregroundColor(Theme.amber)
+                }
+                .disabled(modelManager.isTranscriptionInProgress)
 
                 if settings.usesWhisperBackend {
                     Button(action: { showLanguagePicker = true }) {
@@ -128,31 +130,6 @@ struct SettingsView: View {
                         }
                     }
                     .tint(Theme.amberFill)
-                } else if settings.usesAppleSpeechBackend {
-                    Button(action: { showSpeechLocalePicker = true }) {
-                        HStack {
-                            Text("SpeechTranscriber Language")
-                                .foregroundColor(Theme.textPrimary)
-                            Spacer()
-                            Text(selectedSpeechLocaleName)
-                                .foregroundColor(Theme.textSecondary)
-                                .multilineTextAlignment(.trailing)
-                        }
-                    }
-                    .disabled(modelManager.isTranscriptionInProgress || speechLocaleOptions.isEmpty)
-
-                    if isLoadingSpeechLocaleOptions {
-                        HStack {
-                            ProgressView()
-                                .tint(Theme.amber)
-                            Text("Loading SpeechTranscriber languages...")
-                                .foregroundColor(Theme.textSecondary)
-                        }
-                    } else if speechLocaleOptions.isEmpty {
-                        Text("No SpeechTranscriber languages are available on this device.")
-                            .font(Theme.sans(12))
-                            .foregroundColor(Theme.textSecondary)
-                    }
                 }
             } header: {
                 TechLabel(text: "Transcription")
@@ -333,9 +310,6 @@ struct SettingsView: View {
         .onAppear {
             modelManager.ensureModelAvailability()
         }
-        .task(id: settings.selectedTranscriptionModel.storageKey) {
-            await refreshSpeechLocaleOptions()
-        }
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -345,7 +319,7 @@ struct SettingsView: View {
             }
         }
         .sheet(isPresented: $showModelDownload) {
-            ModelDownloadView(isPresentedAsSheet: true)
+            ModelDownloadView(isPresentedAsSheet: true, includesSpeechModels: false)
         }
         .alert("Delete Model", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) {}
@@ -361,29 +335,23 @@ struct SettingsView: View {
         .sheet(isPresented: $showLanguagePicker) {
             LanguagePickerView(selectedLanguage: $settings.selectedLanguage, isPresented: $showLanguagePicker)
         }
-        .sheet(isPresented: $showSpeechLocalePicker) {
-            SpeechTranscriberLanguagePickerView(
-                locales: speechLocaleOptions,
-                selectedLocale: settings.selectedTranscriptionModel.appleSpeechLocale,
-                isLoading: isLoadingSpeechLocaleOptions,
-                isPresented: $showSpeechLocalePicker
-            ) { locale in
-                selectSpeechLocale(locale)
-            }
-        }
     }
 
     private var modelSelectionMenu: some View {
         Menu {
-            ForEach(modelPickerOptions) { model in
-                Button {
-                    settings.selectedTranscriptionModel = model
-                    modelManager.switchModel(model: model)
-                } label: {
-                    if model == settings.selectedTranscriptionModel {
-                        Label(model.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(model.displayName)
+            if modelPickerOptions.isEmpty {
+                Text("No Prepared Models")
+            } else {
+                ForEach(modelPickerOptions) { model in
+                    Button {
+                        settings.selectedTranscriptionModel = model
+                        modelManager.switchModel(model: model)
+                    } label: {
+                        if model == settings.selectedTranscriptionModel {
+                            Label(model.displayName, systemImage: "checkmark")
+                        } else {
+                            Text(model.displayName)
+                        }
                     }
                 }
             }
@@ -412,11 +380,7 @@ struct SettingsView: View {
     }
 
     private var modelPickerOptions: [TranscriptionModel] {
-        let appleSpeechLocales = didLoadSpeechLocaleOptions ? speechLocaleOptions : AppleSpeechLocale.pickerCases
-        return TranscriptionModel.pickerOptions(
-            selectedModel: settings.selectedTranscriptionModel,
-            appleSpeechLocales: appleSpeechLocales
-        )
+        modelManager.availableTranscriptionModels()
     }
 
     private var modelStatusText: LocalizedStringKey {
@@ -432,24 +396,6 @@ struct SettingsView: View {
         return LocalizedStringKey("Please download model")
     }
 
-    private var selectedSpeechLocaleName: String {
-        settings.selectedTranscriptionModel.appleSpeechLocale?.localizedLocaleName ?? String(localized: "Unknown")
-    }
-
-    @MainActor
-    private func refreshSpeechLocaleOptions() async {
-        isLoadingSpeechLocaleOptions = true
-        let locales = await AppleSpeechLocale.speechTranscriberSupportedCases()
-        speechLocaleOptions = locales
-        didLoadSpeechLocaleOptions = true
-        isLoadingSpeechLocaleOptions = false
-    }
-
-    private func selectSpeechLocale(_ locale: AppleSpeechLocale) {
-        let model = TranscriptionModel.appleSpeech(locale)
-        settings.selectedTranscriptionModel = model
-        modelManager.switchModel(model: model)
-    }
 }
 
 struct LanguagePickerView: View {
@@ -475,68 +421,6 @@ struct LanguagePickerView: View {
                         }
                     }
                     .listRowBackground(Theme.panel)
-                }
-            }
-            .scrollContentBackground(.hidden)
-            .background(Theme.background)
-            .navigationTitle("Select Language")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        isPresented = false
-                    }
-                }
-            }
-        }
-    }
-}
-
-struct SpeechTranscriberLanguagePickerView: View {
-    let locales: [AppleSpeechLocale]
-    let selectedLocale: AppleSpeechLocale?
-    let isLoading: Bool
-    @Binding var isPresented: Bool
-    let onSelect: (AppleSpeechLocale) -> Void
-
-    var body: some View {
-        NavigationStack {
-            List {
-                if isLoading && locales.isEmpty {
-                    HStack {
-                        ProgressView()
-                            .tint(Theme.amber)
-                        Text("Loading SpeechTranscriber languages...")
-                            .foregroundColor(Theme.textSecondary)
-                    }
-                    .listRowBackground(Theme.panel)
-                } else if locales.isEmpty {
-                    Text("No SpeechTranscriber languages are available on this device.")
-                        .foregroundColor(Theme.textSecondary)
-                        .listRowBackground(Theme.panel)
-                } else {
-                    ForEach(locales) { locale in
-                        Button(action: {
-                            onSelect(locale)
-                            isPresented = false
-                        }) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(locale.localizedLocaleName)
-                                        .foregroundColor(Theme.textPrimary)
-                                    Text(locale.localeIdentifier.replacingOccurrences(of: "_", with: "-"))
-                                        .font(Theme.mono(11))
-                                        .foregroundColor(Theme.textSecondary)
-                                }
-                                Spacer()
-                                if selectedLocale == locale {
-                                    Image(systemName: "checkmark")
-                                        .foregroundColor(Theme.amber)
-                                }
-                            }
-                        }
-                        .listRowBackground(Theme.panel)
-                    }
                 }
             }
             .scrollContentBackground(.hidden)

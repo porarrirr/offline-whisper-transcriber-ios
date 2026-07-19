@@ -256,6 +256,17 @@
         }
       }
     },
+    "Add or Manage Whisper Models" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Whisperモデルを追加・管理"
+          }
+        }
+      }
+    },
     "Add Tags" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4009,6 +4020,17 @@
         }
       }
     },
+    "iOS SpeechTranscriber Models" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS SpeechTranscriberモデル管理"
+          }
+        }
+      }
+    },
     "iOS still reports this model as being processed, but no measurable progress is available. Use Recheck or copy diagnostics for more information." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4373,6 +4395,28 @@
         }
       }
     },
+    "Languages Available to This App" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアプリで使える言語"
+          }
+        }
+      }
+    },
+    "Languages in this section are ready for this app. iOS manages the model files." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここにある言語は、このアプリですぐ使えます。モデルファイル自体はiOSが管理します。"
+          }
+        }
+      }
+    },
     "Large v3 Turbo Q5_0 (Light & Fast/High Accuracy)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4692,6 +4736,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "iOS SpeechTranscriber による低遅延文字起こし"
+          }
+        }
+      }
+    },
+    "Manage iOS SpeechTranscriber Models" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iOS SpeechTranscriberモデル管理"
           }
         }
       }
@@ -5182,6 +5237,17 @@
         }
       }
     },
+    "No Prepared Models" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "準備済みモデルがありません"
+          }
+        }
+      }
+    },
     "No search results" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5571,6 +5637,17 @@
         }
       }
     },
+    "Other Languages" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他の言語"
+          }
+        }
+      }
+    },
     "Pause Audio" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5754,6 +5831,17 @@
         }
       }
     },
+    "Preparation Required" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "準備が必要"
+          }
+        }
+      }
+    },
     "Prepare" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5761,6 +5849,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "準備"
+          }
+        }
+      }
+    },
+    "Preparing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "準備中"
           }
         }
       }
@@ -5994,6 +6093,17 @@
         }
       }
     },
+    "Ready to Use" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用可能"
+          }
+        }
+      }
+    },
     "Ready!" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6176,6 +6286,17 @@
         }
       }
     },
+    "Remove %@ and prepare %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@を外して%2$@を準備"
+          }
+        }
+      }
+    },
     "Remove from Favorites" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6207,6 +6328,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "取消收藏"
+          }
+        }
+      }
+    },
+    "Remove from This App" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアプリから外す"
+          }
+        }
+      }
+    },
+    "Remove Language from This App" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このアプリから言語を外す"
+          }
+        }
+      }
+    },
+    "Replace a Language" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "言語を入れ替える"
           }
         }
       }
@@ -7094,9 +7248,6 @@
         }
       }
     },
-    "SpeechTranscriber Language" : {
-
-    },
     "Start Recording" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7789,6 +7940,17 @@
         }
       }
     },
+    "This language is currently selected. It will remain selected but cannot be used until it is prepared again. iOS manages the model file." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在選択中の言語です。選択は維持されますが、再び準備するまで使用できません。モデルファイルはiOSが管理します。"
+          }
+        }
+      }
+    },
     "This language is not supported by iOS SpeechTranscriber." : {
       "extractionState" : "stale",
       "localizations" : {
@@ -7807,6 +7969,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "この言語はオンデバイス音声認識に対応していません。"
+          }
+        }
+      }
+    },
+    "This language will no longer be available to this app. iOS manages the model file." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この言語をアプリから外します。モデルファイルはiOSが管理します。"
           }
         }
       }
@@ -7910,6 +8083,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%@を追加するには、保持中の言語を1つ選んで解除してください。"
+          }
+        }
+      }
+    },
+    "To use %@, choose one language to remove from this app." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@を使うには、このアプリから外す言語を1つ選んでください。"
           }
         }
       }
@@ -8819,6 +9003,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用已儲存的部分錄音"
+          }
+        }
+      }
+    },
+    "Use This Language" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この言語を使う"
           }
         }
       }

@@ -175,6 +175,14 @@ class ModelManager: NSObject, ObservableObject {
         speechAssetCoordinator.prepare(locale: locale)
     }
 
+    func useSpeechAsset(locale: AppleSpeechLocale) {
+        guard modelMutationIsAllowed() else { return }
+        switchModel(model: .appleSpeech(locale))
+        if !isSpeechAssetReady(locale: locale) {
+            speechAssetCoordinator.prepare(locale: locale)
+        }
+    }
+
     func releaseSpeechAssetReservation(_ reservedLocaleIdentifier: String) async -> Bool {
         guard modelMutationIsAllowed() else { return false }
         return await speechAssetCoordinator.release(reservedLocaleIdentifier: reservedLocaleIdentifier)
@@ -185,10 +193,31 @@ class ModelManager: NSObject, ObservableObject {
         with locale: AppleSpeechLocale
     ) async -> Bool {
         guard modelMutationIsAllowed() else { return false }
-        return await speechAssetCoordinator.replaceReservation(
-            releasing: reservedLocaleIdentifier,
-            with: locale
-        )
+        guard await speechAssetCoordinator.release(
+            reservedLocaleIdentifier: reservedLocaleIdentifier
+        ) else { return false }
+
+        switchModel(model: .appleSpeech(locale))
+        speechAssetCoordinator.prepare(locale: locale)
+        return true
+    }
+
+    func availableTranscriptionModels() -> [TranscriptionModel] {
+        let speechModels = speechAssetSnapshot.localeRecords
+            .filter { $0.isInstalled && $0.isReserved }
+            .sorted(by: Self.localeRecordAlphabeticalOrder)
+            .map { TranscriptionModel.appleSpeech($0.locale) }
+
+        let whisperModels: [TranscriptionModel] = [
+            .whisper(.tiny),
+            .whisper(.smallQ5_1),
+            .whisper(.largeV3TurboQ5_0),
+        ].filter { model in
+            guard let size = model.whisperModelSize else { return false }
+            return whisperReadiness(for: size).isReady
+        }
+
+        return speechModels + whisperModels
     }
 
     func speechAssetDiagnosticReport() -> String {
@@ -247,6 +276,26 @@ class ModelManager: NSObject, ObservableObject {
             .store(in: &cancellables)
     }
 
+    private func isSpeechAssetReady(locale: AppleSpeechLocale) -> Bool {
+        let identifier = SpeechAssetLocaleIdentifier.canonical(locale.localeIdentifier)
+        return speechAssetSnapshot.localeRecords.contains {
+            SpeechAssetLocaleIdentifier.canonical($0.localeIdentifier) == identifier
+                && $0.isInstalled
+                && $0.isReserved
+        }
+    }
+
+    private static func localeRecordAlphabeticalOrder(
+        _ lhs: SpeechLocaleRecord,
+        _ rhs: SpeechLocaleRecord
+    ) -> Bool {
+        let comparison = lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName)
+        if comparison == .orderedSame {
+            return lhs.localeIdentifier.localizedCaseInsensitiveCompare(rhs.localeIdentifier) == .orderedAscending
+        }
+        return comparison == .orderedAscending
+    }
+
     func checkModelAvailability() {
         ensureModelAvailability()
     }
@@ -284,7 +333,13 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     func switchModel(model: TranscriptionModel) {
-        guard model != currentTranscriptionModel else { return }
+        guard model != currentTranscriptionModel else {
+            if AppSettings.shared.selectedTranscriptionModel != model {
+                AppSettings.shared.selectedTranscriptionModel = model
+            }
+            ensureModelAvailability()
+            return
+        }
         guard modelMutationIsAllowed() else {
             AppSettings.shared.selectedTranscriptionModel = currentTranscriptionModel
             return
@@ -301,6 +356,7 @@ class ModelManager: NSObject, ObservableObject {
         isWaitingForSpeechAsset = false
         currentTranscriptionModel = model
         AppSettings.shared.selectedTranscriptionModel = model
+        isModelReady = false
         Task {
             await WhisperModelService.shared.invalidateAndUnload()
         }

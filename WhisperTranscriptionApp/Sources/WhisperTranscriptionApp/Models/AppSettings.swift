@@ -74,6 +74,18 @@ enum TranscriptionDefaultResolver {
         return selectedModelStorageKey == TranscriptionModel.appleSpeech(.jaJP).storageKey
     }
 
+    static func shouldApplyResolvedLocaleDefault(
+        expectedModelStorageKey: String,
+        currentModelStorageKey: String
+    ) -> Bool {
+        expectedModelStorageKey == currentModelStorageKey
+    }
+
+    static func persistedModel(storageKey: String?) -> TranscriptionModel? {
+        guard let storageKey else { return nil }
+        return TranscriptionModel(storageKey: storageKey)
+    }
+
     private static let supportedWhisperLanguageCodes: Set<String> = [
         "ja",
         "en",
@@ -167,9 +179,9 @@ class AppSettings: ObservableObject {
         Self.migrateDefaultsIfNeeded()
 
         let defaults = UserDefaults.standard
-        if let key = defaults.string(forKey: Self.selectedTranscriptionModelKey),
-           let model = TranscriptionModel(storageKey: key),
-           TranscriptionModel.pickerOptions(selectedModel: model).contains(model) {
+        if let model = TranscriptionDefaultResolver.persistedModel(
+            storageKey: defaults.string(forKey: Self.selectedTranscriptionModelKey)
+        ) {
             self.selectedTranscriptionModel = model
         } else {
             self.selectedTranscriptionModel = Self.preferredDefaultTranscriptionModel
@@ -192,8 +204,13 @@ class AppSettings: ObservableObject {
             self.appAppearance = .system
         }
 
+        let localeResolutionExpectedModelKey = selectedTranscriptionModel.storageKey
+        let localeResolutionExpectedLanguage = selectedLanguage
         Task { @MainActor [weak self] in
-            await self?.resolvePendingLocaleDefaultIfNeeded()
+            await self?.resolvePendingLocaleDefaultIfNeeded(
+                expectedModelKey: localeResolutionExpectedModelKey,
+                expectedLanguage: localeResolutionExpectedLanguage
+            )
         }
     }
 
@@ -366,33 +383,51 @@ class AppSettings: ObservableObject {
         )
     }
 
-    private func resolvePendingLocaleDefaultIfNeeded() async {
+    private func resolvePendingLocaleDefaultIfNeeded(
+        expectedModelKey: String,
+        expectedLanguage: String
+    ) async {
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: Self.localeDefaultResolutionPendingKey),
               defaults.integer(forKey: Self.localeDefaultResolutionVersionKey) < Self.currentLocaleDefaultResolutionVersion else {
             return
         }
 
-        let expectedModelKey = selectedTranscriptionModel.storageKey
-        let resolvedDefaults = await Self.preferredDefaultsFromDevice()
-
-        guard defaults.bool(forKey: Self.localeDefaultResolutionPendingKey) else { return }
-        guard selectedTranscriptionModel.storageKey == expectedModelKey else {
-            defaults.set(false, forKey: Self.localeDefaultResolutionPendingKey)
-            defaults.set(Self.currentLocaleDefaultResolutionVersion, forKey: Self.localeDefaultResolutionVersionKey)
+        guard TranscriptionDefaultResolver.shouldApplyResolvedLocaleDefault(
+            expectedModelStorageKey: expectedModelKey,
+            currentModelStorageKey: selectedTranscriptionModel.storageKey
+        ) else {
+            completePendingLocaleDefaultResolution(defaults: defaults)
             return
         }
 
-        selectedLanguage = resolvedDefaults.whisperLanguage
+        let resolvedDefaults = await Self.preferredDefaultsFromDevice()
+
+        guard defaults.bool(forKey: Self.localeDefaultResolutionPendingKey) else { return }
+        guard TranscriptionDefaultResolver.shouldApplyResolvedLocaleDefault(
+            expectedModelStorageKey: expectedModelKey,
+            currentModelStorageKey: selectedTranscriptionModel.storageKey
+        ) else {
+            completePendingLocaleDefaultResolution(defaults: defaults)
+            return
+        }
+
+        if selectedLanguage == expectedLanguage {
+            selectedLanguage = resolvedDefaults.whisperLanguage
+        }
         selectedTranscriptionModel = resolvedDefaults.model
-        defaults.set(false, forKey: Self.localeDefaultResolutionPendingKey)
-        defaults.set(Self.currentLocaleDefaultResolutionVersion, forKey: Self.localeDefaultResolutionVersionKey)
+        completePendingLocaleDefaultResolution(defaults: defaults)
 
         if ModelManager.shared.currentTranscriptionModel != resolvedDefaults.model {
             ModelManager.shared.switchModel(model: resolvedDefaults.model)
         } else {
             ModelManager.shared.ensureModelAvailability()
         }
+    }
+
+    private func completePendingLocaleDefaultResolution(defaults: UserDefaults) {
+        defaults.set(false, forKey: Self.localeDefaultResolutionPendingKey)
+        defaults.set(Self.currentLocaleDefaultResolutionVersion, forKey: Self.localeDefaultResolutionVersionKey)
     }
 
     static let supportedLanguages: [(code: String, name: String)] = [

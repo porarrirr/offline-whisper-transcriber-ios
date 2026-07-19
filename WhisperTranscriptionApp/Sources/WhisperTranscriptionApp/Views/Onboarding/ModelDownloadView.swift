@@ -7,11 +7,18 @@ struct ModelDownloadView: View {
     @State private var speechLocaleOptions: [AppleSpeechLocale] = []
     @State private var didLoadSpeechLocaleOptions = false
     @State private var isLoadingSpeechLocaleOptions = false
+    @State private var managedWhisperSize: WhisperModelSize = .smallQ5_1
 
     var isPresentedAsSheet: Bool
+    var includesSpeechModels: Bool
 
-    init(isPresentedAsSheet: Bool = false) {
+    private var isWhisperManagement: Bool {
+        isPresentedAsSheet && !includesSpeechModels
+    }
+
+    init(isPresentedAsSheet: Bool = false, includesSpeechModels: Bool = true) {
         self.isPresentedAsSheet = isPresentedAsSheet
+        self.includesSpeechModels = includesSpeechModels
     }
 
     var body: some View {
@@ -35,10 +42,16 @@ struct ModelDownloadView: View {
             .scrollIndicators(.hidden)
         }
         .onAppear {
-            viewModel.checkAvailability(autoPrepareAppleSpeech: true)
+            if isWhisperManagement,
+               let selectedSize = settings.selectedTranscriptionModel.whisperModelSize {
+                managedWhisperSize = selectedSize
+            }
+            viewModel.checkAvailability(autoPrepareAppleSpeech: includesSpeechModels)
         }
         .task {
-            await refreshSpeechLocaleOptions()
+            if includesSpeechModels {
+                await refreshSpeechLocaleOptions()
+            }
         }
     }
 
@@ -76,6 +89,10 @@ struct ModelDownloadView: View {
     private var stateContent: some View {
         if viewModel.isComplete {
             VStack(spacing: 18) {
+                if isPresentedAsSheet {
+                    modelPickerCard
+                }
+
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 52))
                     .foregroundColor(Theme.amber)
@@ -94,7 +111,7 @@ struct ModelDownloadView: View {
                 }
             }
             .recorderPanel(padding: 22)
-        } else if settings.usesAppleSpeechBackend {
+        } else if includesSpeechModels && settings.usesAppleSpeechBackend {
             VStack(spacing: 14) {
                 modelPickerCard
                 SpeechAssetStatusCard(modelManager: ModelManager.shared)
@@ -182,16 +199,30 @@ struct ModelDownloadView: View {
         VStack(alignment: .leading, spacing: 12) {
             TechLabel(text: "Select Model")
 
-            Picker("Model", selection: $settings.selectedTranscriptionModel) {
-                ForEach(modelPickerOptions) { model in
-                    Text(model.displayName).tag(model)
+            if isWhisperManagement {
+                Picker("Model", selection: $managedWhisperSize) {
+                    ForEach(whisperManagementSizes) { size in
+                        Text(size.displayName).tag(size)
+                    }
                 }
-            }
-            .pickerStyle(.menu)
-            .tint(Theme.amber)
-            .onChange(of: settings.selectedTranscriptionModel) { _, newValue in
-                ModelManager.shared.switchModel(model: newValue)
-                viewModel.checkAvailability(autoPrepareAppleSpeech: newValue.backend.isAppleSpeech)
+                .pickerStyle(.menu)
+                .tint(Theme.amber)
+                .onChange(of: managedWhisperSize) { _, newSize in
+                    ModelManager.shared.switchModel(model: .whisper(newSize))
+                    viewModel.checkAvailability(autoPrepareAppleSpeech: false)
+                }
+            } else {
+                Picker("Model", selection: $settings.selectedTranscriptionModel) {
+                    ForEach(modelPickerOptions) { model in
+                        Text(model.displayName).tag(model)
+                    }
+                }
+                .pickerStyle(.menu)
+                .tint(Theme.amber)
+                .onChange(of: settings.selectedTranscriptionModel) { _, newValue in
+                    ModelManager.shared.switchModel(model: newValue)
+                    viewModel.checkAvailability(autoPrepareAppleSpeech: newValue.backend.isAppleSpeech)
+                }
             }
 
             if isLoadingSpeechLocaleOptions {
@@ -214,7 +245,7 @@ struct ModelDownloadView: View {
                 Image(systemName: "info.circle")
                     .font(.system(size: 12))
                     .foregroundColor(Theme.amber)
-                Text(settings.selectedTranscriptionModel.approximateSize)
+                Text(pickerModel.approximateSize)
                     .font(Theme.sans(12))
                     .foregroundColor(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -230,6 +261,17 @@ struct ModelDownloadView: View {
             selectedModel: settings.selectedTranscriptionModel,
             appleSpeechLocales: locales
         )
+    }
+
+    private var whisperManagementSizes: [WhisperModelSize] {
+        [.tiny, .smallQ5_1, .largeV3TurboQ5_0]
+    }
+
+    private var pickerModel: TranscriptionModel {
+        if isWhisperManagement {
+            return .whisper(managedWhisperSize)
+        }
+        return settings.selectedTranscriptionModel
     }
 
     @MainActor
