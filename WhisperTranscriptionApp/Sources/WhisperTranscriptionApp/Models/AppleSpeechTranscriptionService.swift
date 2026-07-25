@@ -107,12 +107,13 @@ struct AppleSpeechTranscriptionService {
                 try Task.checkCancellation()
                 try await analyzer.prepareToAnalyze(in: audioFile.processingFormat)
                 AppLogger.info(
-                    "Apple SpeechTranscriber analyzer started: audio=\(preparedAudio.url.lastPathComponent), format=\(Self.formatDescription(audioFile.processingFormat))",
+                    "Apple SpeechTranscriber analyzer started: audio=\(preparedAudio.url.lastPathComponent), input=bufferSequence, frames=\(audioFile.length), format=\(Self.formatDescription(audioFile.processingFormat))",
                     context: "AppleSpeechTranscriptionService"
                 )
                 await MainActor.run { onProgress(0.5) }
 
-                let lastSampleTime = try await analyzer.analyzeSequence(from: audioFile)
+                let inputSequence = SpeechAudioFileInputSequence(audioFile: audioFile)
+                let lastSampleTime = try await analyzer.analyzeSequence(inputSequence)
                 try Task.checkCancellation()
                 if let lastSampleTime {
                     AppLogger.info(
@@ -140,6 +141,11 @@ struct AppleSpeechTranscriptionService {
         } catch {
             resultsTask.cancel()
             await analyzer.cancelAndFinishNow()
+            AppLogger.error(
+                "Apple SpeechTranscriber analyzer failed: audio=\(preparedAudio.url.lastPathComponent), consumedFrames=\(audioFile.framePosition), totalFrames=\(audioFile.length), format=\(Self.formatDescription(audioFile.processingFormat))",
+                context: "AppleSpeechTranscriptionService",
+                error: error
+            )
             throw error
         }
 
@@ -194,6 +200,80 @@ struct AppleSpeechTranscriptionService {
     private static func timeDescription(_ time: CMTime) -> String {
         let seconds = CMTimeGetSeconds(time)
         return seconds.isFinite ? "\(String(format: "%.3f", seconds))s" : "invalid"
+    }
+}
+
+@available(iOS 26.0, *)
+struct SpeechAudioFileInputSequence: AsyncSequence, @unchecked Sendable {
+    typealias Element = AnalyzerInput
+
+    struct AsyncIterator: AsyncIteratorProtocol {
+        private let audioFile: AVAudioFile
+        private let format: AVAudioFormat
+        private let frameCapacity: AVAudioFrameCount
+
+        init(audioFile: AVAudioFile, frameCapacity: AVAudioFrameCount) {
+            self.audioFile = audioFile
+            self.format = audioFile.processingFormat
+            self.frameCapacity = frameCapacity
+        }
+
+        mutating func next() async throws -> AnalyzerInput? {
+            try Task.checkCancellation()
+
+            let startFrame = audioFile.framePosition
+            let remainingFrames = audioFile.length - startFrame
+            guard remainingFrames > 0 else {
+                return nil
+            }
+
+            let requestedFrames = AVAudioFrameCount(
+                Swift.min(AVAudioFramePosition(frameCapacity), remainingFrames)
+            )
+            guard let buffer = AVAudioPCMBuffer(
+                pcmFormat: format,
+                frameCapacity: requestedFrames
+            ) else {
+                throw AudioConverter.AudioConverterError.bufferCreationFailed
+            }
+
+            try audioFile.read(into: buffer, frameCount: requestedFrames)
+            guard buffer.frameLength > 0 else {
+                throw SpeechAudioFileInputError.unexpectedEndOfFile(
+                    expectedFrame: audioFile.length,
+                    actualFrame: startFrame
+                )
+            }
+
+            let timeScale = CMTimeScale(format.sampleRate.rounded())
+            let startTime = timeScale > 0
+                ? CMTime(value: startFrame, timescale: timeScale)
+                : nil
+            return AnalyzerInput(buffer: buffer, bufferStartTime: startTime)
+        }
+    }
+
+    private let audioFile: AVAudioFile
+    private let frameCapacity: AVAudioFrameCount
+
+    init(audioFile: AVAudioFile, frameCapacity: AVAudioFrameCount = 8_192) {
+        self.audioFile = audioFile
+        self.frameCapacity = frameCapacity
+    }
+
+    func makeAsyncIterator() -> AsyncIterator {
+        AsyncIterator(audioFile: audioFile, frameCapacity: frameCapacity)
+    }
+}
+
+private enum SpeechAudioFileInputError: LocalizedError {
+    case unexpectedEndOfFile(expectedFrame: AVAudioFramePosition, actualFrame: AVAudioFramePosition)
+
+    var errorDescription: String? {
+        switch self {
+        case .unexpectedEndOfFile(let expectedFrame, let actualFrame):
+            return "SpeechTranscriber用音声を終端まで読み込めませんでした（期待フレーム: \(expectedFrame)、実際: \(actualFrame)）"
+        }
     }
 }
 

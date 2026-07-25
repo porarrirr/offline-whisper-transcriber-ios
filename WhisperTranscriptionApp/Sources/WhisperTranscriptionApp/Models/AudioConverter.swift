@@ -625,6 +625,9 @@ class AudioConverter {
         }
 
         var writtenFrameCount = 0
+        var signalSampleCount = 0
+        var signalSquareSum = 0.0
+        var signalPeak = 0.0
         do {
             while reader.status == .reading {
                 try Task.checkCancellation()
@@ -634,6 +637,12 @@ class AudioConverter {
                 guard let inputBuffer = try makePCMBuffer(from: sampleBuffer) else {
                     continue
                 }
+                Self.accumulateSignalStatistics(
+                    from: inputBuffer,
+                    sampleCount: &signalSampleCount,
+                    squareSum: &signalSquareSum,
+                    peak: &signalPeak
+                )
                 writtenFrameCount += try Self.writeConverted(
                     inputBuffer: inputBuffer,
                     outputFormat: outputFormat,
@@ -667,8 +676,11 @@ class AudioConverter {
             throw AudioConverterError.emptyAudioFile
         }
 
+        let signalRMS = signalSampleCount > 0
+            ? sqrt(signalSquareSum / Double(signalSampleCount))
+            : 0
         AppLogger.info(
-            "Apple SpeechTranscriber用音声を書き出しました: source=\(inputURL.lastPathComponent), output=\(outputURL.lastPathComponent), frames=\(preparedFile.length), format=\(Self.formatDescription(preparedFile.processingFormat))",
+            "Apple SpeechTranscriber用音声を書き出しました: source=\(inputURL.lastPathComponent), output=\(outputURL.lastPathComponent), frames=\(preparedFile.length), format=\(Self.formatDescription(preparedFile.processingFormat)), signalSamples=\(signalSampleCount), rms=\(Self.decibelDescription(signalRMS))dBFS, peak=\(Self.decibelDescription(signalPeak))dBFS",
             context: "AudioConverter"
         )
 
@@ -771,6 +783,35 @@ class AudioConverter {
             && actual.channelCount == expected.channelCount
             && actual.commonFormat == expected.commonFormat
             && actual.isInterleaved == expected.isInterleaved
+    }
+
+    private static func accumulateSignalStatistics(
+        from buffer: AVAudioPCMBuffer,
+        sampleCount: inout Int,
+        squareSum: inout Double,
+        peak: inout Double
+    ) {
+        guard buffer.format.commonFormat == .pcmFormatFloat32,
+              let channelData = buffer.floatChannelData else {
+            return
+        }
+
+        let frameLength = Int(buffer.frameLength)
+        let sampleStride = 32
+        for channel in 0..<Int(buffer.format.channelCount) {
+            let samples = channelData[channel]
+            for frame in stride(from: 0, to: frameLength, by: sampleStride) {
+                let magnitude = abs(Double(samples[frame]))
+                squareSum += magnitude * magnitude
+                peak = max(peak, magnitude)
+                sampleCount += 1
+            }
+        }
+    }
+
+    private static func decibelDescription(_ amplitude: Double) -> String {
+        guard amplitude > 0 else { return "-inf" }
+        return String(format: "%.1f", 20 * log10(amplitude))
     }
 
     private static func sampleDuration(_ sampleCount: Int, sampleRate: Double) -> String {

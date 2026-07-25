@@ -61,7 +61,10 @@ final class AudioConverterTests: XCTestCase {
         }
     }
 
-    func testSpeechTranscriberAudioFileUsesRequestedProcessingFormat() throws {
+    func testSpeechTranscriberInputSequenceReadsRequestedFormatThroughEnd() async throws {
+        guard #available(iOS 26.0, *) else {
+            throw XCTSkip("SpeechAnalyzer requires iOS 26")
+        }
         let requestedFormat = try XCTUnwrap(AVAudioFormat(
             commonFormat: .pcmFormatInt16,
             sampleRate: 16_000,
@@ -84,6 +87,21 @@ final class AudioConverterTests: XCTestCase {
         XCTAssertEqual(speechAudioFile.processingFormat.channelCount, requestedFormat.channelCount)
         XCTAssertEqual(speechAudioFile.processingFormat.commonFormat, requestedFormat.commonFormat)
         XCTAssertEqual(speechAudioFile.processingFormat.isInterleaved, requestedFormat.isInterleaved)
+
+        var bufferCount = 0
+        var frameCount: AVAudioFramePosition = 0
+        let inputSequence = SpeechAudioFileInputSequence(
+            audioFile: speechAudioFile,
+            frameCapacity: 1_024
+        )
+        for try await input in inputSequence {
+            bufferCount += 1
+            frameCount += AVAudioFramePosition(input.buffer.frameLength)
+        }
+
+        XCTAssertEqual(bufferCount, 4)
+        XCTAssertEqual(frameCount, 4_000)
+        XCTAssertEqual(speechAudioFile.framePosition, speechAudioFile.length)
     }
 
     private func makeAudioFile(duration: Double, sampleRate: Double) throws -> URL {
