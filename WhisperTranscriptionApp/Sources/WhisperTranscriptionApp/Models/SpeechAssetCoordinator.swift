@@ -505,10 +505,7 @@ struct SystemSpeechAssetClient: SpeechAssetClient {
     }
 
     private func modules(for locale: Locale) -> [any SpeechModule] {
-        [
-            SpeechTranscriber(locale: locale, preset: .transcription),
-            SpeechTranscriber(locale: locale, preset: .timeIndexedProgressiveTranscription),
-        ]
+        AppleSpeechModuleFactory.assetModules(locale: locale)
     }
 }
 

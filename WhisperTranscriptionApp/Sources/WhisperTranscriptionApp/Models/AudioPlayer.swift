@@ -53,6 +53,13 @@ class AudioPlayer: ObservableObject {
             }
         }
     }
+
+    func play(from time: TimeInterval) {
+        guard player != nil else { return }
+        let upperBound = max(0, duration)
+        seek(to: min(max(0, time), upperBound))
+        play()
+    }
     
     func pause() {
         player?.pause()
@@ -69,7 +76,8 @@ class AudioPlayer: ObservableObject {
     }
     
     func seek(to time: TimeInterval) {
-        player?.currentTime = time
-        currentTime = time
+        let clampedTime = min(max(0, time), max(0, duration))
+        player?.currentTime = clampedTime
+        currentTime = clampedTime
     }
 }

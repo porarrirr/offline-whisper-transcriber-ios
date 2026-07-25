@@ -7,6 +7,7 @@ enum AppleSpeechTranscriptionError: LocalizedError {
     case assetsNotReady
     case transcriptionUnavailable
     case emptyTranscription
+    case invalidResultTimeRange
 
     var errorDescription: String? {
         switch self {
@@ -18,6 +19,8 @@ enum AppleSpeechTranscriptionError: LocalizedError {
             return String(localized: "Speech transcription is not available on this device.")
         case .emptyTranscription:
             return String(localized: "Transcription finished, but no text was produced.")
+        case .invalidResultTimeRange:
+            return String(localized: "Speech transcription returned an invalid audio time range.")
         }
     }
 
@@ -25,9 +28,52 @@ enum AppleSpeechTranscriptionError: LocalizedError {
         switch self {
         case .assetsNotReady:
             return String(localized: "Open the app's SpeechTranscriber model manager to prepare this language.")
-        case .localeNotSupported, .transcriptionUnavailable, .emptyTranscription:
+        case .localeNotSupported, .transcriptionUnavailable, .emptyTranscription, .invalidResultTimeRange:
             return nil
         }
+    }
+}
+
+@available(iOS 26.0, *)
+enum AppleSpeechModuleFactory {
+    static let vadSensitivity: SpeechDetector.SensitivityLevel = .low
+
+    static var livePreset: SpeechTranscriber.Preset {
+        let preset = SpeechTranscriber.Preset.timeIndexedProgressiveTranscription
+        return SpeechTranscriber.Preset(
+            transcriptionOptions: preset.transcriptionOptions,
+            reportingOptions: preset.reportingOptions.union([.alternativeTranscriptions]),
+            attributeOptions: preset.attributeOptions
+        )
+    }
+
+    static func offlineTranscriber(locale: Locale) -> SpeechTranscriber {
+        SpeechTranscriber(locale: locale, preset: .timeIndexedTranscriptionWithAlternatives)
+    }
+
+    static func liveTranscriber(locale: Locale) -> SpeechTranscriber {
+        let preset = livePreset
+        return SpeechTranscriber(
+            locale: locale,
+            transcriptionOptions: preset.transcriptionOptions,
+            reportingOptions: preset.reportingOptions.union([.alternativeTranscriptions]),
+            attributeOptions: preset.attributeOptions
+        )
+    }
+
+    static func speechDetector() -> SpeechDetector {
+        SpeechDetector(
+            detectionOptions: SpeechDetector.DetectionOptions(sensitivityLevel: vadSensitivity),
+            reportResults: false
+        )
+    }
+
+    static func assetModules(locale: Locale) -> [any SpeechModule] {
+        [
+            offlineTranscriber(locale: locale),
+            liveTranscriber(locale: locale),
+            speechDetector(),
+        ]
     }
 }
 
@@ -61,10 +107,12 @@ struct AppleSpeechTranscriptionService {
             onProgress(progress * 0.2)
         }
 
-        let transcriber = try await makeTranscriber(locale: locale, includeTimestamps: includeTimestamps)
+        let transcriber = try await makeTranscriber(locale: locale)
+        let detector = AppleSpeechModuleFactory.speechDetector()
+        let modules: [any SpeechModule] = [transcriber, detector]
         let naturalFormat = try await AudioConverter.shared.naturalAudioFormatForSpeechInput(inputURL: inputURL)
         guard let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
-            compatibleWith: [transcriber],
+            compatibleWith: modules,
             considering: naturalFormat
         ) else {
             throw AudioConverter.AudioConverterError.outputFormatCreationFailed
@@ -96,12 +144,12 @@ struct AppleSpeechTranscriptionService {
 
         await MainActor.run { onProgress(0.4) }
 
-        let collector = ResultCollector(includeTimestamps: includeTimestamps)
+        let collector = ResultCollector()
         let resultsTask = Task {
             try await collector.collect(from: transcriber.results)
         }
 
-        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        let analyzer = SpeechAnalyzer(modules: modules)
         do {
             try await withTaskCancellationHandler {
                 try Task.checkCancellation()
@@ -173,23 +221,14 @@ struct AppleSpeechTranscriptionService {
         )
     }
 
-    private func makeTranscriber(
-        locale: AppleSpeechLocale,
-        includeTimestamps: Bool
-    ) async throws -> SpeechTranscriber {
+    private func makeTranscriber(locale: AppleSpeechLocale) async throws -> SpeechTranscriber {
         guard SpeechTranscriber.isAvailable else {
             throw AppleSpeechTranscriptionError.transcriptionUnavailable
         }
         guard let supported = await SpeechTranscriber.supportedLocale(equivalentTo: locale.locale) else {
             throw AppleSpeechTranscriptionError.localeNotSupported
         }
-        if includeTimestamps {
-            return SpeechTranscriber(
-                locale: supported,
-                preset: .timeIndexedTranscriptionWithAlternatives
-            )
-        }
-        return SpeechTranscriber(locale: supported, preset: .transcription)
+        return AppleSpeechModuleFactory.offlineTranscriber(locale: supported)
     }
 
     private static func formatDescription(_ format: AVAudioFormat?) -> String {
@@ -288,16 +327,11 @@ private struct CollectedSpeechResult {
 
 @available(iOS 26.0, *)
 private final class ResultCollector: @unchecked Sendable {
-    private let includeTimestamps: Bool
-
-    init(includeTimestamps: Bool) {
-        self.includeTimestamps = includeTimestamps
-    }
-
     func collect<Results: AsyncSequence>(
         from results: Results
     ) async throws -> CollectedSpeechResult where Results.Element == SpeechTranscriber.Result {
         var attributed = AttributedString()
+        var segments: [TranscriptionSegment] = []
         var resultCount = 0
         var finalResultCount = 0
         var nonFinalResultCount = 0
@@ -314,15 +348,10 @@ private final class ResultCollector: @unchecked Sendable {
             }
             finalResultCount += 1
             attributed.append(result.text)
+            segments.append(try Self.segment(from: result, id: segments.count))
         }
 
         let plainText = String(attributed.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-        let segments: [TranscriptionSegment]
-        if includeTimestamps {
-            segments = Self.segments(from: attributed)
-        } else {
-            segments = []
-        }
 
         return CollectedSpeechResult(
             text: plainText,
@@ -334,35 +363,24 @@ private final class ResultCollector: @unchecked Sendable {
         )
     }
 
-    private static func segments(from attributed: AttributedString) -> [TranscriptionSegment] {
-        var segments: [TranscriptionSegment] = []
-        var segmentID = 0
-
-        for run in attributed.runs {
-            let runText = String(attributed[run.range].characters).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !runText.isEmpty else { continue }
-
-            let start: Double
-            let end: Double
-            if let timeRange = run.audioTimeRange {
-                start = timeRange.start.seconds
-                end = timeRange.end.seconds
-            } else {
-                start = 0
-                end = 0
-            }
-
-            segments.append(
-                TranscriptionSegment(id: segmentID, start: start, end: end, text: runText)
+    private static func segment(
+        from result: SpeechTranscriber.Result,
+        id: Int
+    ) throws -> TranscriptionSegment {
+        let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+        let start = result.range.start.seconds
+        let end = result.range.end.seconds
+        guard start.isFinite, end.isFinite, start >= 0, end >= start else {
+            throw AppleSpeechTranscriptionError.invalidResultTimeRange
+        }
+        return TranscriptionSegment(
+            id: id,
+            start: start,
+            end: end,
+            text: text,
+            alternatives: TranscriptionSegment.normalizedAlternatives(
+                result.alternatives.map { String($0.characters) }
             )
-            segmentID += 1
-        }
-
-        if segments.isEmpty, !String(attributed.characters).isEmpty {
-            let text = String(attributed.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-            segments.append(TranscriptionSegment(id: 0, start: 0, end: 0, text: text))
-        }
-
-        return segments
+        )
     }
 }

@@ -5,6 +5,21 @@ struct TranscriptionSegment: Codable, Identifiable, Hashable {
     let start: Double
     let end: Double
     let text: String
+    let alternatives: [String]?
+
+    init(
+        id: Int,
+        start: Double,
+        end: Double,
+        text: String,
+        alternatives: [String]? = nil
+    ) {
+        self.id = id
+        self.start = start
+        self.end = end
+        self.text = text
+        self.alternatives = alternatives
+    }
 
     static func plainText(from segments: [TranscriptionSegment], fallback: String = "") -> String {
         let text = joinedPlainText(from: segments.map(\.text))
@@ -13,6 +28,36 @@ struct TranscriptionSegment: Codable, Identifiable, Hashable {
 
     static func timestampedText(from segments: [TranscriptionSegment]) -> String {
         segments.map { "\($0.formattedTimestamp) \($0.text)" }.joined(separator: "\n")
+    }
+
+    var selectableAlternatives: [String] {
+        let currentKey = Self.comparisonKey(for: text)
+        return (Self.normalizedAlternatives(alternatives ?? []) ?? []).filter {
+            Self.comparisonKey(for: $0) != currentKey
+        }
+    }
+
+    func replacingText(with replacement: String) -> TranscriptionSegment {
+        TranscriptionSegment(
+            id: id,
+            start: start,
+            end: end,
+            text: replacement,
+            alternatives: alternatives
+        )
+    }
+
+    static func normalizedAlternatives(_ candidates: [String]) -> [String]? {
+        var seen: Set<String> = []
+        let normalized = candidates.compactMap { candidate -> String? in
+            let trimmed = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+            let key = comparisonKey(for: trimmed)
+            guard !trimmed.isEmpty, seen.insert(key).inserted else {
+                return nil
+            }
+            return trimmed
+        }
+        return normalized.isEmpty ? nil : normalized
     }
     
     var formattedTimestamp: String {
@@ -93,5 +138,57 @@ struct TranscriptionSegment: Codable, Identifiable, Hashable {
                 return false
             }
         }
+    }
+
+    private static func comparisonKey(for value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+}
+
+enum TranscriptionTimelineItem: Identifiable, Equatable {
+    case marker(seconds: Int)
+    case segment(TranscriptionSegment)
+
+    var id: String {
+        switch self {
+        case .marker(let seconds):
+            return "marker-\(seconds)"
+        case .segment(let segment):
+            return "segment-\(segment.id)"
+        }
+    }
+
+    static func items(
+        from segments: [TranscriptionSegment],
+        markerInterval: Int = 30
+    ) -> [TranscriptionTimelineItem] {
+        guard markerInterval > 0 else {
+            return segments.map(Self.segment)
+        }
+
+        var items: [TranscriptionTimelineItem] = []
+        var nextMarker = markerInterval
+
+        for segment in segments {
+            let segmentBoundary = max(segment.start, segment.end)
+            while Double(nextMarker) <= segmentBoundary {
+                items.append(.marker(seconds: nextMarker))
+                nextMarker += markerInterval
+            }
+            items.append(.segment(segment))
+        }
+
+        return items
+    }
+
+    static func markerLabel(seconds: Int) -> String {
+        let clampedSeconds = max(0, seconds)
+        let hours = clampedSeconds / 3_600
+        let minutes = (clampedSeconds % 3_600) / 60
+        let remainingSeconds = clampedSeconds % 60
+        if hours > 0 {
+            return String(format: "%d:%02d:%02d", hours, minutes, remainingSeconds)
+        }
+        return String(format: "%02d:%02d", minutes, remainingSeconds)
     }
 }

@@ -89,7 +89,6 @@ final class LiveTranscriptionService {
     private var segmentID = 0
     private let lifecycleLock = NSLock()
     private var isStopping = false
-    private var needsFinalTranscriptionRecovery = false
     private let processingQueue = DispatchQueue(label: "com.porarrirr.live-transcription-processing", qos: .userInitiated)
 
     init(locale: AppleSpeechLocale, onSnapshot: @escaping SnapshotHandler) {
@@ -114,15 +113,17 @@ final class LiveTranscriptionService {
                 throw LiveTranscriptionError.unsupportedLocale
             }
 
-            let transcriber = SpeechTranscriber(locale: supportedLocale, preset: .timeIndexedProgressiveTranscription)
+            let transcriber = AppleSpeechModuleFactory.liveTranscriber(locale: supportedLocale)
+            let detector = AppleSpeechModuleFactory.speechDetector()
+            let modules: [any SpeechModule] = [transcriber, detector]
             try await ensureAssetsInstalled(for: transcriber)
 
-            guard let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+            guard let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: modules) else {
                 throw LiveTranscriptionError.audioFormatUnavailable
             }
 
             let (inputSequence, inputContinuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
-            let analyzer = SpeechAnalyzer(modules: [transcriber])
+            let analyzer = SpeechAnalyzer(modules: modules)
             self.transcriber = transcriber
             self.analyzer = analyzer
             self.inputContinuation = inputContinuation
@@ -142,7 +143,7 @@ final class LiveTranscriptionService {
                     try await self?.consumeResults(from: transcriber)
                 } catch is CancellationError {
                 } catch {
-                    self?.reportRecoverableTranscriptionError(error)
+                    self?.stopSpeechProcessing(for: error)
                 }
             }
             analysisTask = Task { [weak self, analyzer, inputSequence] in
@@ -150,7 +151,7 @@ final class LiveTranscriptionService {
                     _ = try await analyzer.analyzeSequence(inputSequence)
                 } catch is CancellationError {
                 } catch {
-                    self?.reportRecoverableTranscriptionError(error)
+                    self?.stopSpeechProcessing(for: error)
                 }
             }
 
@@ -176,7 +177,8 @@ final class LiveTranscriptionService {
             do {
                 try await analyzer.finalizeAndFinishThroughEndOfInput()
             } catch {
-                reportRecoverableTranscriptionError(error)
+                stopSpeechProcessing(for: error)
+                throw error
             }
         }
         await analysisTask?.value
@@ -223,11 +225,11 @@ final class LiveTranscriptionService {
                         self.inputContinuation?.yield(AnalyzerInput(buffer: converted))
                     }
                 } catch {
-                    self.reportRecoverableTranscriptionError(error)
+                    self.stopSpeechProcessing(for: error)
                 }
             }
         } catch {
-            reportRecoverableTranscriptionError(error)
+            stopSpeechProcessing(for: error)
         }
     }
 
@@ -295,6 +297,7 @@ final class LiveTranscriptionService {
             try Task.checkCancellation()
             let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
+            let segment = result.isFinal ? try makeSegment(from: result, text: text) : nil
 
             updateSnapshot { snapshot in
                 if result.isFinal {
@@ -302,7 +305,10 @@ final class LiveTranscriptionService {
                     snapshot.finalizedText = String(finalizedAttributedText.characters)
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     snapshot.volatileText = ""
-                    appendSegment(from: result, text: text, snapshot: &snapshot)
+                    if let segment {
+                        snapshot.segments.append(segment)
+                        segmentID += 1
+                    }
                 } else {
                     snapshot.volatileText = text
                 }
@@ -310,17 +316,24 @@ final class LiveTranscriptionService {
         }
     }
 
-    private func appendSegment(
+    private func makeSegment(
         from result: SpeechTranscriber.Result,
-        text: String,
-        snapshot: inout LiveTranscriptionSnapshot
-    ) {
-        let start = result.range.start.seconds.isFinite ? result.range.start.seconds : snapshot.elapsedTime
-        let end = result.range.end.seconds.isFinite ? result.range.end.seconds : start
-        snapshot.segments.append(
-            TranscriptionSegment(id: segmentID, start: max(0, start), end: max(start, end), text: text)
+        text: String
+    ) throws -> TranscriptionSegment {
+        let start = result.range.start.seconds
+        let end = result.range.end.seconds
+        guard start.isFinite, end.isFinite, start >= 0, end >= start else {
+            throw AppleSpeechTranscriptionError.invalidResultTimeRange
+        }
+        return TranscriptionSegment(
+            id: segmentID,
+            start: start,
+            end: end,
+            text: text,
+            alternatives: TranscriptionSegment.normalizedAlternatives(
+                result.alternatives.map { String($0.characters) }
+            )
         )
-        segmentID += 1
     }
 
     private func ensureAssetsInstalled(for transcriber: SpeechTranscriber) async throws {
@@ -358,13 +371,21 @@ final class LiveTranscriptionService {
         }
     }
 
-    private func reportRecoverableTranscriptionError(_ error: Error) {
-        markFinalTranscriptionRecoveryNeeded()
-        AppLogger.error("Live transcription stream error; recording continues", context: "LiveTranscriptionService", error: error)
+    private func stopSpeechProcessing(for error: Error) {
+        markStopping()
+        inputContinuation?.finish()
+        inputContinuation = nil
+        AppLogger.error(
+            "Live Apple Speech processing stopped",
+            context: "LiveTranscriptionService",
+            error: error
+        )
         updateSnapshot { snapshot in
-            if snapshot.state.isActive {
-                snapshot.errorMessage = String(localized: "Live transcription was interrupted; recording will continue.")
-            }
+            snapshot.state = .failed
+            snapshot.errorMessage = String(localized: "Live transcription stopped because Apple Speech processing failed.")
+        }
+        Task { [weak self] in
+            await self?.analyzer?.cancelAndFinishNow()
         }
     }
 
@@ -419,7 +440,6 @@ final class LiveTranscriptionService {
     private func resetLifecycle() {
         lifecycleLock.lock()
         isStopping = false
-        needsFinalTranscriptionRecovery = false
         lifecycleLock.unlock()
     }
 
@@ -427,12 +447,6 @@ final class LiveTranscriptionService {
         lifecycleLock.lock()
         defer { lifecycleLock.unlock() }
         return isStopping
-    }
-
-    private func markFinalTranscriptionRecoveryNeeded() {
-        lifecycleLock.lock()
-        needsFinalTranscriptionRecovery = true
-        lifecycleLock.unlock()
     }
 
     private func publish(_ snapshot: LiveTranscriptionSnapshot) {

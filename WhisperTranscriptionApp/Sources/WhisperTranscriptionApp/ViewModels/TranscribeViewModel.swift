@@ -209,6 +209,9 @@ class TranscribeViewModel: ObservableObject {
             ? String(localized: "Preparing speech model...")
             : String(localized: "Converting...")
         UIApplication.shared.isIdleTimerDisabled = settings.keepScreenOn
+        var transcriptionURL = url
+        var persistedImportedAudioURL: URL?
+        var shouldKeepPersistedImportedAudio = false
         defer {
             modelManager.endTranscriptionOperation()
             isProcessing = false
@@ -219,15 +222,29 @@ class TranscribeViewModel: ObservableObject {
             if cleanupAfterProcessing {
                 removeTemporaryInput(url: url)
             }
+            if let persistedImportedAudioURL, !shouldKeepPersistedImportedAudio {
+                Task {
+                    await ImportedAudioStore.shared.removePersistedAudio(at: persistedImportedAudioURL)
+                }
+            }
         }
 
         do {
+            if sourceType == .file, existingRecord == nil {
+                processingStatusText = String(localized: "Saving imported audio...")
+                persistedImportedAudioURL = try await ImportedAudioStore.shared.persistAudio(from: url)
+                guard let persistedImportedAudioURL else {
+                    throw ImportedAudioStoreError.outputMissing
+                }
+                transcriptionURL = persistedImportedAudioURL
+            }
+
             AppLogger.info(
-                "Transcription started: source=\(sourceType), file=\(url.lastPathComponent), model=\(settings.selectedTranscriptionModel.storageKey), language=\(settings.selectedLanguage), translate=\(settings.translateToEnglish), useVAD=\(settings.useVAD)",
+                "Transcription started: source=\(sourceType), file=\(transcriptionURL.lastPathComponent), model=\(settings.selectedTranscriptionModel.storageKey), language=\(settings.selectedLanguage), translate=\(settings.translateToEnglish), useVAD=\(settings.useVAD)",
                 context: "TranscribeViewModel"
             )
 
-            let duration = try await AudioConverter.shared.getAudioDuration(url: url)
+            let duration = try await AudioConverter.shared.getAudioDuration(url: transcriptionURL)
             let result: ChunkedTranscriptionResult
 
             switch settings.selectedTranscriptionModel.backend {
@@ -236,13 +253,13 @@ class TranscribeViewModel: ObservableObject {
                     setError(modelManager.whisperReadinessMessage())
                     throw TranscriptionAborted()
                 }
-                result = try await transcribeWithWhisper(url: url, duration: duration)
+                result = try await transcribeWithWhisper(url: transcriptionURL, duration: duration)
             case .appleSpeech(let locale):
-                result = try await transcribeWithAppleSpeech(url: url, locale: locale)
+                result = try await transcribeWithAppleSpeech(url: transcriptionURL, locale: locale)
             }
 
             AppLogger.info(
-                "文字起こしが完了しました: file=\(url.lastPathComponent), textLength=\(result.text.count), segments=\(result.segments.count), language=\(result.language ?? "unknown")",
+                "文字起こしが完了しました: file=\(transcriptionURL.lastPathComponent), textLength=\(result.text.count), segments=\(result.segments.count), language=\(result.language ?? "unknown")",
                 context: "TranscribeViewModel"
             )
             transcriptionProgress = 1
@@ -255,7 +272,7 @@ class TranscribeViewModel: ObservableObject {
                 title: TranscriptionRecord.defaultTitle(for: Date()),
                 text: "",
                 sourceType: sourceType,
-                audioFilePath: sourceType == .recording ? url.path : nil,
+                audioFilePath: transcriptionURL.path,
                 duration: savedDuration
             )
             if existingRecord == nil {
@@ -271,6 +288,7 @@ class TranscribeViewModel: ObservableObject {
             transcriptionDuration = savedDuration
             do {
                 try modelContext.save()
+                shouldKeepPersistedImportedAudio = true
                 showResult = true
             } catch {
                 modelContext.rollback()

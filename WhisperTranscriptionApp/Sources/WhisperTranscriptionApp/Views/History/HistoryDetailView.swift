@@ -19,7 +19,12 @@ struct HistoryDetailView: View {
     @State private var editableTitle = ""
     @State private var sharePayload: SharePayload?
     @State private var showExportAudioError = false
+    @State private var showPlaybackAudioError = false
     @State private var cachedSegments: [TranscriptionSegment] = []
+    @State private var selectedSegmentID: Int?
+    @State private var editingSegment: TranscriptionSegment?
+    @State private var pendingUndo: SegmentEditUndo?
+    @State private var undoDismissTask: Task<Void, Never>?
 
     private func currentDisplayText() -> String {
         if showTimestampView && !cachedSegments.isEmpty {
@@ -35,6 +40,10 @@ struct HistoryDetailView: View {
             VStack(spacing: 14) {
                 headerPanel
 
+                if let error = viewModel.errorMessage {
+                    WarningStrip(message: error)
+                }
+
                 tagsPanel
 
                 if let audioURL {
@@ -46,7 +55,20 @@ struct HistoryDetailView: View {
                         text: record.text,
                         segments: cachedSegments,
                         showTimestamps: showTimestampView,
-                        isLoading: false
+                        isLoading: false,
+                        showsTimelineMarkers: true,
+                        selectedSegmentID: selectedSegmentID,
+                        onSegmentTap: handleSegmentTap,
+                        onSegmentLongPress: { segment in
+                            editingSegment = segment
+                        },
+                        onAlternativeSelect: { segment, alternative in
+                            applySegmentReplacement(
+                                segment: segment,
+                                replacement: alternative,
+                                offersUndo: true
+                            )
+                        }
                     )
                     .accessibilityIdentifier("historyTranscriptionCard")
                 } else {
@@ -69,6 +91,14 @@ struct HistoryDetailView: View {
             .padding(.top, 8)
         }
         .background(Theme.background)
+        .safeAreaInset(edge: .bottom) {
+            if let pendingUndo {
+                undoBanner(pendingUndo)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
         .navigationTitle("Details")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -81,6 +111,9 @@ struct HistoryDetailView: View {
         }
         .onDisappear {
             audioPlayer.stop()
+            undoDismissTask?.cancel()
+            undoDismissTask = nil
+            pendingUndo = nil
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
@@ -112,6 +145,12 @@ struct HistoryDetailView: View {
         ) {
             Button("OK", role: .cancel) {}
         }
+        .alert(
+            String(localized: "Audio is unavailable for playback."),
+            isPresented: $showPlaybackAudioError
+        ) {
+            Button("OK", role: .cancel) {}
+        }
         .alert("Edit Title", isPresented: $showEditTitle) {
             TextField("Title", text: $editableTitle)
             Button("Cancel", role: .cancel) {}
@@ -130,6 +169,18 @@ struct HistoryDetailView: View {
             ) { tags in
                 viewModel.updateTags(record, tags: tags)
             }
+        }
+        .sheet(item: $editingSegment) { segment in
+            TranscriptionSegmentEditor(
+                segment: segment,
+                onSave: { replacement in
+                    applySegmentReplacement(
+                        segment: segment,
+                        replacement: replacement,
+                        offersUndo: true
+                    )
+                }
+            )
         }
         .sheet(isPresented: $showExportSheet) {
             HistoryExportSheetView(record: record, viewModel: viewModel) { url in
@@ -414,6 +465,99 @@ struct HistoryDetailView: View {
         .recorderPanel(padding: 14)
     }
 
+    private func handleSegmentTap(_ segment: TranscriptionSegment) {
+        selectedSegmentID = segment.id
+        guard audioURL != nil else {
+            showPlaybackAudioError = true
+            return
+        }
+        audioPlayer.play(from: max(0, segment.start - 2))
+    }
+
+    private func applySegmentReplacement(
+        segment: TranscriptionSegment,
+        replacement: String,
+        offersUndo: Bool
+    ) {
+        let trimmedReplacement = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedReplacement.isEmpty, trimmedReplacement != segment.text else { return }
+
+        guard viewModel.updateSegmentText(
+            record,
+            segmentID: segment.id,
+            text: trimmedReplacement
+        ) else {
+            return
+        }
+
+        cachedSegments = record.segments
+        selectedSegmentID = segment.id
+        if offersUndo {
+            scheduleUndo(segmentID: segment.id, previousText: segment.text)
+        }
+    }
+
+    private func scheduleUndo(segmentID: Int, previousText: String) {
+        undoDismissTask?.cancel()
+        withAnimation {
+            pendingUndo = SegmentEditUndo(
+                segmentID: segmentID,
+                previousText: previousText
+            )
+        }
+        undoDismissTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            withAnimation {
+                pendingUndo = nil
+            }
+            undoDismissTask = nil
+        }
+    }
+
+    private func performUndo(_ undo: SegmentEditUndo) {
+        undoDismissTask?.cancel()
+        undoDismissTask = nil
+        guard let currentSegment = cachedSegments.first(where: { $0.id == undo.segmentID }) else {
+            pendingUndo = nil
+            return
+        }
+        applySegmentReplacement(
+            segment: currentSegment,
+            replacement: undo.previousText,
+            offersUndo: false
+        )
+        withAnimation {
+            pendingUndo = nil
+        }
+    }
+
+    private func undoBanner(_ undo: SegmentEditUndo) -> some View {
+        HStack(spacing: 12) {
+            Text("Transcription updated")
+                .font(Theme.sans(13, weight: .medium))
+                .foregroundColor(Theme.textPrimary)
+
+            Spacer()
+
+            Button("Undo") {
+                performUndo(undo)
+            }
+            .font(Theme.sans(13, weight: .semibold))
+            .foregroundColor(Theme.amber)
+            .accessibilityIdentifier("transcriptionEditUndo")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Theme.panel)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Theme.stroke, lineWidth: 1)
+        }
+        .shadow(color: Color.black.opacity(0.18), radius: 8, y: 3)
+    }
+
     private var audioURL: URL? {
         guard let audioFilePath = record.audioFilePath else { return nil }
         let url = URL(fileURLWithPath: audioFilePath)
@@ -428,6 +572,63 @@ struct HistoryDetailView: View {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%02d:%02d", minutes, seconds)
+    }
+}
+
+private struct SegmentEditUndo: Identifiable {
+    let id = UUID()
+    let segmentID: Int
+    let previousText: String
+}
+
+private struct TranscriptionSegmentEditor: View {
+    let segment: TranscriptionSegment
+    let onSave: (String) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+
+    init(segment: TranscriptionSegment, onSave: @escaping (String) -> Void) {
+        self.segment = segment
+        self.onSave = onSave
+        _text = State(initialValue: segment.text)
+    }
+
+    var body: some View {
+        NavigationStack {
+            TextEditor(text: $text)
+                .accessibilityIdentifier("transcriptionSegmentEditor")
+                .font(Theme.sans(16))
+                .foregroundColor(Theme.textPrimary)
+                .scrollContentBackground(.hidden)
+                .padding(12)
+                .background(Theme.panel)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .strokeBorder(Theme.stroke, lineWidth: 1)
+                }
+                .padding(16)
+                .background(Theme.background)
+                .navigationTitle("Edit Transcription")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel") {
+                            dismiss()
+                        }
+                        .accessibilityIdentifier("transcriptionSegmentEditorCancel")
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Save") {
+                            onSave(text)
+                            dismiss()
+                        }
+                        .accessibilityIdentifier("transcriptionSegmentEditorSave")
+                        .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                }
+        }
     }
 }
 

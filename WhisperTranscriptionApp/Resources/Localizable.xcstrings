@@ -9415,6 +9415,226 @@
           }
         }
       }
+    },
+    "Audio export ended unexpectedly." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声の書き出しが予期せず終了しました。"
+          }
+        }
+      }
+    },
+    "Audio is unavailable for playback." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生できる音声がありません。"
+          }
+        }
+      }
+    },
+    "Edit Transcription" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしを編集"
+          }
+        }
+      }
+    },
+    "Edit transcription segment" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この発言を編集"
+          }
+        }
+      }
+    },
+    "Failed to save imported audio" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取り込み音声を保存できませんでした"
+          }
+        }
+      }
+    },
+    "Failed to update transcription" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしを更新できませんでした"
+          }
+        }
+      }
+    },
+    "History store is unavailable." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "履歴データを利用できません。"
+          }
+        }
+      }
+    },
+    "Imported audio was not saved correctly." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取り込み音声を正しく保存できませんでした。"
+          }
+        }
+      }
+    },
+    "Live transcription stopped because Apple Speech processing failed." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple Speechの処理に失敗したため、ライブ文字起こしを停止しました。"
+          }
+        }
+      }
+    },
+    "Play from here" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ここから再生"
+          }
+        }
+      }
+    },
+    "Replace with %@" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@に置き換え"
+          }
+        }
+      }
+    },
+    "Saving imported audio was cancelled." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取り込み音声の保存をキャンセルしました。"
+          }
+        }
+      }
+    },
+    "Saving imported audio..." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "取り込み音声を保存中..."
+          }
+        }
+      }
+    },
+    "Speech transcription returned an invalid audio time range." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声の時刻範囲を取得できませんでした。"
+          }
+        }
+      }
+    },
+    "The app's recordings directory is unavailable." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アプリの録音保存先を利用できません。"
+          }
+        }
+      }
+    },
+    "The selected audio cannot be saved as M4A." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択した音声をM4Aとして保存できません。"
+          }
+        }
+      }
+    },
+    "The selected file does not contain an audio track." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したファイルに音声トラックがありません。"
+          }
+        }
+      }
+    },
+    "The selected transcription segment could not be found." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択した発言が見つかりません。"
+          }
+        }
+      }
+    },
+    "Transcription text cannot be empty." : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしを空にはできません。"
+          }
+        }
+      }
+    },
+    "Transcription updated" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしを更新しました"
+          }
+        }
+      }
+    },
+    "Undo" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "元に戻す"
+          }
+        }
+      }
+    },
+    "Unknown export error" : {
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不明な書き出しエラー"
+          }
+        }
+      }
     }
   },
   "version" : "1.1"

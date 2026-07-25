@@ -65,6 +65,48 @@ final class HistoryViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.availableTags, ["Client", "Follow-up"])
     }
 
+    func testUpdateSegmentTextPersistsSegmentsAlternativesAndRebuiltText() throws {
+        let context = try makeModelContext()
+        let record = TranscriptionRecord(
+            title: "Editable",
+            text: "誤認識です",
+            sourceType: .recording,
+            duration: 2,
+            segments: [
+                TranscriptionSegment(
+                    id: 0,
+                    start: 0,
+                    end: 1,
+                    text: "誤認識",
+                    alternatives: ["誤認識", "正しい認識"]
+                ),
+                TranscriptionSegment(id: 1, start: 1, end: 2, text: "です"),
+            ],
+            language: "ja"
+        )
+        context.insert(record)
+        try context.save()
+        let viewModel = HistoryViewModel()
+        viewModel.setModelContext(context)
+
+        XCTAssertTrue(
+            viewModel.updateSegmentText(
+                record,
+                segmentID: 0,
+                text: "正しい認識"
+            )
+        )
+
+        XCTAssertEqual(record.text, "正しい認識です")
+        XCTAssertEqual(record.segments[0].text, "正しい認識")
+        XCTAssertEqual(record.segments[0].alternatives, ["誤認識", "正しい認識"])
+        let persisted = try XCTUnwrap(
+            context.fetch(FetchDescriptor<TranscriptionRecord>()).first
+        )
+        XCTAssertEqual(persisted.text, "正しい認識です")
+        XCTAssertEqual(persisted.segments[0].text, "正しい認識")
+    }
+
     func testDeleteRecordRemovesSwiftDataRecordAndAssociatedAudioFile() throws {
         let context = try makeModelContext()
         let directory = try makeTemporaryDirectory()

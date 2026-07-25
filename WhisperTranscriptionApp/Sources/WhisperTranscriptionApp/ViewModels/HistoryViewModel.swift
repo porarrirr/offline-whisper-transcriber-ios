@@ -164,6 +164,51 @@ class HistoryViewModel: ObservableObject {
         }
         fetchRecords()
     }
+
+    @discardableResult
+    func updateSegmentText(
+        _ record: TranscriptionRecord,
+        segmentID: Int,
+        text: String
+    ) -> Bool {
+        guard let modelContext else {
+            setError(String(localized: "History store is unavailable."))
+            return false
+        }
+
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty else {
+            setError(String(localized: "Transcription text cannot be empty."))
+            return false
+        }
+
+        var updatedSegments = record.segments
+        guard let index = updatedSegments.firstIndex(where: { $0.id == segmentID }) else {
+            setError(String(localized: "The selected transcription segment could not be found."))
+            return false
+        }
+
+        let previousText = record.text
+        let previousSegmentsJSON = record.segmentsJSON
+        updatedSegments[index] = updatedSegments[index].replacingText(with: trimmedText)
+
+        do {
+            let data = try JSONEncoder().encode(updatedSegments)
+            guard let encodedSegments = String(data: data, encoding: .utf8) else {
+                throw HistoryViewModelError.segmentEncodingFailed
+            }
+            record.segmentsJSON = encodedSegments
+            record.text = TranscriptionSegment.plainText(from: updatedSegments, fallback: previousText)
+            try modelContext.save()
+            errorMessage = nil
+            return true
+        } catch {
+            record.text = previousText
+            record.segmentsJSON = previousSegmentsJSON
+            setError(String(localized: "Failed to update transcription") + ": \(error.localizedDescription)")
+            return false
+        }
+    }
     
     func exportRecord(_ record: TranscriptionRecord, format: ExportFormat) -> URL? {
         return TranscriptionExporter.export(record: record, format: format)
@@ -415,6 +460,7 @@ private enum HistoryViewModelError: LocalizedError {
     case cleanupRollbackFailed(deletionError: String, restoreError: String)
     case deletionRollbackFailed(databaseError: String, restoreError: String)
     case invalidStagedRecordingName(String)
+    case segmentEncodingFailed
 
     var errorDescription: String? {
         switch self {
@@ -427,6 +473,8 @@ private enum HistoryViewModelError: LocalizedError {
                 + ": database=\(databaseError), file=\(restoreError)"
         case .invalidStagedRecordingName(let name):
             return "Invalid staged recording filename: \(name)"
+        case .segmentEncodingFailed:
+            return "Failed to encode transcription segments."
         }
     }
 }

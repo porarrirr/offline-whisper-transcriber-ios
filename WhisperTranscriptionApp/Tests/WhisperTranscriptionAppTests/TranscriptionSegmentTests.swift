@@ -45,6 +45,55 @@ final class TranscriptionSegmentTests: XCTestCase {
             "existing\ntext"
         )
     }
+
+    func testLegacySegmentJSONDecodesWithoutAlternatives() throws {
+        let json = #"{"id":1,"start":2.0,"end":3.0,"text":"legacy"}"#
+
+        let segment = try JSONDecoder().decode(
+            TranscriptionSegment.self,
+            from: Data(json.utf8)
+        )
+
+        XCTAssertEqual(segment.text, "legacy")
+        XCTAssertNil(segment.alternatives)
+        XCTAssertTrue(segment.selectableAlternatives.isEmpty)
+    }
+
+    func testSelectableAlternativesTrimDeduplicateAndExcludeCurrentText() {
+        let segment = TranscriptionSegment(
+            id: 0,
+            start: 0,
+            end: 1,
+            text: "開発",
+            alternatives: [" 開発 ", "海抜", "海抜", "", "快活"]
+        )
+
+        XCTAssertEqual(segment.selectableAlternatives, ["海抜", "快活"])
+    }
+
+    func testTimelineItemsInsertEveryCrossedThirtySecondMarker() {
+        let first = TranscriptionSegment(id: 0, start: 0, end: 10, text: "first")
+        let second = TranscriptionSegment(id: 1, start: 35, end: 40, text: "second")
+        let third = TranscriptionSegment(id: 2, start: 95, end: 100, text: "third")
+
+        XCTAssertEqual(
+            TranscriptionTimelineItem.items(from: [first, second, third]),
+            [
+                .segment(first),
+                .marker(seconds: 30),
+                .segment(second),
+                .marker(seconds: 60),
+                .marker(seconds: 90),
+                .segment(third),
+            ]
+        )
+    }
+
+    func testTimelineMarkerFormattingSupportsHours() {
+        XCTAssertEqual(TranscriptionTimelineItem.markerLabel(seconds: 30), "00:30")
+        XCTAssertEqual(TranscriptionTimelineItem.markerLabel(seconds: 90), "01:30")
+        XCTAssertEqual(TranscriptionTimelineItem.markerLabel(seconds: 3_600), "1:00:00")
+    }
 }
 
 final class TranscriptionChunkProcessorTests: XCTestCase {
