@@ -46,7 +46,9 @@ struct MainTabView: View {
             applyPendingDestination()
         }
         .alert("Update Available", isPresented: updateAlertBinding, presenting: availableUpdate) { update in
-            Button("Later", role: .cancel) {}
+            Button("Later", role: .cancel) {
+                AppUpdateChecker.shared.snoozeUpdateReminder()
+            }
             Button("Open App Store") {
                 openURL(update.appStoreURL)
             }

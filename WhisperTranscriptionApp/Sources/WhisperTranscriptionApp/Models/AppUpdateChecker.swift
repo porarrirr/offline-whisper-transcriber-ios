@@ -16,16 +16,26 @@ final class AppUpdateChecker {
     private let session: URLSession
     private let bundle: Bundle
     private let defaults: UserDefaults
+    private let now: () -> Date
     private static let lastCheckDateKey = "AppUpdateChecker.lastCheckDate"
+    private static let reminderSnoozedUntilKey = "AppUpdateChecker.reminderSnoozedUntil"
     private static let minimumCheckInterval: TimeInterval = 24 * 60 * 60
+    private static let reminderSnoozeInterval: TimeInterval = 7 * 24 * 60 * 60
 
-    init(session: URLSession = .shared, bundle: Bundle = .main, defaults: UserDefaults = .standard) {
+    init(
+        session: URLSession = .shared,
+        bundle: Bundle = .main,
+        defaults: UserDefaults = .standard,
+        now: @escaping () -> Date = Date.init
+    ) {
         self.session = session
         self.bundle = bundle
         self.defaults = defaults
+        self.now = now
     }
 
     func availableUpdate() async throws -> AppUpdateInfo? {
+        guard !isUpdateReminderSnoozed else { return nil }
         guard shouldCheckNow() else { return nil }
         defer { recordCheckAttempt() }
 
@@ -42,6 +52,20 @@ final class AppUpdateChecker {
             remoteVersion: appStoreApp.version,
             appStoreURL: appStoreApp.trackViewURL
         )
+    }
+
+    func snoozeUpdateReminder() {
+        defaults.set(
+            now().addingTimeInterval(Self.reminderSnoozeInterval),
+            forKey: Self.reminderSnoozedUntilKey
+        )
+    }
+
+    var isUpdateReminderSnoozed: Bool {
+        guard let snoozedUntil = defaults.object(forKey: Self.reminderSnoozedUntilKey) as? Date else {
+            return false
+        }
+        return now() < snoozedUntil
     }
 
     private func fetchAppStoreApp(bundleID: String) async throws -> AppStoreApp {
@@ -130,11 +154,11 @@ final class AppUpdateChecker {
         guard let lastCheckDate = defaults.object(forKey: Self.lastCheckDateKey) as? Date else {
             return true
         }
-        return Date().timeIntervalSince(lastCheckDate) >= Self.minimumCheckInterval
+        return now().timeIntervalSince(lastCheckDate) >= Self.minimumCheckInterval
     }
 
     private func recordCheckAttempt() {
-        defaults.set(Date(), forKey: Self.lastCheckDateKey)
+        defaults.set(now(), forKey: Self.lastCheckDateKey)
     }
 }
 
