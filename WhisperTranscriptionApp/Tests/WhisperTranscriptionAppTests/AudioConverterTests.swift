@@ -61,33 +61,73 @@ final class AudioConverterTests: XCTestCase {
         }
     }
 
-    private func makeAudioFile(duration: Double, sampleRate: Double) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("WhisperAudioTests-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+    func testSpeechTranscriberAudioFileUsesRequestedProcessingFormat() throws {
+        let requestedFormat = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: true
+        ))
+        let audioURL = try makeAudioFile(
+            duration: 0.25,
+            format: requestedFormat
+        )
 
-        let url = directory.appendingPathComponent("input.caf")
+        let standardAudioFile = try AVAudioFile(forReading: audioURL)
+        XCTAssertEqual(standardAudioFile.processingFormat.commonFormat, .pcmFormatFloat32)
+
+        let speechAudioFile = try AudioConverter.shared.openAudioFileForSpeechTranscriber(
+            at: audioURL,
+            compatibleFormat: requestedFormat
+        )
+        XCTAssertEqual(speechAudioFile.processingFormat.sampleRate, requestedFormat.sampleRate)
+        XCTAssertEqual(speechAudioFile.processingFormat.channelCount, requestedFormat.channelCount)
+        XCTAssertEqual(speechAudioFile.processingFormat.commonFormat, requestedFormat.commonFormat)
+        XCTAssertEqual(speechAudioFile.processingFormat.isInterleaved, requestedFormat.isInterleaved)
+    }
+
+    private func makeAudioFile(duration: Double, sampleRate: Double) throws -> URL {
         let format = try XCTUnwrap(AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
             sampleRate: sampleRate,
             channels: 1,
             interleaved: false
         ))
+        return try makeAudioFile(duration: duration, format: format)
+    }
+
+    private func makeAudioFile(duration: Double, format: AVAudioFormat) throws -> URL {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WhisperAudioTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: directory) }
+
+        let url = directory.appendingPathComponent("input.caf")
         let file = try AVAudioFile(
             forWriting: url,
             settings: format.settings,
             commonFormat: format.commonFormat,
             interleaved: format.isInterleaved
         )
-        let frameCount = AVAudioFrameCount((duration * sampleRate).rounded())
+        let frameCount = AVAudioFrameCount((duration * format.sampleRate).rounded())
         let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
         buffer.frameLength = frameCount
-        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
 
-        for frame in 0..<Int(frameCount) {
-            let phase = 2 * Double.pi * 440 * Double(frame) / sampleRate
-            samples[frame] = Float(sin(phase) * 0.2)
+        switch format.commonFormat {
+        case .pcmFormatFloat32:
+            let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+            for frame in 0..<Int(frameCount) {
+                let phase = 2 * Double.pi * 440 * Double(frame) / format.sampleRate
+                samples[frame] = Float(sin(phase) * 0.2)
+            }
+        case .pcmFormatInt16:
+            let samples = try XCTUnwrap(buffer.int16ChannelData?[0])
+            for frame in 0..<Int(frameCount) {
+                let phase = 2 * Double.pi * 440 * Double(frame) / format.sampleRate
+                samples[frame] = Int16(sin(phase) * Double(Int16.max) * 0.2)
+            }
+        default:
+            XCTFail("Unsupported test format: \(format.commonFormat)")
         }
 
         try file.write(from: buffer)

@@ -162,8 +162,8 @@ class ModelManager: NSObject, ObservableObject {
         isTranscriptionInProgress = transcriptionOperationCount > 0
     }
 
-    func recheckSpeechAssets() {
-        speechAssetCoordinator.recheck(locale: currentTranscriptionModel.appleSpeechLocale)
+    func refreshSpeechAssetStatus() {
+        speechAssetCoordinator.refreshStatus()
     }
 
     func retrySpeechAssetPreparation() {

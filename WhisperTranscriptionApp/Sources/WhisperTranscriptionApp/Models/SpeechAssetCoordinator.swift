@@ -297,7 +297,7 @@ struct SpeechAssetSnapshot: Equatable, Sendable {
             return String(localized: "Reserving this language for use in this app.")
         case .systemManagedPending:
             if hasExtendedWait {
-                return String(localized: "iOS still reports this model as being processed, but no measurable progress is available. Use Recheck or copy diagnostics for more information.")
+                return String(localized: "iOS still reports this model as being processed, but no measurable progress is available. This status updates automatically. You can copy diagnostics or start over.")
             }
             return String(localized: "iOS is managing the model request. The public API cannot distinguish active transfer, condition waiting, or automatic retry.")
         case .downloading:
@@ -309,7 +309,7 @@ struct SpeechAssetSnapshot: Equatable, Sendable {
         case .installed:
             return String(localized: "This language can now be used for on-device transcription.")
         case .offline:
-            return String(localized: "No network path is currently available. iOS does not reveal whether this is the model request's waiting reason.")
+            return String(localized: "No network path is currently available. iOS does not reveal whether this is the model request's waiting reason. This status updates automatically when a connection is available.")
         case .constrainedNetwork:
             return String(localized: "The current path is constrained. iOS does not reveal whether this is delaying the model request.")
         case .reservationLimitReached(let maximum, _):
@@ -319,9 +319,45 @@ struct SpeechAssetSnapshot: Equatable, Sendable {
         case .unsupported:
             return String(localized: "This device, language, or SpeechTranscriber configuration is not supported.")
         case .cancelled:
-            return String(localized: "The app stopped monitoring this request. Shared processing managed by iOS may continue.")
+            return String(localized: "The app stopped monitoring this request. Shared processing managed by iOS may continue. Tap \"Resume Preparation\" to prepare the model again.")
         }
     }
+
+    /// The actions the user can meaningfully take in the current state, primary
+    /// action first. Status rechecking is automated and intentionally absent.
+    func userActions(isModelReady: Bool) -> [SpeechAssetUserAction] {
+        switch state {
+        case .checking:
+            return inventoryStatus == .supported ? [.prepare] : []
+        case .reserving, .downloading:
+            return [.cancel]
+        case .systemManagedPending:
+            return hasExtendedWait ? [.startOver, .cancel] : [.cancel]
+        case .verifying:
+            return isOperationActive ? [.cancel] : []
+        case .offline, .constrainedNetwork:
+            return isOperationActive ? [.retry, .cancel] : [.retry]
+        case .reservationLimitReached:
+            return [.replaceLanguage]
+        case .insufficientStorage, .failed:
+            return [.retry]
+        case .unsupported:
+            return []
+        case .cancelled:
+            return [.resume]
+        case .installed:
+            return isModelReady ? [] : [.prepare]
+        }
+    }
+}
+
+enum SpeechAssetUserAction: Equatable, Hashable, Sendable {
+    case prepare
+    case retry
+    case resume
+    case startOver
+    case cancel
+    case replaceLanguage
 }
 
 enum SpeechAssetBlockingIssue: Equatable, Sendable {
@@ -625,12 +661,23 @@ final class SpeechAssetCoordinator: ObservableObject {
 
         installTask = Task { [weak self] in
             await self?.performPrepare(locale: locale.locale, generation: operationGeneration)
+            if let self, self.isCurrent(operationGeneration) {
+                self.installTask = nil
+            }
         }
     }
 
     func retry() {
         guard let identifier = snapshot.requestedLocaleIdentifier ?? selectedLocaleIdentifier else { return }
         prepare(locale: AppleSpeechLocale(localeIdentifier: identifier))
+    }
+
+    /// Passive status refresh: re-queries the iOS inventory without disturbing an
+    /// in-flight operation and without clearing user-visible error or cancellation
+    /// state. Error states self-heal only when iOS reports the model as installed.
+    func refreshStatus() {
+        guard installTask == nil, activeRequest == nil else { return }
+        recheck(clearsCancellation: false, monitorsSystemWork: !userCancelled)
     }
 
     func recheck(
@@ -902,7 +949,7 @@ final class SpeechAssetCoordinator: ObservableObject {
                         domain: "SpeechAssetCoordinator",
                         code: 1,
                         message: String(localized: "iOS returned no installation request, but the model is not installed."),
-                        recoverySuggestion: String(localized: "Recheck the model state or copy diagnostics to report the inconsistency.")
+                        recoverySuggestion: String(localized: "Try again, or copy diagnostics to report the inconsistency.")
                     )
                     blockingIssue = .failed(failure)
                     updateSnapshot {
@@ -1249,12 +1296,20 @@ final class SpeechAssetCoordinator: ObservableObject {
         pathMonitor.pathUpdateHandler = { [weak self] path in
             let network = SpeechAssetNetworkSnapshot(path: path)
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                self.updateSnapshot { $0.network = network }
-                self.deriveState()
+                self?.applyNetworkSnapshot(network)
             }
         }
         pathMonitor.start(queue: pathMonitorQueue)
+    }
+
+    func applyNetworkSnapshot(_ network: SpeechAssetNetworkSnapshot) {
+        let previousStatus = snapshot.network.status
+        updateSnapshot { $0.network = network }
+        deriveState()
+        let wasDisconnected = previousStatus == .unsatisfied || previousStatus == .requiresConnection
+        if wasDisconnected, network.status == .satisfied {
+            refreshStatus()
+        }
     }
 
     private func refreshLocalSystemContext() {

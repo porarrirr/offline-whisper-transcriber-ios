@@ -68,6 +68,9 @@ struct SpeechAssetStatusCard: View {
             actionButtons
         }
         .recorderPanel(padding: 14)
+        .task {
+            modelManager.refreshSpeechAssetStatus()
+        }
         .sheet(item: $presentedSheet) { destination in
             switch destination {
             case .diagnostics(let report):
@@ -86,55 +89,9 @@ struct SpeechAssetStatusCard: View {
 
     @ViewBuilder
     private var actionButtons: some View {
-        let state = snapshot.state
         HStack(spacing: 10) {
-            switch state {
-            case .checking:
-                if snapshot.inventoryStatus == .supported {
-                    Button("Use This Language") { modelManager.downloadModel() }
-                        .buttonStyle(.borderedProminent)
-                }
-                Button("Recheck") { modelManager.recheckSpeechAssets() }
-                    .buttonStyle(.bordered)
-            case .reserving, .downloading:
-                Button("Cancel") { modelManager.cancelDownload() }
-                    .buttonStyle(.bordered)
-                    .tint(Theme.rec)
-            case .systemManagedPending:
-                Button("Recheck") { modelManager.recheckSpeechAssets() }
-                    .buttonStyle(.bordered)
-                Button("Retry") { modelManager.retrySpeechAssetPreparation() }
-                    .buttonStyle(.borderedProminent)
-                Button("Cancel") { modelManager.cancelDownload() }
-                    .buttonStyle(.bordered)
-                    .tint(Theme.rec)
-            case .verifying, .offline, .constrainedNetwork:
-                Button("Recheck") { modelManager.recheckSpeechAssets() }
-                    .buttonStyle(.bordered)
-                Button("Retry") { modelManager.retrySpeechAssetPreparation() }
-                    .buttonStyle(.borderedProminent)
-                if snapshot.isOperationActive {
-                    Button("Cancel") { modelManager.cancelDownload() }
-                        .buttonStyle(.bordered)
-                        .tint(Theme.rec)
-                }
-            case .reservationLimitReached:
-                if showsManagementAction {
-                    Button("Replace a Language") { presentedSheet = .management }
-                        .buttonStyle(.borderedProminent)
-                }
-            case .insufficientStorage, .cancelled, .failed:
-                Button("Recheck") { modelManager.recheckSpeechAssets() }
-                    .buttonStyle(.bordered)
-                Button("Retry") { modelManager.retrySpeechAssetPreparation() }
-                    .buttonStyle(.borderedProminent)
-            case .installed:
-                if !modelManager.isModelReady {
-                    Button("Use This Language") { modelManager.downloadModel() }
-                        .buttonStyle(.borderedProminent)
-                }
-            case .unsupported:
-                EmptyView()
+            ForEach(snapshot.userActions(isModelReady: modelManager.isModelReady), id: \.self) { action in
+                actionButton(for: action)
             }
 
             Spacer(minLength: 0)
@@ -150,6 +107,37 @@ struct SpeechAssetStatusCard: View {
             }
         }
         .font(Theme.sans(12, weight: .semibold))
+    }
+
+    @ViewBuilder
+    private func actionButton(for action: SpeechAssetUserAction) -> some View {
+        switch action {
+        case .prepare:
+            Button("Use This Language") { modelManager.downloadModel() }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("speechAssetPrimaryAction")
+        case .retry:
+            Button("Retry") { modelManager.retrySpeechAssetPreparation() }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("speechAssetPrimaryAction")
+        case .resume:
+            Button("Resume Preparation") { modelManager.retrySpeechAssetPreparation() }
+                .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("speechAssetPrimaryAction")
+        case .startOver:
+            Button("Start Over") { modelManager.retrySpeechAssetPreparation() }
+                .buttonStyle(.bordered)
+        case .cancel:
+            Button("Cancel") { modelManager.cancelDownload() }
+                .buttonStyle(.bordered)
+                .tint(Theme.rec)
+        case .replaceLanguage:
+            if showsManagementAction {
+                Button("Replace a Language") { presentedSheet = .management }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("speechAssetPrimaryAction")
+            }
+        }
     }
 
     private var showsIndeterminateProgress: Bool {
@@ -290,7 +278,7 @@ struct SpeechAssetManagementView: View {
             }
         }
         .task {
-            modelManager.recheckSpeechAssets()
+            modelManager.refreshSpeechAssetStatus()
         }
         .sheet(item: $presentedSheet) { destination in
             switch destination {

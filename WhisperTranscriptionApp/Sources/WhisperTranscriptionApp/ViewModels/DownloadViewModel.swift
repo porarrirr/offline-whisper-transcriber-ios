@@ -108,14 +108,6 @@ class DownloadViewModel: ObservableObject {
         }
     }
 
-    func recheckSpeechAsset() {
-        modelManager.recheckSpeechAssets()
-    }
-
-    func retrySpeechAsset() {
-        modelManager.retrySpeechAssetPreparation()
-    }
-
     func cancelSpeechAsset() {
         modelManager.cancelDownload()
     }

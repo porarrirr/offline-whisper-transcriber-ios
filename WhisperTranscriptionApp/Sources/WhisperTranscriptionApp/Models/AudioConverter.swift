@@ -563,6 +563,31 @@ class AudioConverter {
         )
     }
 
+    func openAudioFileForSpeechTranscriber(
+        at url: URL,
+        compatibleFormat: AVAudioFormat
+    ) throws -> AVAudioFile {
+        let audioFile = try AVAudioFile(
+            forReading: url,
+            commonFormat: compatibleFormat.commonFormat,
+            interleaved: compatibleFormat.isInterleaved
+        )
+        let actualFormat = audioFile.processingFormat
+        guard Self.matchesSpeechTranscriberFormat(actualFormat, compatibleFormat) else {
+            let expected = Self.formatDescription(compatibleFormat)
+            let actual = Self.formatDescription(actualFormat)
+            AppLogger.error(
+                "Apple SpeechTranscriber入力形式が互換形式と一致しません: file=\(url.lastPathComponent), expected=\(expected), actual=\(actual)",
+                context: "AudioConverter"
+            )
+            throw AudioConverterError.speechTranscriberFormatMismatch(
+                expected: expected,
+                actual: actual
+            )
+        }
+        return audioFile
+    }
+
     private func extractAssetAudioForSpeechTranscriber(
         asset: AVURLAsset,
         audioTrack: AVAssetTrack,
@@ -735,7 +760,17 @@ class AudioConverter {
     }
 
     private static func formatDescription(_ format: AVAudioFormat) -> String {
-        "\(Int(format.sampleRate))Hz/\(format.channelCount)ch/\(format.commonFormat)"
+        "\(Int(format.sampleRate))Hz/\(format.channelCount)ch/\(format.commonFormat)/interleaved=\(format.isInterleaved)"
+    }
+
+    private static func matchesSpeechTranscriberFormat(
+        _ actual: AVAudioFormat,
+        _ expected: AVAudioFormat
+    ) -> Bool {
+        abs(actual.sampleRate - expected.sampleRate) < 0.5
+            && actual.channelCount == expected.channelCount
+            && actual.commonFormat == expected.commonFormat
+            && actual.isInterleaved == expected.isInterleaved
     }
 
     private static func sampleDuration(_ sampleCount: Int, sampleRate: Double) -> String {
@@ -763,6 +798,7 @@ class AudioConverter {
         case unsupportedPCMFormat
         case conversionFailed(Error)
         case conversionEndedUnexpectedly
+        case speechTranscriberFormatMismatch(expected: String, actual: String)
 
         var errorDescription: String? {
             switch self {
@@ -797,6 +833,8 @@ class AudioConverter {
                 return "音声変換に失敗しました: \(nsError.localizedDescription)（domain: \(nsError.domain), code: \(nsError.code)）"
             case .conversionEndedUnexpectedly:
                 return "音声変換が予期せず終了しました"
+            case .speechTranscriberFormatMismatch(let expected, let actual):
+                return "SpeechTranscriber用音声形式が一致しません（期待: \(expected)、実際: \(actual)）"
             }
         }
     }

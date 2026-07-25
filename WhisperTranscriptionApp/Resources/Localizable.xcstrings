@@ -4031,13 +4031,13 @@
         }
       }
     },
-    "iOS still reports this model as being processed, but no measurable progress is available. Use Recheck or copy diagnostics for more information." : {
+    "iOS still reports this model as being processed, but no measurable progress is available. This status updates automatically. You can copy diagnostics or start over." : {
       "extractionState" : "manual",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "iOSは引き続きモデルを処理中と報告していますが、測定可能な進捗はありません。「再確認」または診断情報のコピーをご利用ください。"
+            "value" : "iOSは引き続きモデルを処理中と報告していますが、測定可能な進捗はありません。この状態は自動的に更新されます。診断情報のコピー、または最初からのやり直しができます。"
           }
         }
       }
@@ -5226,13 +5226,13 @@
         }
       }
     },
-    "No network path is currently available. iOS does not reveal whether this is the model request's waiting reason." : {
+    "No network path is currently available. iOS does not reveal whether this is the model request's waiting reason. This status updates automatically when a connection is available." : {
       "extractionState" : "manual",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "現在利用できるネットワーク経路がありません。これがモデル取得の待機理由かどうかはiOSから公開されていません。"
+            "value" : "現在利用できるネットワーク経路がありません。これがモデル取得の待機理由かどうかはiOSから公開されていません。接続が回復すると、この状態は自動的に更新されます。"
           }
         }
       }
@@ -5536,13 +5536,13 @@
         }
       }
     },
-    "Open the app's SpeechTranscriber model manager to recheck or prepare this language." : {
+    "Open the app's SpeechTranscriber model manager to prepare this language." : {
       "extractionState" : "manual",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アプリのSpeechTranscriberモデル管理を開き、この言語を再確認または準備してください。"
+            "value" : "アプリのSpeechTranscriberモデル管理を開き、この言語を準備してください。"
           }
         }
       }
@@ -6139,24 +6139,72 @@
         }
       }
     },
-    "Recheck" : {
+    "Resume Preparation" : {
       "extractionState" : "manual",
       "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reanudar preparación"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reprendre la préparation"
+          }
+        },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "再確認"
+            "value" : "準備を再開"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复准备"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢復準備"
           }
         }
       }
     },
-    "Recheck the model state or copy diagnostics to report the inconsistency." : {
+    "Start Over" : {
       "extractionState" : "manual",
       "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Empezar de nuevo"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recommencer"
+          }
+        },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "モデル状態を再確認するか、診断情報をコピーして状態の不一致を報告してください。"
+            "value" : "最初からやり直す"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新开始"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重新開始"
           }
         }
       }
@@ -7745,13 +7793,13 @@
         }
       }
     },
-    "The app stopped monitoring this request. Shared processing managed by iOS may continue." : {
+    "The app stopped monitoring this request. Shared processing managed by iOS may continue. Tap \"Resume Preparation\" to prepare the model again." : {
       "extractionState" : "manual",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "アプリ内の監視を停止しました。iOSが管理する共有処理は継続する場合があります。"
+            "value" : "アプリ内の監視を停止しました。iOSが管理する共有処理は継続する場合があります。「準備を再開」をタップすると、もう一度モデルを準備できます。"
           }
         }
       }
@@ -8760,6 +8808,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將轉寫結果翻譯為英文"
+          }
+        }
+      }
+    },
+    "Try again, or copy diagnostics to report the inconsistency." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "もう一度お試しいただくか、診断情報をコピーして状態の不一致を報告してください。"
           }
         }
       }
