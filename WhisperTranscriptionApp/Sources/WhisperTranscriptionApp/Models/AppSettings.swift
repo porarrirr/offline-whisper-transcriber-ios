@@ -222,7 +222,7 @@ class AppSettings: ObservableObject {
            let transcriptDisplayStyle = TranscriptDisplayStyle(rawValue: storedTranscriptDisplayStyle) {
             self.transcriptDisplayStyle = transcriptDisplayStyle
         } else {
-            self.transcriptDisplayStyle = .timeline
+            self.transcriptDisplayStyle = .reading
         }
 
         let localeResolutionExpectedModelKey = selectedTranscriptionModel.storageKey

@@ -7,6 +7,8 @@ struct TranscriptionCard: View, Equatable {
     let isLoading: Bool
     let showsTimelineMarkers: Bool
     let displayStyle: TranscriptDisplayStyle
+    let showsDisplayStyleControl: Bool
+    let onDisplayStyleToggle: (() -> Void)?
     let onSegmentTap: ((TranscriptionSegment) -> Void)?
     let onSegmentLongPress: ((TranscriptionSegment) -> Void)?
     @State private var textChunks: [TranscriptionTextChunk] = []
@@ -18,6 +20,8 @@ struct TranscriptionCard: View, Equatable {
         isLoading: Bool,
         showsTimelineMarkers: Bool = false,
         displayStyle: TranscriptDisplayStyle = .timeline,
+        showsDisplayStyleControl: Bool = false,
+        onDisplayStyleToggle: (() -> Void)? = nil,
         onSegmentTap: ((TranscriptionSegment) -> Void)? = nil,
         onSegmentLongPress: ((TranscriptionSegment) -> Void)? = nil
     ) {
@@ -27,6 +31,8 @@ struct TranscriptionCard: View, Equatable {
         self.isLoading = isLoading
         self.showsTimelineMarkers = showsTimelineMarkers
         self.displayStyle = displayStyle
+        self.showsDisplayStyleControl = showsDisplayStyleControl
+        self.onDisplayStyleToggle = onDisplayStyleToggle
         self.onSegmentTap = onSegmentTap
         self.onSegmentLongPress = onSegmentLongPress
     }
@@ -43,6 +49,8 @@ struct TranscriptionCard: View, Equatable {
             && lhs.isLoading == rhs.isLoading
             && lhs.showsTimelineMarkers == rhs.showsTimelineMarkers
             && lhs.displayStyle == rhs.displayStyle
+            && lhs.showsDisplayStyleControl == rhs.showsDisplayStyleControl
+            && (lhs.onDisplayStyleToggle == nil) == (rhs.onDisplayStyleToggle == nil)
             && (lhs.onSegmentTap == nil) == (rhs.onSegmentTap == nil)
             && (lhs.onSegmentLongPress == nil) == (rhs.onSegmentLongPress == nil)
             && lhs.text == rhs.text
@@ -65,6 +73,10 @@ struct TranscriptionCard: View, Equatable {
                         .tint(Theme.amber)
                         .controlSize(.small)
                 }
+            }
+
+            if showsDisplayStyleControl {
+                transcriptDisplayStyleControl
             }
 
             if isLoading && text.isEmpty {
@@ -124,6 +136,33 @@ struct TranscriptionCard: View, Equatable {
         }
         .recorderPanel()
         .accessibilityElement(children: .contain)
+    }
+
+    /// ボタン名は切り替え先のモードを示し、キャプションは現在のモードの操作を説明する。
+    private var transcriptDisplayStyleControl: some View {
+        let isTimeline = displayStyle == .timeline
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Button {
+                onDisplayStyleToggle?()
+            } label: {
+                Label(
+                    isTimeline ? "Switch to Reading View" : "Switch to Timeline View",
+                    systemImage: isTimeline ? "text.alignleft" : "list.bullet.indent"
+                )
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.recorderQuiet)
+            .accessibilityIdentifier("historyTranscriptDisplayToggle")
+
+            Text(
+                isTimeline
+                    ? "Tap a line to play from there. Long-press to edit."
+                    : "Continuous text. Tapping does not move playback."
+            )
+            .font(Theme.sans(11))
+            .foregroundColor(Theme.textSecondary)
+        }
     }
 
     private var shouldShowSegmentRows: Bool {

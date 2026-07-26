@@ -53,6 +53,11 @@ struct HistoryDetailView: View {
                         isLoading: false,
                         showsTimelineMarkers: true,
                         displayStyle: settings.transcriptDisplayStyle,
+                        showsDisplayStyleControl: !cachedSegments.isEmpty,
+                        onDisplayStyleToggle: {
+                            settings.transcriptDisplayStyle =
+                                settings.transcriptDisplayStyle == .timeline ? .reading : .timeline
+                        },
                         onSegmentTap: handleSegmentTap,
                         onSegmentLongPress: { segment in
                             editingSegment = segment
@@ -318,12 +323,6 @@ struct HistoryDetailView: View {
 
             Divider().overlay(Theme.stroke)
 
-            if !cachedSegments.isEmpty {
-                transcriptDisplayStyleControl
-
-                Divider().overlay(Theme.stroke)
-            }
-
             VStack(spacing: 0) {
                 if audioURL != nil {
                     Button {
@@ -409,34 +408,6 @@ struct HistoryDetailView: View {
             }
         }
         .recorderPanel(padding: 14)
-    }
-
-    /// 文字起こしの表示スタイル切り替え。ボタン名は「切り替え先のモード」を示し、
-    /// 直下のキャプションで現在のモードのタップ挙動を明示する。
-    private var transcriptDisplayStyleControl: some View {
-        let isTimeline = settings.transcriptDisplayStyle == .timeline
-
-        return VStack(alignment: .leading, spacing: 6) {
-            Button {
-                settings.transcriptDisplayStyle = isTimeline ? .reading : .timeline
-            } label: {
-                Label(
-                    isTimeline ? "Switch to Reading View" : "Switch to Timeline View",
-                    systemImage: isTimeline ? "text.alignleft" : "list.bullet.indent"
-                )
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.recorderQuiet)
-            .accessibilityIdentifier("historyTranscriptDisplayToggle")
-
-            Text(
-                isTimeline
-                    ? "Tap a line to play from there. Long-press to edit."
-                    : "Continuous text. Tapping does not move playback."
-            )
-            .font(Theme.sans(11))
-            .foregroundColor(Theme.textSecondary)
-        }
     }
 
     private func detailActionRow(
