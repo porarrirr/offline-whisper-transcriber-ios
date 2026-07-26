@@ -38,6 +38,29 @@ final class AppleSpeechEnhancementTests: XCTestCase {
         XCTAssertEqual(player.currentTime, 10)
     }
 
+    @MainActor
+    func testAudioPlayerPausePreservesCurrentPosition() async throws {
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("pause-position-\(UUID().uuidString)")
+            .appendingPathExtension("m4a")
+        try makeSilentM4A(at: sourceURL, duration: 2)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: sourceURL)
+        }
+
+        let player = AudioPlayer()
+        player.prepare(url: sourceURL)
+        player.play(from: 0.5)
+        try await Task.sleep(for: .milliseconds(150))
+        player.pause()
+
+        let pausedTime = player.currentTime
+        XCTAssertGreaterThan(pausedTime, 0.4)
+        try await Task.sleep(for: .milliseconds(250))
+        XCTAssertEqual(player.currentTime, pausedTime, accuracy: 0.01)
+        XCTAssertFalse(player.isPlaying)
+    }
+
     func testImportedAudioStorePersistsPlayableM4A() async throws {
         let sourceURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("import-source-\(UUID().uuidString)")
@@ -61,7 +84,7 @@ final class AppleSpeechEnhancementTests: XCTestCase {
         XCTAssertFalse(audioTracks.isEmpty)
     }
 
-    private func makeSilentM4A(at url: URL) throws {
+    private func makeSilentM4A(at url: URL, duration: TimeInterval = 0.25) throws {
         let sampleRate = 44_100.0
         let settings: [String: Any] = [
             AVFormatIDKey: kAudioFormatMPEG4AAC,
@@ -73,7 +96,7 @@ final class AppleSpeechEnhancementTests: XCTestCase {
         guard let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: 1),
               let buffer = AVAudioPCMBuffer(
                 pcmFormat: format,
-                frameCapacity: AVAudioFrameCount(sampleRate / 4)
+                frameCapacity: AVAudioFrameCount(sampleRate * duration)
               ) else {
             XCTFail("Failed to create test audio buffer")
             return

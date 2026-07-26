@@ -6,10 +6,8 @@ struct TranscriptionCard: View {
     let showTimestamps: Bool
     let isLoading: Bool
     let showsTimelineMarkers: Bool
-    let selectedSegmentID: Int?
     let onSegmentTap: ((TranscriptionSegment) -> Void)?
     let onSegmentLongPress: ((TranscriptionSegment) -> Void)?
-    let onAlternativeSelect: ((TranscriptionSegment, String) -> Void)?
     @State private var textChunks: [TranscriptionTextChunk] = []
 
     init(
@@ -18,20 +16,16 @@ struct TranscriptionCard: View {
         showTimestamps: Bool = false,
         isLoading: Bool,
         showsTimelineMarkers: Bool = false,
-        selectedSegmentID: Int? = nil,
         onSegmentTap: ((TranscriptionSegment) -> Void)? = nil,
-        onSegmentLongPress: ((TranscriptionSegment) -> Void)? = nil,
-        onAlternativeSelect: ((TranscriptionSegment, String) -> Void)? = nil
+        onSegmentLongPress: ((TranscriptionSegment) -> Void)? = nil
     ) {
         self.text = text
         self.segments = segments
         self.showTimestamps = showTimestamps
         self.isLoading = isLoading
         self.showsTimelineMarkers = showsTimelineMarkers
-        self.selectedSegmentID = selectedSegmentID
         self.onSegmentTap = onSegmentTap
         self.onSegmentLongPress = onSegmentLongPress
-        self.onAlternativeSelect = onAlternativeSelect
     }
 
     private var textOnlyDisplayText: String {
@@ -76,10 +70,8 @@ struct TranscriptionCard: View {
                                 TranscriptionSegmentRow(
                                     segment: segment,
                                     showTimestamp: showTimestamps,
-                                    isSelected: selectedSegmentID == segment.id,
                                     onTap: onSegmentTap,
-                                    onLongPress: onSegmentLongPress,
-                                    onAlternativeSelect: onAlternativeSelect
+                                    onLongPress: onSegmentLongPress
                                 )
                             }
                         }
@@ -172,17 +164,15 @@ private struct TranscriptionTimelineMarker: View {
 private struct TranscriptionSegmentRow: View {
     let segment: TranscriptionSegment
     let showTimestamp: Bool
-    let isSelected: Bool
     let onTap: ((TranscriptionSegment) -> Void)?
     let onLongPress: ((TranscriptionSegment) -> Void)?
-    let onAlternativeSelect: ((TranscriptionSegment, String) -> Void)?
 
     private var isInteractive: Bool {
         onTap != nil || onLongPress != nil
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        Group {
             if isInteractive {
                 primaryContent
                     .gesture(segmentGesture)
@@ -194,37 +184,6 @@ private struct TranscriptionSegmentRow: View {
                     }
             } else {
                 primaryContent
-            }
-
-            if isSelected, !segment.selectableAlternatives.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(
-                            Array(segment.selectableAlternatives.enumerated()),
-                            id: \.element
-                        ) { index, alternative in
-                            Button {
-                                onAlternativeSelect?(segment, alternative)
-                            } label: {
-                                Text(alternative)
-                                    .font(Theme.sans(13, weight: .medium))
-                                    .foregroundColor(Theme.amber)
-                                    .lineLimit(1)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 7)
-                                    .background(Theme.panelInset, in: Capsule())
-                                    .overlay {
-                                        Capsule().strokeBorder(Theme.stroke, lineWidth: 1)
-                                    }
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier(
-                                "transcriptionAlternative-\(segment.id)-\(index)"
-                            )
-                            .accessibilityLabel(Text("Replace with \(alternative)"))
-                        }
-                    }
-                }
             }
         }
     }
@@ -241,10 +200,6 @@ private struct TranscriptionSegmentRow: View {
         }
         .padding(.vertical, isInteractive ? 6 : 0)
         .padding(.horizontal, isInteractive ? 8 : 0)
-        .background(
-            isSelected ? Theme.panelInset : Color.clear,
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("transcriptionSegment-\(segment.id)")

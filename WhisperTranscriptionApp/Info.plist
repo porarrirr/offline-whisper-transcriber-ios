@@ -17,9 +17,9 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2026.07.25</string>
+	<string>2026.07.26</string>
 	<key>CFBundleVersion</key>
-	<string>23.28</string>
+	<string>09.10</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>

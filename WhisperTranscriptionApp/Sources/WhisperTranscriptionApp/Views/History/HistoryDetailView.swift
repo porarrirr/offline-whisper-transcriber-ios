@@ -21,7 +21,6 @@ struct HistoryDetailView: View {
     @State private var showExportAudioError = false
     @State private var showPlaybackAudioError = false
     @State private var cachedSegments: [TranscriptionSegment] = []
-    @State private var selectedSegmentID: Int?
     @State private var editingSegment: TranscriptionSegment?
     @State private var pendingUndo: SegmentEditUndo?
     @State private var undoDismissTask: Task<Void, Never>?
@@ -57,17 +56,9 @@ struct HistoryDetailView: View {
                         showTimestamps: showTimestampView,
                         isLoading: false,
                         showsTimelineMarkers: true,
-                        selectedSegmentID: selectedSegmentID,
                         onSegmentTap: handleSegmentTap,
                         onSegmentLongPress: { segment in
                             editingSegment = segment
-                        },
-                        onAlternativeSelect: { segment, alternative in
-                            applySegmentReplacement(
-                                segment: segment,
-                                replacement: alternative,
-                                offersUndo: true
-                            )
                         }
                     )
                     .accessibilityIdentifier("historyTranscriptionCard")
@@ -466,7 +457,6 @@ struct HistoryDetailView: View {
     }
 
     private func handleSegmentTap(_ segment: TranscriptionSegment) {
-        selectedSegmentID = segment.id
         guard audioURL != nil else {
             showPlaybackAudioError = true
             return
@@ -491,7 +481,6 @@ struct HistoryDetailView: View {
         }
 
         cachedSegments = record.segments
-        selectedSegmentID = segment.id
         if offersUndo {
             scheduleUndo(segmentID: segment.id, previousText: segment.text)
         }

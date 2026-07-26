@@ -38,10 +38,7 @@ final class LongTranscriptionLayoutTests: XCTestCase {
         }
 
         let alternative = app.buttons["transcriptionAlternative-0-0"]
-        XCTAssertTrue(alternative.waitForExistence(timeout: 10))
-        alternative.tap()
-        XCTAssertTrue(app.buttons["transcriptionEditUndo"].waitForExistence(timeout: 5))
-        app.buttons["transcriptionEditUndo"].tap()
+        XCTAssertFalse(alternative.exists)
 
         firstSegment.press(forDuration: 0.7)
         XCTAssertTrue(

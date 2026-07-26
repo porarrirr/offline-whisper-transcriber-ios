@@ -1,7 +1,7 @@
 import Foundation
 import AVFoundation
 
-class AudioPlayer: ObservableObject {
+class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var isPlaying = false
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
@@ -13,8 +13,10 @@ class AudioPlayer: ObservableObject {
     func prepare(url: URL) {
         do {
             player = try AVAudioPlayer(contentsOf: url)
+            player?.delegate = self
             player?.prepareToPlay()
             duration = player?.duration ?? 0
+            currentTime = player?.currentTime ?? 0
             errorMessage = nil
         } catch {
             errorMessage = String(localized: "Failed to prepare audio playback") + ": \(error.localizedDescription)"
@@ -45,12 +47,10 @@ class AudioPlayer: ObservableObject {
 
         errorMessage = nil
         isPlaying = true
-        
+
+        invalidateProgressTimer()
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             self?.currentTime = player.currentTime
-            if !player.isPlaying {
-                self?.stop()
-            }
         }
     }
 
@@ -62,16 +62,18 @@ class AudioPlayer: ObservableObject {
     }
     
     func pause() {
-        player?.pause()
+        guard let player else { return }
+        player.pause()
+        currentTime = player.currentTime
         isPlaying = false
-        timer?.invalidate()
+        invalidateProgressTimer()
     }
     
     func stop() {
         player?.stop()
         player?.currentTime = 0
         isPlaying = false
-        timer?.invalidate()
+        invalidateProgressTimer()
         currentTime = 0
     }
     
@@ -79,5 +81,14 @@ class AudioPlayer: ObservableObject {
         let clampedTime = min(max(0, time), max(0, duration))
         player?.currentTime = clampedTime
         currentTime = clampedTime
+    }
+
+    func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        stop()
+    }
+
+    private func invalidateProgressTimer() {
+        timer?.invalidate()
+        timer = nil
     }
 }
