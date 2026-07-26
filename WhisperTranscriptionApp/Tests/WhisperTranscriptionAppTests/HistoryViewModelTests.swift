@@ -182,6 +182,33 @@ final class HistoryViewModelTests: XCTestCase {
         XCTAssertEqual(remainingRecords.map(\.id), [record.id])
     }
 
+    func testStartupMigratesLegacyContainerPathWithoutCreatingDuplicateHistory() throws {
+        let context = try makeModelContext()
+        let directory = try makeTemporaryDirectory()
+        let fileName = "imported-\(UUID().uuidString).m4a"
+        let currentURL = directory.appendingPathComponent(fileName)
+        try Data("audio".utf8).write(to: currentURL)
+        let legacyPath = "/old/container/Documents/Recordings/\(fileName)"
+        let record = makeRecord(
+            title: "Imported transcription",
+            text: "saved transcript",
+            audioFilePath: legacyPath,
+            sourceType: .file
+        )
+        context.insert(record)
+        try context.save()
+        let viewModel = HistoryViewModel(recordingsDirectory: directory)
+        viewModel.setModelContext(context)
+
+        viewModel.importUntrackedRecordings()
+
+        XCTAssertEqual(record.audioFilePath, "Recordings/\(fileName)")
+        let remainingRecords = try context.fetch(FetchDescriptor<TranscriptionRecord>())
+        XCTAssertEqual(remainingRecords.map(\.id), [record.id])
+        XCTAssertTrue(FileManager.default.fileExists(atPath: currentURL.path))
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
     func testCleanupOldRecordingsClearsExpiredPathAndPreservesFavoriteAndRecentAudio() throws {
         let context = try makeModelContext()
         let directory = try makeTemporaryDirectory()

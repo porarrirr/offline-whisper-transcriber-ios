@@ -177,7 +177,13 @@ class TranscribeViewModel: ObservableObject {
             return
         }
 
-        let audioURL = URL(fileURLWithPath: audioFilePath)
+        let audioURL: URL
+        do {
+            audioURL = try RecordingFileReference.fileURL(for: audioFilePath)
+        } catch {
+            setError(error.localizedDescription)
+            return
+        }
         guard FileManager.default.fileExists(atPath: audioURL.path) else {
             setError(String(localized: "The audio file for this history item could not be found."))
             return
@@ -268,11 +274,12 @@ class TranscribeViewModel: ObservableObject {
             transcriptionLanguage = result.language
 
             let savedDuration = max(duration, result.processedDuration)
+            let storedAudioPath = try RecordingFileReference.storedPath(for: transcriptionURL)
             let record = existingRecord ?? TranscriptionRecord(
                 title: TranscriptionRecord.defaultTitle(for: Date()),
                 text: "",
                 sourceType: sourceType,
-                audioFilePath: transcriptionURL.path,
+                audioFilePath: storedAudioPath,
                 duration: savedDuration
             )
             if existingRecord == nil {
@@ -459,7 +466,7 @@ class TranscribeViewModel: ObservableObject {
             title: TranscriptionRecord.defaultTitle(for: createdAt),
             text: text,
             sourceType: .recording,
-            audioFilePath: recordingURL.path,
+            audioFilePath: try RecordingFileReference.storedPath(for: recordingURL),
             duration: snapshot.elapsedTime,
             createdAt: createdAt,
             segments: snapshot.segments,
@@ -494,7 +501,7 @@ class TranscribeViewModel: ObservableObject {
             title: TranscriptionRecord.defaultTitle(for: createdAt),
             text: "",
             sourceType: .recording,
-            audioFilePath: url.path,
+            audioFilePath: try RecordingFileReference.storedPath(for: url),
             duration: duration,
             createdAt: createdAt
         )

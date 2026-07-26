@@ -3,6 +3,55 @@ import XCTest
 @testable import WhisperTranscriptionApp
 
 final class AudioRecorderStartTests: XCTestCase {
+    func testRecordingFileSettingsUseMono64KbpsHighQualityAAC() {
+        let settings = AudioRecorder.recordingFileSettings(sampleRate: 48_000)
+
+        XCTAssertEqual(settings[AVFormatIDKey] as? Int, Int(kAudioFormatMPEG4AAC))
+        XCTAssertEqual(settings[AVSampleRateKey] as? Double, 48_000)
+        XCTAssertEqual(settings[AVNumberOfChannelsKey] as? Int, 1)
+        XCTAssertEqual(settings[AVEncoderBitRateKey] as? Int, 64_000)
+        XCTAssertEqual(
+            settings[AVEncoderAudioQualityKey] as? Int,
+            AVAudioQuality.high.rawValue
+        )
+    }
+
+    func testStereoRecordingBufferIsAveragedToMono() throws {
+        let inputFormat = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 2,
+            interleaved: false
+        ))
+        let outputFormat = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: 48_000,
+            channels: 1,
+            interleaved: false
+        ))
+        let inputBuffer = try XCTUnwrap(AVAudioPCMBuffer(
+            pcmFormat: inputFormat,
+            frameCapacity: 2
+        ))
+        inputBuffer.frameLength = 2
+        let channels = try XCTUnwrap(inputBuffer.floatChannelData)
+        channels[0][0] = 1
+        channels[1][0] = -1
+        channels[0][1] = 0.5
+        channels[1][1] = 0.5
+
+        let monoBuffer = try AudioRecorder.monoBuffer(
+            from: inputBuffer,
+            outputFormat: outputFormat
+        )
+
+        XCTAssertEqual(monoBuffer.format.channelCount, 1)
+        XCTAssertEqual(monoBuffer.frameLength, 2)
+        let monoSamples = try XCTUnwrap(monoBuffer.floatChannelData?[0])
+        XCTAssertEqual(monoSamples[0], 0, accuracy: 0.000_001)
+        XCTAssertEqual(monoSamples[1], 0.5, accuracy: 0.000_001)
+    }
+
     func testEngineStartSucceedsOnFirstAttemptWithoutRetryOrSleep() async throws {
         var startCount = 0
         var retryCount = 0

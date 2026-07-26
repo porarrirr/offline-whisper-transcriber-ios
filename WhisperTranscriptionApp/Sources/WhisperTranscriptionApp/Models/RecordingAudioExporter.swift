@@ -3,11 +3,11 @@ import Foundation
 struct RecordingAudioExporter {
     static func export(record: TranscriptionRecord) -> URL? {
         guard let path = record.audioFilePath,
-              FileManager.default.fileExists(atPath: path) else {
+              let sourceURL = try? RecordingFileReference.fileURL(for: path),
+              FileManager.default.fileExists(atPath: sourceURL.path) else {
             return nil
         }
 
-        let sourceURL = URL(fileURLWithPath: path)
         let ext = sourceURL.pathExtension.isEmpty ? "m4a" : sourceURL.pathExtension
         let fileName = "\(sanitizedFileNameBase(from: record.displayTitle))_\(record.id.uuidString.prefix(8)).\(ext)"
         let destinationURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)

@@ -11,6 +11,7 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private static let recordingSampleRate = 48_000.0
     private static let bluetoothHFPRecordingSampleRate = 16_000.0
+    private static let recordingBitRate = 64_000
 
     @Published var isRecording = false
     @Published var currentTime: TimeInterval = 0
@@ -86,15 +87,15 @@ final class AudioRecorder: NSObject, ObservableObject {
             let inputNode = audioEngine.inputNode
             let format = try await waitForStableInputTapFormat(on: inputNode)
 
-            let settings: [String: Any] = [
-                AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-                AVSampleRateKey: format.sampleRate,
-                AVNumberOfChannelsKey: Int(format.channelCount),
-                AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue
-            ]
+            let settings = Self.recordingFileSettings(sampleRate: format.sampleRate)
             let file: AVAudioFile
             do {
-                file = try AVAudioFile(forWriting: url, settings: settings)
+                file = try AVAudioFile(
+                    forWriting: url,
+                    settings: settings,
+                    commonFormat: .pcmFormatFloat32,
+                    interleaved: false
+                )
             } catch {
                 throw makeRecordingStartError(stage: "create recording file", error: error)
             }
@@ -136,6 +137,16 @@ final class AudioRecorder: NSObject, ObservableObject {
             cleanupFailedStart()
             throw error
         }
+    }
+
+    static func recordingFileSettings(sampleRate: Double) -> [String: Any] {
+        [
+            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            AVSampleRateKey: sampleRate,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: recordingBitRate,
+            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+        ]
     }
 
     static func startEngineWithBoundedRetry(
@@ -516,7 +527,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     private func handleAudioBuffer(_ buffer: AVAudioPCMBuffer, time: AVAudioTime, format: AVAudioFormat) {
-        switch writeAudioBuffer(buffer, format: format) {
+        switch writeAudioBuffer(buffer) {
         case .ignored:
             return
         case .failed(let error):
@@ -536,10 +547,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
-    private func writeAudioBuffer(
-        _ buffer: AVAudioPCMBuffer,
-        format: AVAudioFormat
-    ) -> AudioBufferWriteResult {
+    private func writeAudioBuffer(_ buffer: AVAudioPCMBuffer) -> AudioBufferWriteResult {
         fileWriteLock.lock()
         var file: AVAudioFile?
         defer {
@@ -559,18 +567,86 @@ final class AudioRecorder: NSObject, ObservableObject {
             ))
         }
 
+        let monoBuffer: AVAudioPCMBuffer
         do {
-            try file!.write(from: buffer)
+            monoBuffer = try Self.monoBuffer(
+                from: buffer,
+                outputFormat: file!.processingFormat
+            )
+            try file!.write(from: monoBuffer)
         } catch {
             return .failed(error)
         }
 
         stateLock.lock()
-        recordedFrames += AVAudioFramePosition(buffer.frameLength)
-        let elapsedTime = format.sampleRate > 0 ? TimeInterval(recordedFrames) / format.sampleRate : 0
+        recordedFrames += AVAudioFramePosition(monoBuffer.frameLength)
+        let outputSampleRate = monoBuffer.format.sampleRate
+        let elapsedTime = outputSampleRate > 0
+            ? TimeInterval(recordedFrames) / outputSampleRate
+            : 0
         stateLock.unlock()
 
         return .written(elapsedTime)
+    }
+
+    static func monoBuffer(
+        from inputBuffer: AVAudioPCMBuffer,
+        outputFormat: AVAudioFormat
+    ) throws -> AVAudioPCMBuffer {
+        let inputFormat = inputBuffer.format
+        guard inputFormat.commonFormat == .pcmFormatFloat32,
+              inputFormat.channelCount > 0,
+              outputFormat.commonFormat == .pcmFormatFloat32,
+              outputFormat.channelCount == 1,
+              !outputFormat.isInterleaved,
+              abs(inputFormat.sampleRate - outputFormat.sampleRate) < 0.5 else {
+            throw AudioRecorderError.recordingEncodingFailed(
+                String(localized: "Recording encoding failed")
+                    + ": unsupported microphone format conversion"
+            )
+        }
+
+        if inputFormat.channelCount == 1, !inputFormat.isInterleaved {
+            return inputBuffer
+        }
+
+        guard let outputBuffer = AVAudioPCMBuffer(
+            pcmFormat: outputFormat,
+            frameCapacity: inputBuffer.frameLength
+        ), let inputData = inputBuffer.floatChannelData,
+           let outputData = outputBuffer.floatChannelData?[0] else {
+            throw AudioRecorderError.recordingEncodingFailed(
+                String(localized: "Recording encoding failed")
+                    + ": could not allocate a mono recording buffer"
+            )
+        }
+
+        let frameLength = Int(inputBuffer.frameLength)
+        let channelCount = Int(inputFormat.channelCount)
+        let channelScale = 1 / Float(channelCount)
+        outputBuffer.frameLength = inputBuffer.frameLength
+
+        if inputFormat.isInterleaved {
+            let interleavedInput = inputData[0]
+            for frame in 0..<frameLength {
+                var sum: Float = 0
+                let frameOffset = frame * channelCount
+                for channel in 0..<channelCount {
+                    sum += interleavedInput[frameOffset + channel]
+                }
+                outputData[frame] = sum * channelScale
+            }
+        } else {
+            for frame in 0..<frameLength {
+                var sum: Float = 0
+                for channel in 0..<channelCount {
+                    sum += inputData[channel][frame]
+                }
+                outputData[frame] = sum * channelScale
+            }
+        }
+
+        return outputBuffer
     }
 
     private func finishActiveRecording() {

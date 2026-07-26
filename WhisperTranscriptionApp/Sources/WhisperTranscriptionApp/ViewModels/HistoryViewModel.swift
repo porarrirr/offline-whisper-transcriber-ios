@@ -246,6 +246,10 @@ class HistoryViewModel: ObservableObject {
         audioPath: String,
         modelContext: ModelContext
     ) throws {
+        let audioURL = try RecordingFileReference.fileURL(
+            for: audioPath,
+            recordingsDirectory: recordingsDirectoryOverride
+        )
         record.audioFilePath = nil
         do {
             try modelContext.save()
@@ -254,10 +258,10 @@ class HistoryViewModel: ObservableObject {
             throw error
         }
 
-        guard fileManager.fileExists(atPath: audioPath) else { return }
+        guard fileManager.fileExists(atPath: audioURL.path) else { return }
 
         do {
-            try fileManager.removeItem(atPath: audioPath)
+            try fileManager.removeItem(at: audioURL)
         } catch {
             record.audioFilePath = audioPath
             do {
@@ -277,11 +281,24 @@ class HistoryViewModel: ObservableObject {
 
         do {
             let recordingsDirectory = try recordingsDirectory()
-            guard fileManager.fileExists(atPath: recordingsDirectory.path) else { return }
-
             let descriptor = FetchDescriptor<TranscriptionRecord>()
             let records = try modelContext.fetch(descriptor)
-            let trackedAudioPaths = Set(records.compactMap(\.audioFilePath))
+            if try migrateLegacyAudioFilePaths(
+                in: records,
+                recordingsDirectory: recordingsDirectory
+            ) {
+                try modelContext.save()
+            }
+
+            guard fileManager.fileExists(atPath: recordingsDirectory.path) else { return }
+
+            let trackedAudioPaths = try Set(records.compactMap { record -> String? in
+                guard let storedPath = record.audioFilePath else { return nil }
+                return try RecordingFileReference.fileURL(
+                    for: storedPath,
+                    recordingsDirectory: recordingsDirectory
+                ).path
+            })
             let directoryURLs = try fileManager.contentsOfDirectory(
                 at: recordingsDirectory,
                 includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
@@ -303,7 +320,10 @@ class HistoryViewModel: ObservableObject {
                     title: TranscriptionRecord.defaultTitle(for: createdAt),
                     text: "",
                     sourceType: .recording,
-                    audioFilePath: url.path,
+                    audioFilePath: try RecordingFileReference.storedPath(
+                        for: url,
+                        recordingsDirectory: recordingsDirectory
+                    ),
                     duration: 0,
                     createdAt: createdAt
                 )
@@ -353,8 +373,12 @@ class HistoryViewModel: ObservableObject {
     private func stageRecordingFilesForDeletion(at paths: [String]) throws -> [StagedRecordingDeletion] {
         var stagedFiles: [StagedRecordingDeletion] = []
         do {
-            for path in paths where fileManager.fileExists(atPath: path) {
-                let sourceURL = URL(fileURLWithPath: path)
+            for path in paths {
+                let sourceURL = try RecordingFileReference.fileURL(
+                    for: path,
+                    recordingsDirectory: recordingsDirectoryOverride
+                )
+                guard fileManager.fileExists(atPath: sourceURL.path) else { continue }
                 let stagedURL = sourceURL
                     .deletingLastPathComponent()
                     .appendingPathComponent(".deleting-\(UUID().uuidString)--\(sourceURL.lastPathComponent)")
@@ -421,6 +445,25 @@ class HistoryViewModel: ObservableObject {
         }
     }
 
+    private func migrateLegacyAudioFilePaths(
+        in records: [TranscriptionRecord],
+        recordingsDirectory: URL
+    ) throws -> Bool {
+        var changed = false
+        for record in records {
+            guard let audioFilePath = record.audioFilePath,
+                  let migratedPath = try RecordingFileReference.migratedStoredPath(
+                      from: audioFilePath,
+                      recordingsDirectory: recordingsDirectory
+                  ) else {
+                continue
+            }
+            record.audioFilePath = migratedPath
+            changed = true
+        }
+        return changed
+    }
+
     private func recordingsDirectory() throws -> URL {
         if let recordingsDirectoryOverride {
             return recordingsDirectoryOverride
@@ -428,7 +471,10 @@ class HistoryViewModel: ObservableObject {
         guard let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
             throw HistoryViewModelError.documentsDirectoryUnavailable
         }
-        return documentsPath.appendingPathComponent("Recordings", isDirectory: true)
+        return documentsPath.appendingPathComponent(
+            RecordingFileReference.directoryName,
+            isDirectory: true
+        )
     }
 
     private static func sortedUniqueTags(from records: [TranscriptionRecord]) -> [String] {

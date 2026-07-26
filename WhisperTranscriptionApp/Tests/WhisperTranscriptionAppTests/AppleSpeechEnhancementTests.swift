@@ -76,10 +76,14 @@ final class AppleSpeechEnhancementTests: XCTestCase {
                 await ImportedAudioStore.shared.removePersistedAudio(at: outputURL)
             }
         }
+        let storedPath = try RecordingFileReference.storedPath(for: outputURL)
+        try FileManager.default.removeItem(at: sourceURL)
+        let resolvedOutputURL = try RecordingFileReference.fileURL(for: storedPath)
 
         XCTAssertEqual(outputURL.pathExtension.lowercased(), "m4a")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path))
-        let asset = AVURLAsset(url: outputURL)
+        XCTAssertEqual(resolvedOutputURL, outputURL.standardizedFileURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: resolvedOutputURL.path))
+        let asset = AVURLAsset(url: resolvedOutputURL)
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
         XCTAssertFalse(audioTracks.isEmpty)
     }

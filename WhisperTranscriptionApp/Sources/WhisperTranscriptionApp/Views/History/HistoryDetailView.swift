@@ -549,7 +549,9 @@ struct HistoryDetailView: View {
 
     private var audioURL: URL? {
         guard let audioFilePath = record.audioFilePath else { return nil }
-        let url = URL(fileURLWithPath: audioFilePath)
+        guard let url = try? RecordingFileReference.fileURL(for: audioFilePath) else {
+            return nil
+        }
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
