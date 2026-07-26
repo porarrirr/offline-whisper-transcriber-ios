@@ -396,15 +396,31 @@ final class RecordingService: ObservableObject {
         }
     }
 
+    /// スナップショットは1つの値が変わっただけでも届く。無条件に代入すると`@Published`が
+    /// 7回`objectWillChange`を流し、購読側のビューがその都度無効化されるため、変化した分だけ代入する。
     private func applyLiveSnapshot(_ snapshot: LiveTranscriptionSnapshot) {
-        liveState = snapshot.state
-        liveElapsedTime = snapshot.elapsedTime
-        liveAudioLevel = snapshot.audioLevel
-        liveFinalizedText = snapshot.finalizedText
-        liveVolatileText = snapshot.volatileText
-        liveSegments = snapshot.segments
-        liveRecordingURL = snapshot.recordingURL
-        if let errorMessage = snapshot.errorMessage {
+        if liveState != snapshot.state {
+            liveState = snapshot.state
+        }
+        if liveElapsedTime != snapshot.elapsedTime {
+            liveElapsedTime = snapshot.elapsedTime
+        }
+        if liveAudioLevel != snapshot.audioLevel {
+            liveAudioLevel = snapshot.audioLevel
+        }
+        if liveFinalizedText != snapshot.finalizedText {
+            liveFinalizedText = snapshot.finalizedText
+        }
+        if liveVolatileText != snapshot.volatileText {
+            liveVolatileText = snapshot.volatileText
+        }
+        if liveSegments != snapshot.segments {
+            liveSegments = snapshot.segments
+        }
+        if liveRecordingURL != snapshot.recordingURL {
+            liveRecordingURL = snapshot.recordingURL
+        }
+        if let errorMessage = snapshot.errorMessage, liveMessage != errorMessage {
             liveMessage = errorMessage
         }
     }

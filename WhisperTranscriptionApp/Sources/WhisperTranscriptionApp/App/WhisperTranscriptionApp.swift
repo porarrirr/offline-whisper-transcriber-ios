@@ -5,7 +5,10 @@ import SwiftData
 struct WhisperTranscriptionApp: App {
     private let modelContainer: ModelContainer?
     private let modelContainerErrorMessage: String?
-    @StateObject private var recordingService = RecordingService.shared
+    // ライブ文字起こし中は毎秒数百回publishされる。この`body`は`recordingService`の
+    // publishedプロパティを読まず(注入とメソッド呼び出しにしか使わない)、購読すると
+    // Scene全体が毎秒数百回無効化されるため、`@StateObject`ではなく`let`で保持する。
+    private let recordingService = RecordingService.shared
     @StateObject private var settings = AppSettings.shared
     @Environment(\.scenePhase) private var scenePhase
 

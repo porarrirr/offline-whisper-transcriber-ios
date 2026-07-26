@@ -1,15 +1,19 @@
 import Foundation
 import AVFoundation
+import Observation
 
-class AudioPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
-    @Published var isPlaying = false
-    @Published var currentTime: TimeInterval = 0
-    @Published var duration: TimeInterval = 0
-    @Published var errorMessage: String?
-    
-    private var player: AVAudioPlayer?
-    private var timer: Timer?
-    
+/// 再生位置は0.1秒間隔で更新されるため、`ObservableObject`ではなく`@Observable`を使う。
+/// `ObservableObject`はビュー単位で購読されるので、再生位置を読まない画面まで毎秒10回無効化されてしまう。
+@Observable
+class AudioPlayer: NSObject, AVAudioPlayerDelegate {
+    var isPlaying = false
+    var currentTime: TimeInterval = 0
+    var duration: TimeInterval = 0
+    var errorMessage: String?
+
+    @ObservationIgnored private var player: AVAudioPlayer?
+    @ObservationIgnored private var timer: Timer?
+
     func prepare(url: URL) {
         do {
             player = try AVAudioPlayer(contentsOf: url)

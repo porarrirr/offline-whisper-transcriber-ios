@@ -8,8 +8,14 @@ struct HistoryDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
-    @StateObject private var audioPlayer = AudioPlayer()
+    // 再生位置は0.1秒ごとに更新される。この画面のbodyでは`audioPlayer`の観測対象プロパティを
+    // 一切読まないこと(読むとその都度この長大なbody全体が無効化され、文字起こしリストの
+    // 再レイアウトでスクロール位置が飛ぶ)。再生状態の参照は`AudioPlaybackPanel`内に閉じる。
+    @State private var audioPlayer = AudioPlayer()
     @StateObject private var transcribeViewModel = TranscribeViewModel()
+    // 表示スタイルはユーザー操作時しか更新されないので、bodyで観測しても再生位置のような
+    // 高頻度更新は発生しない。
+    @StateObject private var settings = AppSettings.shared
     @State private var showCopyConfirmation = false
     @State private var showDeleteConfirmation = false
     @State private var showExportSheet = false
@@ -21,6 +27,7 @@ struct HistoryDetailView: View {
     @State private var transcriptionExportErrorMessage: String?
     @State private var showPlaybackAudioError = false
     @State private var cachedSegments: [TranscriptionSegment] = []
+    @State private var cachedAudioURL: URL?
     @State private var editingSegment: TranscriptionSegment?
     @State private var pendingUndo: SegmentEditUndo?
     @State private var undoDismissTask: Task<Void, Never>?
@@ -36,7 +43,7 @@ struct HistoryDetailView: View {
                     WarningStrip(message: error)
                 }
 
-                operationsPanel(audioURL: audioURL)
+                operationsPanel(audioURL: cachedAudioURL)
 
                 if record.hasTranscriptionText {
                     TranscriptionCard(
@@ -45,11 +52,13 @@ struct HistoryDetailView: View {
                         showTimestamps: false,
                         isLoading: false,
                         showsTimelineMarkers: true,
+                        displayStyle: settings.transcriptDisplayStyle,
                         onSegmentTap: handleSegmentTap,
                         onSegmentLongPress: { segment in
                             editingSegment = segment
                         }
                     )
+                    .equatable()
                     .accessibilityIdentifier("historyTranscriptionCard")
                 } else {
                     HStack(spacing: 10) {
@@ -83,9 +92,13 @@ struct HistoryDetailView: View {
             if cachedSegments.isEmpty {
                 cachedSegments = record.segments
             }
+            cachedAudioURL = Self.resolveAudioURL(for: record)
         }
         .onChange(of: record.segmentsJSON) { _, _ in
             cachedSegments = record.segments
+        }
+        .onChange(of: record.audioFilePath) { _, _ in
+            cachedAudioURL = Self.resolveAudioURL(for: record)
         }
         .onDisappear {
             audioPlayer.stop()
@@ -299,66 +312,17 @@ struct HistoryDetailView: View {
         VStack(alignment: .leading, spacing: 14) {
             TechLabel(text: "Actions")
 
-            if audioURL != nil {
-                HStack(spacing: 28) {
-                    Spacer()
-
-                    Button {
-                        if audioPlayer.isPlaying {
-                            audioPlayer.pause()
-                        } else {
-                            audioPlayer.play()
-                        }
-                    } label: {
-                        AudioPlaybackControlLabel(
-                            title: audioPlayer.isPlaying ? "Pause Audio" : "Play Audio",
-                            systemImage: audioPlayer.isPlaying ? "pause.fill" : "play.fill",
-                            isPrimary: true
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        audioPlayer.stop()
-                    } label: {
-                        AudioPlaybackControlLabel(
-                            title: "Stop Audio",
-                            systemImage: "stop.fill",
-                            isPrimary: false
-                        )
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(audioPlayer.currentTime == 0 && !audioPlayer.isPlaying)
-
-                    Spacer()
-                }
-
-                if audioPlayer.duration > 0 {
-                    VStack(spacing: 4) {
-                        Slider(value: Binding(
-                            get: { audioPlayer.currentTime },
-                            set: { audioPlayer.seek(to: $0) }
-                        ), in: 0...audioPlayer.duration)
-                        .tint(Theme.amberFill)
-
-                        HStack {
-                            Text(formatTime(audioPlayer.currentTime))
-                            Spacer()
-                            Text(formatTime(audioPlayer.duration))
-                        }
-                        .font(Theme.mono(11, weight: .medium))
-                        .foregroundColor(Theme.textSecondary)
-                    }
-                }
-
-                if let error = audioPlayer.errorMessage {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(Theme.sans(12))
-                        .foregroundColor(Theme.rec)
-                }
+            if let audioURL {
+                AudioPlaybackPanel(audioURL: audioURL, player: audioPlayer)
             }
 
             Divider().overlay(Theme.stroke)
+
+            if !cachedSegments.isEmpty {
+                transcriptDisplayStyleControl
+
+                Divider().overlay(Theme.stroke)
+            }
 
             VStack(spacing: 0) {
                 if audioURL != nil {
@@ -445,10 +409,33 @@ struct HistoryDetailView: View {
             }
         }
         .recorderPanel(padding: 14)
-        .onAppear {
-            if let audioURL {
-                audioPlayer.prepare(url: audioURL)
+    }
+
+    /// 文字起こしの表示スタイル切り替え。ボタン名は「切り替え先のモード」を示し、
+    /// 直下のキャプションで現在のモードのタップ挙動を明示する。
+    private var transcriptDisplayStyleControl: some View {
+        let isTimeline = settings.transcriptDisplayStyle == .timeline
+
+        return VStack(alignment: .leading, spacing: 6) {
+            Button {
+                settings.transcriptDisplayStyle = isTimeline ? .reading : .timeline
+            } label: {
+                Label(
+                    isTimeline ? "Switch to Reading View" : "Switch to Timeline View",
+                    systemImage: isTimeline ? "text.alignleft" : "list.bullet.indent"
+                )
+                .frame(maxWidth: .infinity)
             }
+            .buttonStyle(.recorderQuiet)
+            .accessibilityIdentifier("historyTranscriptDisplayToggle")
+
+            Text(
+                isTimeline
+                    ? "Tap a line to play from there. Long-press to edit."
+                    : "Continuous text. Tapping does not move playback."
+            )
+            .font(Theme.sans(11))
+            .foregroundColor(Theme.textSecondary)
         }
     }
 
@@ -494,7 +481,7 @@ struct HistoryDetailView: View {
     }
 
     private func handleSegmentTap(_ segment: TranscriptionSegment) {
-        guard audioURL != nil else {
+        guard cachedAudioURL != nil else {
             showPlaybackAudioError = true
             return
         }
@@ -584,22 +571,94 @@ struct HistoryDetailView: View {
         .shadow(color: Color.black.opacity(0.18), radius: 8, y: 3)
     }
 
-    private var audioURL: URL? {
+    /// 音声ファイルの実在確認は同期I/Oなので`body`から呼ばない。表示時と`audioFilePath`変更時だけ解決する。
+    private static func resolveAudioURL(for record: TranscriptionRecord) -> URL? {
         guard let audioFilePath = record.audioFilePath else { return nil }
         guard let url = try? RecordingFileReference.fileURL(for: audioFilePath) else {
             return nil
         }
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
+}
 
-    private func formatTime(_ time: TimeInterval) -> String {
-        let hours = Int(time) / 3600
-        let minutes = (Int(time) % 3600) / 60
-        let seconds = Int(time) % 60
-        if hours > 0 {
-            return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+private func formatTime(_ time: TimeInterval) -> String {
+    let hours = Int(time) / 3600
+    let minutes = (Int(time) % 3600) / 60
+    let seconds = Int(time) % 60
+    if hours > 0 {
+        return String(format: "%d:%02d:%02d", hours, minutes, seconds)
+    }
+    return String(format: "%02d:%02d", minutes, seconds)
+}
+
+/// 再生位置の更新(0.1秒間隔)で無効化される範囲をこのパネルだけに閉じ込めるための子ビュー。
+/// `HistoryDetailView`側にこれらのプロパティ参照を戻さないこと。
+private struct AudioPlaybackPanel: View {
+    let audioURL: URL
+    let player: AudioPlayer
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 28) {
+                Spacer()
+
+                Button {
+                    if player.isPlaying {
+                        player.pause()
+                    } else {
+                        player.play()
+                    }
+                } label: {
+                    AudioPlaybackControlLabel(
+                        title: player.isPlaying ? "Pause Audio" : "Play Audio",
+                        systemImage: player.isPlaying ? "pause.fill" : "play.fill",
+                        isPrimary: true
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    player.stop()
+                } label: {
+                    AudioPlaybackControlLabel(
+                        title: "Stop Audio",
+                        systemImage: "stop.fill",
+                        isPrimary: false
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(player.currentTime == 0 && !player.isPlaying)
+
+                Spacer()
+            }
+
+            if player.duration > 0 {
+                VStack(spacing: 4) {
+                    Slider(value: Binding(
+                        get: { player.currentTime },
+                        set: { player.seek(to: $0) }
+                    ), in: 0...player.duration)
+                    .tint(Theme.amberFill)
+
+                    HStack {
+                        Text(formatTime(player.currentTime))
+                        Spacer()
+                        Text(formatTime(player.duration))
+                    }
+                    .font(Theme.mono(11, weight: .medium))
+                    .foregroundColor(Theme.textSecondary)
+                }
+            }
+
+            if let error = player.errorMessage {
+                Label(error, systemImage: "exclamationmark.triangle.fill")
+                    .font(Theme.sans(12))
+                    .foregroundColor(Theme.rec)
+            }
         }
-        return String(format: "%02d:%02d", minutes, seconds)
+        .onAppear {
+            player.prepare(url: audioURL)
+        }
     }
 }
 

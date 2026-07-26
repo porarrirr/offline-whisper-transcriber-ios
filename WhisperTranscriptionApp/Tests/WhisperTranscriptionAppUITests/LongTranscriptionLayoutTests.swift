@@ -13,7 +13,7 @@ final class LongTranscriptionLayoutTests: XCTestCase {
         exerciseLongTranscriptionScreen(
             extraArguments: ["--ui-test-history-detail"],
             cardIdentifier: "historyTranscriptionCard",
-            toggleIdentifier: nil
+            toggleIdentifier: "historyTranscriptDisplayToggle"
         )
     }
 
@@ -23,6 +23,9 @@ final class LongTranscriptionLayoutTests: XCTestCase {
             "--ui-test-long-transcription",
             "--ui-test-history-detail",
             "--ui-test-inline-edit",
+            // 表示スタイルはUserDefaultsに残るので、セグメント行を前提とするテストでは固定する。
+            "-transcriptDisplayStyle",
+            "timeline",
         ]
         app.launch()
 
@@ -63,6 +66,9 @@ final class LongTranscriptionLayoutTests: XCTestCase {
             "--ui-test-long-transcription",
             "-UIPreferredContentSizeCategoryName",
             "UICTContentSizeCategoryAccessibilityXXXL",
+            // 前回の実行で保存された表示スタイルに依存しないよう既定に固定する。
+            "-transcriptDisplayStyle",
+            "timeline",
         ] + extraArguments
         app.launch()
 

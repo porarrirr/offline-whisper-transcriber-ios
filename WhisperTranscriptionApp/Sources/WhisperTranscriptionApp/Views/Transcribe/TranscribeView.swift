@@ -63,11 +63,14 @@ struct TranscribeView: View {
                     )
 
                     if shouldShowLivePanel {
-                        LiveTranscriptionPanel(
-                            finalizedText: recordingService.liveFinalizedText,
-                            volatileText: recordingService.liveVolatileText,
-                            state: recordingService.liveState
-                        )
+                        // ライブ文字起こし自体がiOS 26以降のみで、`shouldShowLivePanel`が真になるのも同条件。
+                        if #available(iOS 26.0, *) {
+                            LiveTranscriptionPanel(
+                                finalizedText: recordingService.liveFinalizedText,
+                                volatileText: recordingService.liveVolatileText,
+                                state: recordingService.liveState
+                            )
+                        }
                     }
 
                     inputSection
@@ -345,10 +348,11 @@ struct TranscribeView: View {
             || modelReadinessError != nil
     }
 
+    /// 録音中は毎秒数十回`body`が評価されるため、全文コピーを作る`trimmingCharacters`は使わない。
     private var shouldShowLivePanel: Bool {
         recordingService.isLiveTranscriptionActive
-            || !recordingService.liveFinalizedText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || !recordingService.liveVolatileText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || recordingService.liveFinalizedText.contains { !$0.isWhitespace }
+            || recordingService.liveVolatileText.contains { !$0.isWhitespace }
     }
 
     private var liveTranscriptionBinding: Binding<Bool> {
@@ -540,14 +544,34 @@ private struct ImportActionTile: View {
     }
 }
 
+@available(iOS 26.0, *)
 private struct LiveTranscriptionPanel: View {
     let finalizedText: String
     let volatileText: String
     let state: LiveTranscriptionState
 
+    /// 最下部に張り付いている間だけ新着テキストを追従する。ユーザーが上へスクロールしたら止め、
+    /// 最下部へ戻したら再開する。
+    @State private var isPinnedToBottom = true
+    /// 直近のスクロール位置が最下部かどうか。追従状態の更新はユーザー操作時のみこの値を採用する。
+    @State private var isAtBottom = true
+    @State private var isUserScrolling = false
+
+    private static let bottomAnchorID = "liveTranscriptBottom"
+
+    private var hasFinalizedText: Bool {
+        finalizedText.contains { !$0.isWhitespace }
+    }
+
     private var visibleFinalText: String {
-        let trimmed = finalizedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? String(localized: "Listening...") : trimmed
+        hasFinalizedText ? finalizedText : String(localized: "Listening...")
+    }
+
+    /// 未確定テキストは確定結果が届くたびに空になる。別の`Text`として出し入れすると
+    /// スクロール領域のコンテンツ高が伸縮し、`contentOffset`がクランプされて先頭に戻ってしまうため、
+    /// 確定テキストと連結した単一の`Text`にしてビュー構造を一定に保つ。
+    private var visibleVolatileSuffix: String {
+        volatileText.contains { !$0.isWhitespace } ? "\n" + volatileText : ""
     }
 
     private var statusText: LocalizedStringKey {
@@ -581,28 +605,101 @@ private struct LiveTranscriptionPanel: View {
                     .foregroundColor(Theme.displayTextDim)
             }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(visibleFinalText)
-                        .font(Theme.sans(18))
-                        .foregroundColor(finalizedText.isEmpty ? Theme.displayTextDim : Theme.displayText)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 0) {
+                        (
+                            Text(visibleFinalText)
+                                .font(Theme.sans(18))
+                                .foregroundColor(hasFinalizedText ? Theme.displayText : Theme.displayTextDim)
+                                + Text(visibleVolatileSuffix)
+                                .font(Theme.sans(17))
+                                .foregroundColor(Theme.displayTextDim)
+                        )
                         .lineSpacing(5)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
+                        .padding(.vertical, 2)
 
-                    if !volatileText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text(volatileText)
-                            .font(Theme.sans(17))
-                            .foregroundColor(Theme.displayTextDim)
-                            .lineSpacing(4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                        // 単一の`Text`には`scrollTo`の宛先がないため、固定高のアンカーを置く。
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.bottomAnchorID)
                     }
                 }
-                .padding(.vertical, 2)
+                .frame(minHeight: 84, maxHeight: 180)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                    LiveTranscriptScrollPinning.isAtBottom(
+                        contentOffsetY: geometry.contentOffset.y,
+                        contentHeight: geometry.contentSize.height,
+                        containerHeight: geometry.containerSize.height,
+                        topInset: geometry.contentInsets.top,
+                        bottomInset: geometry.contentInsets.bottom
+                    )
+                } action: { _, atBottom in
+                    isAtBottom = atBottom
+                    // 新着テキストでコンテンツが伸びた直後は一時的に最下部から離れるため、
+                    // ユーザー操作由来のスクロール中だけ追従状態を更新する。
+                    if isUserScrolling {
+                        isPinnedToBottom = atBottom
+                    }
+                }
+                .onScrollPhaseChange { _, newPhase in
+                    switch newPhase {
+                    case .tracking, .interacting, .decelerating:
+                        isUserScrolling = true
+                        isPinnedToBottom = isAtBottom
+                    case .idle:
+                        if isUserScrolling {
+                            isPinnedToBottom = isAtBottom
+                        }
+                        isUserScrolling = false
+                    case .animating:
+                        break
+                    @unknown default:
+                        break
+                    }
+                }
+                // `RecordingService.applyLiveSnapshot`は各フィールドを差分比較して個別に発行するため両方を監視する。
+                .onChange(of: finalizedText) { _, _ in scrollToBottomIfPinned(proxy) }
+                .onChange(of: volatileText) { _, _ in scrollToBottomIfPinned(proxy) }
+                .overlay(alignment: .bottomTrailing) {
+                    jumpToLatestButton(proxy)
+                }
             }
-            .frame(minHeight: 84, maxHeight: 180)
         }
         .displayPanel(padding: 14)
+        .accessibilityIdentifier("liveTranscriptionPanel")
+    }
+
+    /// ライブ更新は0.1秒間隔で届くため、追従スクロールはアニメーションさせない。
+    private func scrollToBottomIfPinned(_ proxy: ScrollViewProxy) {
+        guard isPinnedToBottom else { return }
+        proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+    }
+
+    @ViewBuilder
+    private func jumpToLatestButton(_ proxy: ScrollViewProxy) -> some View {
+        if !isPinnedToBottom {
+            Button {
+                isPinnedToBottom = true
+                withAnimation(.easeOut(duration: 0.2)) {
+                    proxy.scrollTo(Self.bottomAnchorID, anchor: .bottom)
+                }
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(Theme.displayAmber)
+                    .frame(width: 28, height: 28)
+                    .background(Circle().fill(Theme.display))
+                    .overlay(Circle().strokeBorder(Theme.displayStroke, lineWidth: 1))
+            }
+            .accessibilityLabel("Scroll to latest")
+            .accessibilityIdentifier("liveTranscriptScrollToLatest")
+            .padding(.trailing, 2)
+            .padding(.bottom, 2)
+            .transition(.opacity)
+        }
     }
 }
 

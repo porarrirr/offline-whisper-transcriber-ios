@@ -358,10 +358,10 @@ class TranscribeViewModel: ObservableObject {
             let progressSpan = totalDuration > 0 ? max(chunk.duration / totalDuration, 0.01) : 0.01
 
             Task { @MainActor in
-                self?.processingStatusText = String(localized: "Transcribing...")
                 guard let self else { return }
+                self.setProcessingStatusText(String(localized: "Transcribing..."))
                 let nextProgress = min(progressStart + progress * progressSpan, 0.99)
-                self.transcriptionProgress = max(self.transcriptionProgress, nextProgress)
+                self.setTranscriptionProgress(max(self.transcriptionProgress, nextProgress))
             }
         }
     }
@@ -378,16 +378,29 @@ class TranscribeViewModel: ObservableObject {
             includeTimestamps: settings.includeTimestamps
         ) { [weak self] progress in
             Task { @MainActor in
+                guard let self else { return }
                 if progress < 0.21 {
-                    self?.processingStatusText = String(localized: "Preparing speech model...")
+                    self.setProcessingStatusText(String(localized: "Preparing speech model..."))
                 } else if progress < 0.41 {
-                    self?.processingStatusText = String(localized: "Converting audio...")
+                    self.setProcessingStatusText(String(localized: "Converting audio..."))
                 } else {
-                    self?.processingStatusText = String(localized: "Transcribing...")
+                    self.setProcessingStatusText(String(localized: "Transcribing..."))
                 }
-                self?.transcriptionProgress = max(self?.transcriptionProgress ?? 0, min(progress, 0.99))
+                self.setTranscriptionProgress(max(self.transcriptionProgress, min(progress, 0.99)))
             }
         }
+    }
+
+    /// 進捗コールバックは同じ値を何度も運んでくる。`@Published`は同値の再代入でも
+    /// `objectWillChange`を流し、購読側のビューを丸ごと無効化するため、変化時だけ代入する。
+    private func setProcessingStatusText(_ text: String) {
+        guard processingStatusText != text else { return }
+        processingStatusText = text
+    }
+
+    private func setTranscriptionProgress(_ progress: Double) {
+        guard transcriptionProgress != progress else { return }
+        transcriptionProgress = progress
     }
 
     private func removeTemporaryInput(url: URL) {

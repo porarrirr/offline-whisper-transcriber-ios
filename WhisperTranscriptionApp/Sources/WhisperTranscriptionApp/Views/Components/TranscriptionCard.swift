@@ -1,11 +1,12 @@
 import SwiftUI
 
-struct TranscriptionCard: View {
+struct TranscriptionCard: View, Equatable {
     let text: String
     let segments: [TranscriptionSegment]
     let showTimestamps: Bool
     let isLoading: Bool
     let showsTimelineMarkers: Bool
+    let displayStyle: TranscriptDisplayStyle
     let onSegmentTap: ((TranscriptionSegment) -> Void)?
     let onSegmentLongPress: ((TranscriptionSegment) -> Void)?
     @State private var textChunks: [TranscriptionTextChunk] = []
@@ -16,6 +17,7 @@ struct TranscriptionCard: View {
         showTimestamps: Bool = false,
         isLoading: Bool,
         showsTimelineMarkers: Bool = false,
+        displayStyle: TranscriptDisplayStyle = .timeline,
         onSegmentTap: ((TranscriptionSegment) -> Void)? = nil,
         onSegmentLongPress: ((TranscriptionSegment) -> Void)? = nil
     ) {
@@ -24,8 +26,27 @@ struct TranscriptionCard: View {
         self.showTimestamps = showTimestamps
         self.isLoading = isLoading
         self.showsTimelineMarkers = showsTimelineMarkers
+        self.displayStyle = displayStyle
         self.onSegmentTap = onSegmentTap
         self.onSegmentLongPress = onSegmentLongPress
+    }
+
+    /// 数百行のセグメントを親の更新ごとに再diffさせないための等価判定。
+    /// 描画はクロージャの「中身」ではなくnil性にしか依存しない(`shouldShowSegmentRows` と
+    /// `TranscriptionSegmentRow.isInteractive`)ため、クロージャの同一性は比較しない。
+    /// 呼び出し側はこのクロージャに`@Environment`由来の値(`dismiss`等)を捕捉させないこと。
+    /// 等価と判定されると古い構造体コピーが残るので、捕捉したEnvironmentが陳腐化する。
+    /// 描画に影響するプロパティ(`displayStyle`を含む)を追加したらここにも必ず加えること。
+    /// 漏れると表示スタイルを切り替えても再描画されない。
+    static func == (lhs: TranscriptionCard, rhs: TranscriptionCard) -> Bool {
+        lhs.showTimestamps == rhs.showTimestamps
+            && lhs.isLoading == rhs.isLoading
+            && lhs.showsTimelineMarkers == rhs.showsTimelineMarkers
+            && lhs.displayStyle == rhs.displayStyle
+            && (lhs.onSegmentTap == nil) == (rhs.onSegmentTap == nil)
+            && (lhs.onSegmentLongPress == nil) == (rhs.onSegmentLongPress == nil)
+            && lhs.text == rhs.text
+            && lhs.segments == rhs.segments
     }
 
     private var textOnlyDisplayText: String {
@@ -106,7 +127,7 @@ struct TranscriptionCard: View {
     }
 
     private var shouldShowSegmentRows: Bool {
-        !segments.isEmpty && (
+        displayStyle == .timeline && !segments.isEmpty && (
             showTimestamps
                 || showsTimelineMarkers
                 || onSegmentTap != nil

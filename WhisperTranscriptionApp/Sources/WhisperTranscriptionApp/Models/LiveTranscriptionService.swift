@@ -366,7 +366,9 @@ final class LiveTranscriptionService {
         let rms = sqrt(sum / Float(frameLength))
         let decibels = 20 * log10(max(rms, 0.000_001))
 
-        updateSnapshot { snapshot in
+        // 音声バッファごと(毎秒約45回)に呼ばれる。`audioLevel`はスナップショットに保持するだけで
+        // publishしない。0.1秒タイマーのpublishに載って十分な頻度でUIへ届く。
+        mutateSnapshotWithoutPublishing { snapshot in
             snapshot.audioLevel = decibels
         }
     }
@@ -429,6 +431,14 @@ final class LiveTranscriptionService {
         snapshotLock.unlock()
         publish(snapshot)
         return snapshot
+    }
+
+    /// スナップショットだけ更新してUIへは通知しない。次の`updateSnapshot`(0.1秒タイマー等)の
+    /// publishに相乗りできる高頻度の値に使う。
+    private func mutateSnapshotWithoutPublishing(_ update: (inout LiveTranscriptionSnapshot) -> Void) {
+        snapshotLock.lock()
+        update(&snapshot)
+        snapshotLock.unlock()
     }
 
     private func markStopping() {

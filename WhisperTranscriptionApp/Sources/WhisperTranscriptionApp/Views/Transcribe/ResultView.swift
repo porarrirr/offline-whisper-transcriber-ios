@@ -53,6 +53,7 @@ struct ResultView: View {
                         showTimestamps: showTimestampView,
                         isLoading: false
                     )
+                    .equatable()
                     .accessibilityIdentifier("resultTranscriptionCard")
 
                     actionsPanel

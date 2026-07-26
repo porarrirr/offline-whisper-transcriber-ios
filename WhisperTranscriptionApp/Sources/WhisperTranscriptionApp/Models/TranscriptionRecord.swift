@@ -80,8 +80,9 @@ class TranscriptionRecord: Identifiable {
         return title
     }
 
+    /// ビューの`body`から繰り返し呼ばれるため、全文のコピーを作らず最初の非空白文字で短絡させる。
     var hasTranscriptionText: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        text.contains { !$0.isWhitespace }
     }
 
     func updateTranscription(text: String, duration: Double, segments: [TranscriptionSegment], language: String?) {

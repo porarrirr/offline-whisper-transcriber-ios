@@ -1,5 +1,60 @@
+import SwiftUI
 import XCTest
 @testable import WhisperTranscriptionApp
+
+/// `TranscriptionCard`は数百行のセグメントを描画するため、親ビューの無関係な更新で
+/// 再diffされないよう`Equatable`でスキップさせている。その等価判定の真理値表。
+@MainActor
+final class TranscriptionCardEquatableTests: XCTestCase {
+    private let segments = [
+        TranscriptionSegment(id: 0, start: 0, end: 1, text: "one"),
+        TranscriptionSegment(id: 1, start: 1, end: 2, text: "two")
+    ]
+
+    private func makeCard(
+        text: String = "one two",
+        segments: [TranscriptionSegment]? = nil,
+        showTimestamps: Bool = false,
+        isLoading: Bool = false,
+        showsTimelineMarkers: Bool = true,
+        displayStyle: TranscriptDisplayStyle = .timeline,
+        interactive: Bool = true
+    ) -> TranscriptionCard {
+        TranscriptionCard(
+            text: text,
+            segments: segments ?? self.segments,
+            showTimestamps: showTimestamps,
+            isLoading: isLoading,
+            showsTimelineMarkers: showsTimelineMarkers,
+            displayStyle: displayStyle,
+            onSegmentTap: interactive ? { _ in } : nil,
+            onSegmentLongPress: interactive ? { _ in } : nil
+        )
+    }
+
+    func testCardsWithIdenticalInputsButDistinctClosuresAreEqual() {
+        // クロージャは呼び出しごとに別インスタンスになる。これが不等になると
+        // 親の更新ごとに全行が再構築され、スクロール位置が飛ぶ。
+        XCTAssertEqual(makeCard(), makeCard())
+    }
+
+    func testClosureNilnessIsPartOfEquality() {
+        // nil性は描画(isInteractive / shouldShowSegmentRows)を変えるので比較対象。
+        XCTAssertNotEqual(makeCard(interactive: true), makeCard(interactive: false))
+    }
+
+    func testEachRenderingInputBreaksEquality() {
+        let base = makeCard()
+
+        XCTAssertNotEqual(base, makeCard(text: "different"))
+        XCTAssertNotEqual(base, makeCard(segments: []))
+        XCTAssertNotEqual(base, makeCard(showTimestamps: true))
+        XCTAssertNotEqual(base, makeCard(isLoading: true))
+        XCTAssertNotEqual(base, makeCard(showsTimelineMarkers: false))
+        // 文章表示への切り替えはセグメント行と連続テキストの描画経路を変える。
+        XCTAssertNotEqual(base, makeCard(displayStyle: .reading))
+    }
+}
 
 final class TranscriptionSegmentTests: XCTestCase {
     func testReadableTimestampOmitsHoursBeforeOneHour() {

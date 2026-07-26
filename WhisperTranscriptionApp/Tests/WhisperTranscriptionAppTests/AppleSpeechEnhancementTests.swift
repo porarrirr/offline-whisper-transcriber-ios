@@ -61,6 +61,33 @@ final class AppleSpeechEnhancementTests: XCTestCase {
         XCTAssertFalse(player.isPlaying)
     }
 
+    /// `@Observable`へ移行しても再生位置の変更通知が届くこと。
+    /// これが壊れると`AudioPlaybackPanel`のSliderとタイムコードが固まる。
+    @MainActor
+    func testAudioPlayerCurrentTimeChangeIsObservable() async throws {
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("observation-\(UUID().uuidString)")
+            .appendingPathExtension("m4a")
+        try makeSilentM4A(at: sourceURL, duration: 2)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: sourceURL)
+        }
+
+        let player = AudioPlayer()
+        player.prepare(url: sourceURL)
+
+        let changed = expectation(description: "currentTime observation fires")
+        withObservationTracking {
+            _ = player.currentTime
+        } onChange: {
+            changed.fulfill()
+        }
+
+        player.play()
+        await fulfillment(of: [changed], timeout: 1)
+        player.stop()
+    }
+
     func testImportedAudioStorePersistsPlayableM4A() async throws {
         let sourceURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("import-source-\(UUID().uuidString)")

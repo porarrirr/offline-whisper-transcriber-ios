@@ -20,6 +20,16 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     }
 }
 
+/// 履歴詳細画面の文字起こし表示スタイル。
+/// `timeline`はセグメント単位の行(タップで頭出し・長押しで編集)、
+/// `reading`は改行せず1つの文章として表示(タップでの頭出しは行わない)。
+enum TranscriptDisplayStyle: String, CaseIterable, Identifiable {
+    case timeline
+    case reading
+
+    var id: String { rawValue }
+}
+
 struct PreferredTranscriptionDefaults: Equatable {
     let model: TranscriptionModel
     let whisperLanguage: String
@@ -154,6 +164,10 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(appAppearance.rawValue, forKey: Self.appAppearanceKey) }
     }
 
+    @Published var transcriptDisplayStyle: TranscriptDisplayStyle {
+        didSet { UserDefaults.standard.set(transcriptDisplayStyle.rawValue, forKey: Self.transcriptDisplayStyleKey) }
+    }
+
     var selectedModelBackend: TranscriptionBackend {
         selectedTranscriptionModel.backend
     }
@@ -169,6 +183,7 @@ class AppSettings: ObservableObject {
     private static let selectedTranscriptionModelKey = "selectedTranscriptionModel"
     private static let legacySelectedModelSizeKey = "selectedModelSize"
     private static let appAppearanceKey = "appAppearance"
+    private static let transcriptDisplayStyleKey = "transcriptDisplayStyle"
     private static let defaultsMigrationVersionKey = "appSettingsDefaultsMigrationVersion"
     private static let localeDefaultResolutionPendingKey = "localeDefaultResolutionPending"
     private static let localeDefaultResolutionVersionKey = "localeDefaultResolutionVersion"
@@ -202,6 +217,12 @@ class AppSettings: ObservableObject {
             self.appAppearance = appAppearance
         } else {
             self.appAppearance = .system
+        }
+        if let storedTranscriptDisplayStyle = defaults.string(forKey: Self.transcriptDisplayStyleKey),
+           let transcriptDisplayStyle = TranscriptDisplayStyle(rawValue: storedTranscriptDisplayStyle) {
+            self.transcriptDisplayStyle = transcriptDisplayStyle
+        } else {
+            self.transcriptDisplayStyle = .timeline
         }
 
         let localeResolutionExpectedModelKey = selectedTranscriptionModel.storageKey

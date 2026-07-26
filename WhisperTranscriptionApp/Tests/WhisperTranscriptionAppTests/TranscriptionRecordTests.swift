@@ -2,6 +2,21 @@ import XCTest
 @testable import WhisperTranscriptionApp
 
 final class TranscriptionRecordTests: XCTestCase {
+    func testHasTranscriptionTextTreatsWhitespaceOnlyTextAsEmpty() {
+        func record(text: String) -> TranscriptionRecord {
+            TranscriptionRecord(title: "t", text: text, sourceType: .file, duration: 1)
+        }
+
+        XCTAssertFalse(record(text: "").hasTranscriptionText)
+        XCTAssertFalse(record(text: " ").hasTranscriptionText)
+        XCTAssertFalse(record(text: "\n\t ").hasTranscriptionText)
+        XCTAssertFalse(record(text: "\u{3000}").hasTranscriptionText, "全角スペースのみ")
+        XCTAssertFalse(record(text: "\u{00A0}").hasTranscriptionText, "ノーブレークスペースのみ")
+
+        XCTAssertTrue(record(text: "  a  ").hasTranscriptionText)
+        XCTAssertTrue(record(text: "\u{200B}").hasTranscriptionText, "ゼロ幅スペースは本文扱い")
+    }
+
     func testNormalizedTagsTrimDeduplicateAndPreserveFirstSpelling() {
         let tags = TranscriptionRecord.normalizedTags(from: "  Work, work, Audio、Cafe\ncafe, Research ,, ")
 
