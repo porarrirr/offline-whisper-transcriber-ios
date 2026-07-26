@@ -13,7 +13,7 @@ final class LongTranscriptionLayoutTests: XCTestCase {
         exerciseLongTranscriptionScreen(
             extraArguments: ["--ui-test-history-detail"],
             cardIdentifier: "historyTranscriptionCard",
-            toggleIdentifier: "historyTimestampToggle"
+            toggleIdentifier: nil
         )
     }
 
@@ -56,7 +56,7 @@ final class LongTranscriptionLayoutTests: XCTestCase {
     private func exerciseLongTranscriptionScreen(
         extraArguments: [String],
         cardIdentifier: String,
-        toggleIdentifier: String
+        toggleIdentifier: String?
     ) {
         let app = XCUIApplication()
         app.launchArguments = [
@@ -75,10 +75,12 @@ final class LongTranscriptionLayoutTests: XCTestCase {
             app.swipeDown(velocity: .fast)
         }
 
-        let toggle = app.buttons[toggleIdentifier]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 10))
-        for _ in 0..<20 {
-            toggle.tap()
+        if let toggleIdentifier {
+            let toggle = app.buttons[toggleIdentifier]
+            XCTAssertTrue(toggle.waitForExistence(timeout: 10))
+            for _ in 0..<20 {
+                toggle.tap()
+            }
         }
 
         XCTAssertEqual(app.state, .runningForeground)

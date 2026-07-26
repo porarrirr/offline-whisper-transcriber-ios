@@ -21,6 +21,7 @@ final class RecordingAudioExporterTests: XCTestCase {
         let exportedURL = try XCTUnwrap(RecordingAudioExporter.export(record: record))
         addTeardownBlock { try? FileManager.default.removeItem(at: exportedURL) }
 
+        XCTAssertTrue(RecordingAudioExporter.isAvailable(record: record))
         XCTAssertEqual(try Data(contentsOf: exportedURL), sourceData)
         XCTAssertTrue(exportedURL.lastPathComponent.hasPrefix("Meeting_Notes_\(recordID.uuidString.prefix(8))."))
         XCTAssertEqual(exportedURL.pathExtension, "caf")
@@ -37,6 +38,7 @@ final class RecordingAudioExporterTests: XCTestCase {
             duration: 1
         )
 
+        XCTAssertFalse(RecordingAudioExporter.isAvailable(record: record))
         XCTAssertNil(RecordingAudioExporter.export(record: record))
     }
 

@@ -1,10 +1,12 @@
 import Foundation
 
 struct RecordingAudioExporter {
+    static func isAvailable(record: TranscriptionRecord) -> Bool {
+        sourceURL(for: record) != nil
+    }
+
     static func export(record: TranscriptionRecord) -> URL? {
-        guard let path = record.audioFilePath,
-              let sourceURL = try? RecordingFileReference.fileURL(for: path),
-              FileManager.default.fileExists(atPath: sourceURL.path) else {
+        guard let sourceURL = sourceURL(for: record) else {
             return nil
         }
 
@@ -22,6 +24,15 @@ struct RecordingAudioExporter {
             AppLogger.error("Failed to export recording audio", context: "RecordingAudioExporter", error: error)
             return nil
         }
+    }
+
+    private static func sourceURL(for record: TranscriptionRecord) -> URL? {
+        guard let path = record.audioFilePath,
+              let sourceURL = try? RecordingFileReference.fileURL(for: path),
+              FileManager.default.fileExists(atPath: sourceURL.path) else {
+            return nil
+        }
+        return sourceURL
     }
 
     private static func sanitizedFileNameBase(from title: String) -> String {

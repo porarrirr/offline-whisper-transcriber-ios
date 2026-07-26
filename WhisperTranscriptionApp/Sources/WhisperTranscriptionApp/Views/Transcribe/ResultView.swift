@@ -171,55 +171,160 @@ struct ResultView: View {
     }
 }
 
-/// エクスポート形式の選択リスト(Result/Historyの共通部品)
+enum ExportSelection: Hashable {
+    case audio
+    case transcription(ExportFormat)
+}
+
+/// 書き出す内容と形式を一度に選ぶ Result/History 共通部品。
 struct ExportFormatList: View {
-    let onSelect: (ExportFormat) -> Void
+    let includesAudio: Bool
+    let includesTranscription: Bool
+    let hasTimestampedSegments: Bool
+    let onExport: (ExportSelection, Bool) -> Void
+
+    @State private var selection: ExportSelection
+    @State private var includeTimestamps = true
+
+    init(
+        includesAudio: Bool = false,
+        includesTranscription: Bool = true,
+        hasTimestampedSegments: Bool,
+        onExport: @escaping (ExportSelection, Bool) -> Void
+    ) {
+        self.includesAudio = includesAudio
+        self.includesTranscription = includesTranscription
+        self.hasTimestampedSegments = hasTimestampedSegments
+        self.onExport = onExport
+        _selection = State(
+            initialValue: includesTranscription ? .transcription(.txt) : .audio
+        )
+    }
+
+    private var choices: [ExportSelection] {
+        var values: [ExportSelection] = []
+        if includesAudio {
+            values.append(.audio)
+        }
+        if includesTranscription {
+            values.append(contentsOf: ExportFormat.allCases.map(ExportSelection.transcription))
+        }
+        return values
+    }
+
+    private var showsTimestampOption: Bool {
+        selection == .transcription(.txt) && hasTimestampedSegments
+    }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                TechLabel(text: "Select Export Format")
-                    .padding(.horizontal, 4)
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    TechLabel(text: "Select Export Format")
+                        .padding(.horizontal, 4)
 
-                VStack(spacing: 0) {
-                    ForEach(Array(ExportFormat.allCases.enumerated()), id: \.element) { index, format in
-                        if index > 0 {
+                    VStack(spacing: 0) {
+                        ForEach(Array(choices.enumerated()), id: \.element) { index, choice in
+                            if index > 0 {
+                                Divider().overlay(Theme.stroke)
+                                    .padding(.leading, 58)
+                            }
+
+                            Button {
+                                selection = choice
+                            } label: {
+                                ExportOptionRow(
+                                    icon: Self.icon(for: choice),
+                                    title: Self.title(for: choice),
+                                    isSelected: selection == choice
+                                )
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        if showsTimestampOption {
                             Divider().overlay(Theme.stroke)
-                                .padding(.leading, 62)
-                        }
+                                .padding(.leading, 58)
 
-                        Button {
-                            onSelect(format)
-                        } label: {
-                            RecorderActionRow(
-                                icon: Self.icon(for: format),
-                                title: Text(format.displayName),
-                                subtitle: Text(verbatim: ".\(format.fileExtension)")
-                            )
-                            .padding(14)
+                            Toggle("Include Timestamps", isOn: $includeTimestamps)
+                                .font(Theme.sans(14, weight: .medium))
+                                .foregroundStyle(Theme.textPrimary)
+                                .tint(Theme.amberFill)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 12)
+                                .accessibilityIdentifier("exportIncludeTimestamps")
                         }
-                        .buttonStyle(.plain)
+                    }
+                    .background(Theme.panel)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .strokeBorder(Theme.stroke, lineWidth: 1)
                     }
                 }
-                .background(Theme.panel)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .strokeBorder(Theme.stroke, lineWidth: 1)
-                }
+                .padding(16)
             }
+
+            Divider().overlay(Theme.stroke)
+
+            Button {
+                onExport(selection, includeTimestamps)
+            } label: {
+                Label("Export", systemImage: "arrow.down.doc")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.recorderProminent)
             .padding(16)
         }
         .background(Theme.background)
     }
 
-    static func icon(for format: ExportFormat) -> String {
-        switch format {
-        case .txt: return "doc.text"
-        case .json: return "curlybraces"
-        case .csv: return "tablecells"
-        case .srt: return "captions.bubble"
+    static func icon(for selection: ExportSelection) -> String {
+        switch selection {
+        case .audio: return "waveform"
+        case .transcription(.txt): return "doc.text"
+        case .transcription(.json): return "curlybraces"
+        case .transcription(.csv): return "tablecells"
+        case .transcription(.srt): return "captions.bubble"
         }
+    }
+
+    static func title(for selection: ExportSelection) -> Text {
+        switch selection {
+        case .audio:
+            return Text("Audio File")
+        case .transcription(let format):
+            return Text(format.displayName)
+        }
+    }
+
+}
+
+private struct ExportOptionRow: View {
+    let icon: String
+    let title: Text
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 17, weight: .medium))
+                .foregroundStyle(isSelected ? Theme.amber : Theme.textSecondary)
+                .frame(width: 28)
+
+            title
+                .font(Theme.sans(15, weight: .semibold))
+                .foregroundStyle(Theme.textPrimary)
+
+            Spacer()
+
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 19))
+                .foregroundStyle(isSelected ? Theme.amber : Theme.textSecondary.opacity(0.5))
+        }
+        .contentShape(Rectangle())
     }
 }
 
@@ -235,14 +340,18 @@ struct ExportSheetView: View {
 
     var body: some View {
         NavigationStack {
-            ExportFormatList { format in
+            ExportFormatList(
+                hasTimestampedSegments: !segments.isEmpty
+            ) { selection, includeTimestamps in
+                guard case .transcription(let format) = selection else { return }
                 let url = TranscriptionExporter.export(
                     title: title.isEmpty ? String(localized: "Export") : title,
                     text: text,
                     duration: duration,
                     segments: segments,
                     language: language,
-                    format: format
+                    format: format,
+                    includeTimestamps: includeTimestamps
                 )
                 dismiss()
                 onExport(url)

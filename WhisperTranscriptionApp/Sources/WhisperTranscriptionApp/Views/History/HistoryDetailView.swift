@@ -13,24 +13,17 @@ struct HistoryDetailView: View {
     @State private var showCopyConfirmation = false
     @State private var showDeleteConfirmation = false
     @State private var showExportSheet = false
-    @State private var showTimestampView = false
     @State private var showEditTitle = false
     @State private var showEditTags = false
     @State private var editableTitle = ""
     @State private var sharePayload: SharePayload?
     @State private var showExportAudioError = false
+    @State private var transcriptionExportErrorMessage: String?
     @State private var showPlaybackAudioError = false
     @State private var cachedSegments: [TranscriptionSegment] = []
     @State private var editingSegment: TranscriptionSegment?
     @State private var pendingUndo: SegmentEditUndo?
     @State private var undoDismissTask: Task<Void, Never>?
-
-    private func currentDisplayText() -> String {
-        if showTimestampView && !cachedSegments.isEmpty {
-            return TranscriptionSegment.timestampedText(from: cachedSegments)
-        }
-        return TranscriptionSegment.plainText(from: cachedSegments, fallback: record.text)
-    }
 
     var body: some View {
         // This screen intentionally uses ScrollView: TranscriptionCard changes height
@@ -43,17 +36,13 @@ struct HistoryDetailView: View {
                     WarningStrip(message: error)
                 }
 
-                tagsPanel
-
-                if let audioURL {
-                    audioPanel(audioURL: audioURL)
-                }
+                operationsPanel(audioURL: audioURL)
 
                 if record.hasTranscriptionText {
                     TranscriptionCard(
                         text: record.text,
                         segments: cachedSegments,
-                        showTimestamps: showTimestampView,
+                        showTimestamps: false,
                         isLoading: false,
                         showsTimelineMarkers: true,
                         onSegmentTap: handleSegmentTap,
@@ -73,8 +62,6 @@ struct HistoryDetailView: View {
                     }
                     .recorderPanel(padding: 14)
                 }
-
-                actionsPanel
 
                 Spacer(minLength: 24)
             }
@@ -137,6 +124,21 @@ struct HistoryDetailView: View {
             Button("OK", role: .cancel) {}
         }
         .alert(
+            "Export",
+            isPresented: Binding(
+                get: { transcriptionExportErrorMessage != nil },
+                set: { isPresented in
+                    if !isPresented {
+                        transcriptionExportErrorMessage = nil
+                    }
+                }
+            )
+        ) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(transcriptionExportErrorMessage ?? "")
+        }
+        .alert(
             String(localized: "Audio is unavailable for playback."),
             isPresented: $showPlaybackAudioError
         ) {
@@ -174,9 +176,14 @@ struct HistoryDetailView: View {
             )
         }
         .sheet(isPresented: $showExportSheet) {
-            HistoryExportSheetView(record: record, viewModel: viewModel) { url in
-                if let url = url {
+            HistoryExportSheetView(record: record, viewModel: viewModel) { result in
+                switch result {
+                case .success(let url):
                     sharePayload = .file(url)
+                case .failure(.audioUnavailable):
+                    showExportAudioError = true
+                case .failure(.transcription(let format)):
+                    transcriptionExportErrorMessage = Self.exportFailureMessage(for: format)
                 }
             }
         }
@@ -196,7 +203,7 @@ struct HistoryDetailView: View {
     // MARK: - Panels
 
     private var headerPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 10) {
                 Text(record.displayTitle)
                     .font(Theme.sans(19, weight: .bold))
@@ -221,38 +228,27 @@ struct HistoryDetailView: View {
                 .accessibilityLabel(Text("Edit Title"))
             }
 
-            HStack(spacing: 8) {
-                metaChip(icon: record.sourceTypeEnum == .recording ? "mic.fill" : "doc.fill", text: record.formattedDate)
-                metaChip(icon: "clock", text: formatTime(record.duration))
-                if let language = record.language {
-                    metaChip(icon: "globe", text: language)
+            VStack(spacing: 9) {
+                metadataLine(
+                    icon: record.sourceTypeEnum == .recording ? "mic.fill" : "doc.fill",
+                    text: record.formattedDate
+                )
+
+                HStack(spacing: 16) {
+                    metadataLine(icon: "clock", text: formatTime(record.duration))
+
+                    if let language = record.language {
+                        Spacer(minLength: 4)
+                        metadataLine(icon: "globe", text: language)
+                    }
                 }
             }
-        }
-        .recorderPanel(padding: 14)
-    }
+            .padding(12)
+            .background(Theme.panelInset)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-    private func metaChip(icon: String, text: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: icon)
-                .font(.system(size: 9))
-                .foregroundColor(Theme.amber)
-            Text(text)
-                .font(Theme.mono(11, weight: .medium))
-                .foregroundColor(Theme.textSecondary)
-                .lineLimit(1)
-        }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(Theme.panelInset)
-        .clipShape(Capsule())
-        .overlay {
-            Capsule().strokeBorder(Theme.stroke, lineWidth: 1)
-        }
-    }
+            Divider().overlay(Theme.stroke)
 
-    private var tagsPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 TechLabel(text: "Tags")
 
@@ -285,77 +281,149 @@ struct HistoryDetailView: View {
         .recorderPanel(padding: 14)
     }
 
-    private func audioPanel(audioURL: URL) -> some View {
+    private func metadataLine(icon: String, text: String) -> some View {
+        HStack(spacing: 7) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.amber)
+                .frame(width: 14)
+
+            Text(text)
+                .font(Theme.mono(11, weight: .medium))
+                .foregroundStyle(Theme.textSecondary)
+                .lineLimit(1)
+        }
+    }
+
+    private func operationsPanel(audioURL: URL?) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            TechLabel(text: "Audio")
+            TechLabel(text: "Actions")
 
-            HStack(spacing: 28) {
-                Spacer()
+            if audioURL != nil {
+                HStack(spacing: 28) {
+                    Spacer()
 
-                Button {
-                    if audioPlayer.isPlaying {
-                        audioPlayer.pause()
-                    } else {
-                        audioPlayer.play()
+                    Button {
+                        if audioPlayer.isPlaying {
+                            audioPlayer.pause()
+                        } else {
+                            audioPlayer.play()
+                        }
+                    } label: {
+                        AudioPlaybackControlLabel(
+                            title: audioPlayer.isPlaying ? "Pause Audio" : "Play Audio",
+                            systemImage: audioPlayer.isPlaying ? "pause.fill" : "play.fill",
+                            isPrimary: true
+                        )
                     }
-                } label: {
-                    AudioPlaybackControlLabel(
-                        title: audioPlayer.isPlaying ? "Pause Audio" : "Play Audio",
-                        systemImage: audioPlayer.isPlaying ? "pause.fill" : "play.fill",
-                        isPrimary: true
-                    )
-                }
-                .buttonStyle(.plain)
+                    .buttonStyle(.plain)
 
-                Button {
-                    audioPlayer.stop()
-                } label: {
-                    AudioPlaybackControlLabel(
-                        title: "Stop Audio",
-                        systemImage: "stop.fill",
-                        isPrimary: false
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(audioPlayer.currentTime == 0 && !audioPlayer.isPlaying)
-
-                Spacer()
-            }
-
-            if audioPlayer.duration > 0 {
-                VStack(spacing: 4) {
-                    Slider(value: Binding(
-                        get: { audioPlayer.currentTime },
-                        set: { audioPlayer.seek(to: $0) }
-                    ), in: 0...audioPlayer.duration)
-                    .tint(Theme.amberFill)
-
-                    HStack {
-                        Text(formatTime(audioPlayer.currentTime))
-                        Spacer()
-                        Text(formatTime(audioPlayer.duration))
+                    Button {
+                        audioPlayer.stop()
+                    } label: {
+                        AudioPlaybackControlLabel(
+                            title: "Stop Audio",
+                            systemImage: "stop.fill",
+                            isPrimary: false
+                        )
                     }
-                    .font(Theme.mono(11, weight: .medium))
-                    .foregroundColor(Theme.textSecondary)
-                }
-            }
+                    .buttonStyle(.plain)
+                    .disabled(audioPlayer.currentTime == 0 && !audioPlayer.isPlaying)
 
-            if let error = audioPlayer.errorMessage {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(Theme.sans(12))
-                    .foregroundColor(Theme.rec)
+                    Spacer()
+                }
+
+                if audioPlayer.duration > 0 {
+                    VStack(spacing: 4) {
+                        Slider(value: Binding(
+                            get: { audioPlayer.currentTime },
+                            set: { audioPlayer.seek(to: $0) }
+                        ), in: 0...audioPlayer.duration)
+                        .tint(Theme.amberFill)
+
+                        HStack {
+                            Text(formatTime(audioPlayer.currentTime))
+                            Spacer()
+                            Text(formatTime(audioPlayer.duration))
+                        }
+                        .font(Theme.mono(11, weight: .medium))
+                        .foregroundColor(Theme.textSecondary)
+                    }
+                }
+
+                if let error = audioPlayer.errorMessage {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(Theme.sans(12))
+                        .foregroundColor(Theme.rec)
+                }
             }
 
             Divider().overlay(Theme.stroke)
 
-            Button {
-                transcribeViewModel.transcribeRecord(record, modelContext: modelContext)
-            } label: {
-                Label(record.hasTranscriptionText ? "Transcribe Again" : "Transcribe from Audio", systemImage: "waveform.badge.magnifyingglass")
-                    .frame(maxWidth: .infinity)
+            VStack(spacing: 0) {
+                if audioURL != nil {
+                    Button {
+                        transcribeViewModel.transcribeRecord(record, modelContext: modelContext)
+                    } label: {
+                        detailActionRow(
+                            icon: "waveform.badge.magnifyingglass",
+                            title: Text(record.hasTranscriptionText ? "Transcribe Again" : "Transcribe from Audio")
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(transcribeViewModel.isProcessing)
+
+                    Divider().overlay(Theme.stroke)
+                        .padding(.leading, 48)
+                }
+
+                if record.hasTranscriptionText {
+                    Button {
+                        UIPasteboard.general.string = TranscriptionSegment.plainText(
+                            from: cachedSegments,
+                            fallback: record.text
+                        )
+                        showCopyConfirmation = true
+                    } label: {
+                        detailActionRow(
+                            icon: "doc.on.doc",
+                            title: Text("Copy Text")
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("historyCopyText")
+
+                    Divider().overlay(Theme.stroke)
+                        .padding(.leading, 48)
+                }
+
+                Button {
+                    showExportSheet = true
+                } label: {
+                    detailActionRow(
+                        icon: "arrow.down.doc",
+                        title: Text("Export")
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(!record.hasTranscriptionText && audioURL == nil)
+
+                Divider().overlay(Theme.stroke)
+                    .padding(.leading, 48)
+
+                Button {
+                    showDeleteConfirmation = true
+                } label: {
+                    detailActionRow(
+                        icon: "trash",
+                        title: Text("Delete"),
+                        isDestructive: true
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.recorderQuiet)
-            .disabled(transcribeViewModel.isProcessing)
+            .background(Theme.panelInset)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             if transcribeViewModel.isProcessing {
                 if transcribeViewModel.usesDeterminateProgress {
@@ -375,85 +443,54 @@ struct HistoryDetailView: View {
                     .font(Theme.sans(12))
                     .foregroundColor(Theme.rec)
             }
-
-            Button {
-                if let url = viewModel.exportRecordingAudio(record) {
-                    sharePayload = .file(url)
-                } else {
-                    showExportAudioError = true
-                }
-            } label: {
-                Label("Export Audio", systemImage: "square.and.arrow.up")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.recorderQuiet)
         }
         .recorderPanel(padding: 14)
         .onAppear {
-            audioPlayer.prepare(url: audioURL)
+            if let audioURL {
+                audioPlayer.prepare(url: audioURL)
+            }
         }
     }
 
-    private var actionsPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            TechLabel(text: "Export")
+    private func detailActionRow(
+        icon: String,
+        title: Text,
+        isDestructive: Bool = false
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(isDestructive ? Theme.rec : Theme.amber)
+                .frame(width: 24)
 
-            if record.hasTranscriptionText && !cachedSegments.isEmpty {
-                Button(action: { showTimestampView.toggle() }) {
-                    Label(showTimestampView ? "Show Text Only" : "Show with Timestamps", systemImage: showTimestampView ? "text.alignleft" : "clock")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.recorderQuiet)
-                .accessibilityIdentifier("historyTimestampToggle")
+            title
+                .font(Theme.sans(15, weight: .semibold))
+                .foregroundStyle(isDestructive ? Theme.rec : Theme.textPrimary)
+
+            Spacer()
+
+            if !isDestructive {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary.opacity(0.55))
             }
-
-            HStack(spacing: 10) {
-                Button(action: {
-                    UIPasteboard.general.string = currentDisplayText()
-                    showCopyConfirmation = true
-                }) {
-                    Label("Copy Text", systemImage: "doc.on.doc")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.recorderQuiet)
-                .disabled(!record.hasTranscriptionText)
-
-                Button(action: {
-                    sharePayload = .text(currentDisplayText())
-                }) {
-                    Label("Share Text", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.recorderQuiet)
-                .disabled(!record.hasTranscriptionText)
-            }
-
-            Button(action: {
-                showExportSheet = true
-            }) {
-                Label("Export", systemImage: "arrow.down.doc")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.recorderQuiet)
-            .disabled(!record.hasTranscriptionText)
-
-            Button(action: {
-                viewModel.toggleFavorite(record)
-            }) {
-                Label(record.isFavorite ? "Remove from Favorites" : "Add to Favorites", systemImage: record.isFavorite ? "star.slash" : "star")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.recorderQuiet)
-
-            Button(action: {
-                showDeleteConfirmation = true
-            }) {
-                Label("Delete", systemImage: "trash")
-                    .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(.recorderQuietDestructive)
         }
-        .recorderPanel(padding: 14)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 13)
+        .contentShape(Rectangle())
+    }
+
+    private static func exportFailureMessage(for format: ExportFormat) -> String {
+        switch format {
+        case .txt:
+            return String(localized: "Failed to export TXT")
+        case .json:
+            return String(localized: "Failed to export JSON")
+        case .csv:
+            return String(localized: "Failed to export CSV")
+        case .srt:
+            return String(localized: "Failed to export SRT")
+        }
     }
 
     private func handleSegmentTap(_ segment: TranscriptionSegment) {
@@ -807,19 +844,47 @@ private struct AudioPlaybackControlLabel: View {
     }
 }
 
+enum HistoryExportError: Error {
+    case audioUnavailable
+    case transcription(ExportFormat)
+}
+
 struct HistoryExportSheetView: View {
     let record: TranscriptionRecord
     let viewModel: HistoryViewModel
-    let onExport: (URL?) -> Void
+    let onExport: (Result<URL, HistoryExportError>) -> Void
 
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            ExportFormatList { format in
-                let url = viewModel.exportRecord(record, format: format)
+            ExportFormatList(
+                includesAudio: RecordingAudioExporter.isAvailable(record: record),
+                includesTranscription: record.hasTranscriptionText,
+                hasTimestampedSegments: !record.segments.isEmpty
+            ) { selection, includeTimestamps in
+                let url: URL?
+                switch selection {
+                case .audio:
+                    url = viewModel.exportRecordingAudio(record)
+                case .transcription(let format):
+                    url = viewModel.exportRecord(
+                        record,
+                        format: format,
+                        includeTimestamps: includeTimestamps
+                    )
+                }
                 dismiss()
-                onExport(url)
+                if let url {
+                    onExport(.success(url))
+                } else {
+                    switch selection {
+                    case .audio:
+                        onExport(.failure(.audioUnavailable))
+                    case .transcription(let format):
+                        onExport(.failure(.transcription(format)))
+                    }
+                }
             }
             .navigationTitle("Export")
             .navigationBarTitleDisplayMode(.inline)

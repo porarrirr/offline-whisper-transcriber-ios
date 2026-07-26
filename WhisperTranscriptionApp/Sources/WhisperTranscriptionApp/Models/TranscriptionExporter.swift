@@ -29,7 +29,11 @@ enum ExportFormat: String, CaseIterable, Identifiable {
 }
 
 struct TranscriptionExporter {
-    static func export(record: TranscriptionRecord, format: ExportFormat) -> URL? {
+    static func export(
+        record: TranscriptionRecord,
+        format: ExportFormat,
+        includeTimestamps: Bool = true
+    ) -> URL? {
         export(
             item: TranscriptionExportItem(
                 id: record.id,
@@ -40,7 +44,8 @@ struct TranscriptionExporter {
                 segments: record.segments,
                 language: record.language
             ),
-            format: format
+            format: format,
+            includeTimestamps: includeTimestamps
         )
     }
 
@@ -50,7 +55,8 @@ struct TranscriptionExporter {
         duration: Double,
         segments: [TranscriptionSegment],
         language: String? = nil,
-        format: ExportFormat
+        format: ExportFormat,
+        includeTimestamps: Bool = true
     ) -> URL? {
         export(
             item: TranscriptionExportItem(
@@ -60,14 +66,19 @@ struct TranscriptionExporter {
                 segments: segments,
                 language: language
             ),
-            format: format
+            format: format,
+            includeTimestamps: includeTimestamps
         )
     }
 
-    private static func export(item: TranscriptionExportItem, format: ExportFormat) -> URL? {
+    private static func export(
+        item: TranscriptionExportItem,
+        format: ExportFormat,
+        includeTimestamps: Bool
+    ) -> URL? {
         switch format {
         case .txt:
-            return exportAsTXT(item: item)
+            return exportAsTXT(item: item, includeTimestamps: includeTimestamps)
         case .json:
             return exportAsJSON(item: item)
         case .csv:
@@ -77,7 +88,10 @@ struct TranscriptionExporter {
         }
     }
     
-    private static func exportAsTXT(item: TranscriptionExportItem) -> URL? {
+    private static func exportAsTXT(
+        item: TranscriptionExportItem,
+        includeTimestamps: Bool
+    ) -> URL? {
         let fileName = "transcription_\(item.id.uuidString).txt"
         let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent(fileName)
         
@@ -87,13 +101,13 @@ struct TranscriptionExporter {
         Language: \(item.language ?? "Unknown")
         """
         
-        if !item.segments.isEmpty {
+        if includeTimestamps && !item.segments.isEmpty {
             content += "\n\n--- With Timestamps ---\n\n"
             for segment in item.segments {
                 content += "\(segment.formattedTimestamp) \(segment.text)\n"
             }
         } else {
-            content += "\n\n\(item.text)"
+            content += "\n\n\(TranscriptionSegment.plainText(from: item.segments, fallback: item.text))"
         }
         
         do {

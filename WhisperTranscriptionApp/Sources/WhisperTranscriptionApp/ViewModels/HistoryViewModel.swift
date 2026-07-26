@@ -210,8 +210,16 @@ class HistoryViewModel: ObservableObject {
         }
     }
     
-    func exportRecord(_ record: TranscriptionRecord, format: ExportFormat) -> URL? {
-        return TranscriptionExporter.export(record: record, format: format)
+    func exportRecord(
+        _ record: TranscriptionRecord,
+        format: ExportFormat,
+        includeTimestamps: Bool = true
+    ) -> URL? {
+        return TranscriptionExporter.export(
+            record: record,
+            format: format,
+            includeTimestamps: includeTimestamps
+        )
     }
 
     func exportRecordingAudio(_ record: TranscriptionRecord) -> URL? {

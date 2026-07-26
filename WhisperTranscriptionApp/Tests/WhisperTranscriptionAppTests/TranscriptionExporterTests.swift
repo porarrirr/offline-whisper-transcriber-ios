@@ -23,6 +23,31 @@ final class TranscriptionExporterTests: XCTestCase {
         XCTAssertTrue(content.contains("[00:01 --> 00:02] world"))
     }
 
+    func testTXTExportCanOmitTimestamps() throws {
+        let record = makeRecord(
+            text: "stale fallback",
+            segments: [
+                TranscriptionSegment(id: 0, start: 0, end: 1.25, text: "hello"),
+                TranscriptionSegment(id: 1, start: 1.25, end: 2.5, text: "world")
+            ]
+        )
+
+        let url = try XCTUnwrap(
+            TranscriptionExporter.export(
+                record: record,
+                format: .txt,
+                includeTimestamps: false
+            )
+        )
+        addTeardownBlock { try? FileManager.default.removeItem(at: url) }
+        let content = try String(contentsOf: url, encoding: .utf8)
+
+        XCTAssertFalse(content.contains("--- With Timestamps ---"))
+        XCTAssertFalse(content.contains("[00:00"))
+        XCTAssertTrue(content.contains("hello world"))
+        XCTAssertFalse(content.contains("stale fallback"))
+    }
+
     func testCSVExportEscapesQuotesAndUsesFallbackRowWithoutSegments() throws {
         let record = makeRecord(text: "He said \"hello\", then left", duration: 12.5, segments: [])
 
