@@ -3923,6 +3923,17 @@
         }
       }
     },
+    "Importing video" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "動画を取り込み中"
+          }
+        }
+      }
+    },
     "Include Timestamps" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -4753,6 +4764,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "SpeechTranscriberの対応言語を読み込み中…"
+          }
+        }
+      }
+    },
+    "Loading the selected video from Photos..." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "写真から選択した動画を読み込んでいます..."
           }
         }
       }
@@ -6463,6 +6485,7 @@
       }
     },
     "Replace with %@" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {

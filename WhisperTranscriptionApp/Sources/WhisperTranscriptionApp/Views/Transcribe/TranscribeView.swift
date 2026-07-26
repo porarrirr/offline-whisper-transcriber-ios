@@ -9,6 +9,8 @@ struct TranscribeView: View {
     @State private var showFileImporter = false
     @State private var selectedFileURL: URL?
     @State private var selectedVideoItem: PhotosPickerItem?
+    @State private var videoImportTask: Task<Void, Never>?
+    @State private var isImportingVideo = false
     @State private var liveTranscriptionRequested = false
     @AppStorage(WhisperAppDestination.pendingStartRecordingKey) private var pendingStartRecording = false
     @AppStorage(WhisperAppDestination.pendingLiveRecordingKey) private var pendingLiveRecording = false
@@ -92,7 +94,18 @@ struct TranscribeView: View {
                 .padding(.horizontal, 20)
                 .padding(.top, 20)
             }
+            .disabled(isImportingVideo)
+            .accessibilityHidden(isImportingVideo)
+
+            if isImportingVideo {
+                VideoImportOverlay {
+                    videoImportTask?.cancel()
+                }
+                .transition(.opacity)
+                .zIndex(1)
+            }
         }
+        .animation(.easeOut(duration: 0.15), value: isImportingVideo)
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $viewModel.showResult) {
             ResultView(
@@ -120,9 +133,7 @@ struct TranscribeView: View {
             }
         }
         .onChange(of: selectedVideoItem) { _, newItem in
-            Task {
-                await handlePickedVideo(newItem)
-            }
+            beginPickedVideoImport(newItem)
         }
         .onAppear {
             consumePendingIntentRequest()
@@ -400,9 +411,25 @@ struct TranscribeView: View {
     }
 
     @MainActor
-    private func handlePickedVideo(_ item: PhotosPickerItem?) async {
+    private func beginPickedVideoImport(_ item: PhotosPickerItem?) {
         guard let item else { return }
+
+        videoImportTask?.cancel()
+        isImportingVideo = true
+        videoImportTask = Task { @MainActor in
+            await handlePickedVideo(item)
+        }
+    }
+
+    @MainActor
+    private func handlePickedVideo(_ item: PhotosPickerItem) async {
+        var unclaimedTemporaryURL: URL?
         defer {
+            if let unclaimedTemporaryURL {
+                try? FileManager.default.removeItem(at: unclaimedTemporaryURL)
+            }
+            isImportingVideo = false
+            videoImportTask = nil
             selectedVideoItem = nil
         }
 
@@ -415,12 +442,20 @@ struct TranscribeView: View {
                 viewModel.setError(String(localized: "Video selection error") + ": " + String(localized: "No video file was selected."))
                 return
             }
+
+            unclaimedTemporaryURL = pickedVideo.url
+            try Task.checkCancellation()
+
             viewModel.transcribeFile(
                 url: pickedVideo.url,
                 modelContext: modelContext,
                 cleanupAfterProcessing: true
             )
+            unclaimedTemporaryURL = nil
+        } catch is CancellationError {
+            return
         } catch {
+            guard !Task.isCancelled else { return }
             viewModel.setError(String(localized: "Video selection error") + ": \(error.localizedDescription)")
         }
     }
@@ -573,6 +608,51 @@ private struct LiveTranscriptionPanel: View {
 
 // MARK: - Processing
 
+private struct VideoImportOverlay: View {
+    let onCancel: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.32)
+                .ignoresSafeArea()
+
+            VStack(spacing: 18) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(Theme.amber)
+
+                VStack(spacing: 6) {
+                    Text("Importing video")
+                        .font(Theme.sans(18, weight: .semibold))
+                        .foregroundStyle(Theme.textPrimary)
+
+                    Text("Loading the selected video from Photos...")
+                        .font(Theme.sans(13))
+                        .foregroundStyle(Theme.textSecondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                Button(role: .cancel, action: onCancel) {
+                    Text("Cancel")
+                }
+                .buttonStyle(.recorderQuiet)
+            }
+            .padding(.horizontal, 28)
+            .padding(.vertical, 24)
+            .frame(maxWidth: 320)
+            .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .strokeBorder(Theme.stroke, lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.2), radius: 24, y: 10)
+            .padding(.horizontal, 24)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+    }
+}
+
 private struct TranscriptionProgressPanel: View {
     let progress: Double
     let statusText: String
@@ -673,7 +753,12 @@ private struct PickedVideoFile: Transferable {
             .appendingPathComponent("picked-video-\(UUID().uuidString)")
             .appendingPathExtension(fileExtension)
 
-        try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
-        return PickedVideoFile(url: destinationURL)
+        do {
+            try FileManager.default.copyItem(at: sourceURL, to: destinationURL)
+            return PickedVideoFile(url: destinationURL)
+        } catch {
+            try? FileManager.default.removeItem(at: destinationURL)
+            throw error
+        }
     }
 }
