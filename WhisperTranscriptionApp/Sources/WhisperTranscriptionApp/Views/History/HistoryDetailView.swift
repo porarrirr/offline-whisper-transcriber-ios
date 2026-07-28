@@ -328,7 +328,7 @@ struct HistoryDetailView: View {
                     Button {
                         transcribeViewModel.transcribeRecord(record, modelContext: modelContext)
                     } label: {
-                        detailActionRow(
+                        TranscriptionDetailActionRow(
                             icon: "waveform.badge.magnifyingglass",
                             title: Text(record.hasTranscriptionText ? "Transcribe Again" : "Transcribe from Audio")
                         )
@@ -348,7 +348,7 @@ struct HistoryDetailView: View {
                         )
                         showCopyConfirmation = true
                     } label: {
-                        detailActionRow(
+                        TranscriptionDetailActionRow(
                             icon: "doc.on.doc",
                             title: Text("Copy Text")
                         )
@@ -363,7 +363,7 @@ struct HistoryDetailView: View {
                 Button {
                     showExportSheet = true
                 } label: {
-                    detailActionRow(
+                    TranscriptionDetailActionRow(
                         icon: "arrow.down.doc",
                         title: Text("Export")
                     )
@@ -377,7 +377,7 @@ struct HistoryDetailView: View {
                 Button {
                     showDeleteConfirmation = true
                 } label: {
-                    detailActionRow(
+                    TranscriptionDetailActionRow(
                         icon: "trash",
                         title: Text("Delete"),
                         isDestructive: true
@@ -408,34 +408,6 @@ struct HistoryDetailView: View {
             }
         }
         .recorderPanel(padding: 14)
-    }
-
-    private func detailActionRow(
-        icon: String,
-        title: Text,
-        isDestructive: Bool = false
-    ) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(isDestructive ? Theme.rec : Theme.amber)
-                .frame(width: 24)
-
-            title
-                .font(Theme.sans(15, weight: .semibold))
-                .foregroundStyle(isDestructive ? Theme.rec : Theme.textPrimary)
-
-            Spacer()
-
-            if !isDestructive {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.textSecondary.opacity(0.55))
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 13)
-        .contentShape(Rectangle())
     }
 
     private static func exportFailureMessage(for format: ExportFormat) -> String {

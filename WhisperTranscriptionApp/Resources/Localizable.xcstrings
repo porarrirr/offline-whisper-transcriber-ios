@@ -1565,6 +1565,41 @@
         }
       }
     },
+    "Continuous text for easier reading." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texto continuo para facilitar la lectura."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texte continu pour faciliter la lecture."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読みやすい連続テキスト表示です"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "连续显示文本，便于阅读。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連續顯示文字，方便閱讀。"
+          }
+        }
+      }
+    },
     "Continuous text. Tapping does not move playback." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7102,6 +7137,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定"
+          }
+        }
+      }
+    },
+    "Segments are arranged along 30-second timeline markers." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los segmentos se organizan con marcadores de línea de tiempo cada 30 segundos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les segments sont organisés avec des repères chronologiques toutes les 30 secondes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セグメントを30秒ごとのタイムラインマーカーで区切って表示します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "片段按每 30 秒一个时间线标记排列。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "片段按每 30 秒一個時間軸標記排列。"
           }
         }
       }

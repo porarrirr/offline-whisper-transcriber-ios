@@ -9,9 +9,9 @@ struct ResultView: View {
     let language: String?
     let onDismiss: () -> Void
 
+    @StateObject private var settings = AppSettings.shared
     @State private var showCopyConfirmation = false
     @State private var showExportSheet = false
-    @State private var showTimestampView = false
     @State private var sharePayload: SharePayload?
 
     @MainActor
@@ -29,14 +29,10 @@ struct ResultView: View {
         self.duration = duration
         self.language = language
         self.onDismiss = onDismiss
-        _showTimestampView = State(initialValue: AppSettings.shared.includeTimestamps && !segments.isEmpty)
     }
 
-    private func currentDisplayText() -> String {
-        if showTimestampView && !segments.isEmpty {
-            return TranscriptionSegment.timestampedText(from: segments)
-        }
-        return TranscriptionSegment.plainText(from: segments, fallback: text)
+    private var plainText: String {
+        TranscriptionSegment.plainText(from: segments, fallback: text)
     }
 
     var body: some View {
@@ -47,16 +43,24 @@ struct ResultView: View {
                 VStack(spacing: 14) {
                     metaDisplay
 
+                    actionsPanel
+
                     TranscriptionCard(
                         text: text,
                         segments: segments,
-                        showTimestamps: showTimestampView,
-                        isLoading: false
+                        showTimestamps: false,
+                        isLoading: false,
+                        showsTimelineMarkers: true,
+                        displayStyle: settings.transcriptDisplayStyle,
+                        showsDisplayStyleControl: !segments.isEmpty,
+                        displayStyleControlAccessibilityIdentifier: "resultTranscriptDisplayToggle",
+                        onDisplayStyleToggle: {
+                            settings.transcriptDisplayStyle =
+                                settings.transcriptDisplayStyle == .timeline ? .reading : .timeline
+                        }
                     )
                     .equatable()
                     .accessibilityIdentifier("resultTranscriptionCard")
-
-                    actionsPanel
 
                     LegalDisclaimerFootnote()
                         .padding(.top, 4)
@@ -131,42 +135,51 @@ struct ResultView: View {
     }
 
     private var actionsPanel: some View {
-        VStack(spacing: 10) {
-            if !segments.isEmpty {
-                Button(action: { showTimestampView.toggle() }) {
-                    Label(showTimestampView ? "Show Text Only" : "Show with Timestamps", systemImage: showTimestampView ? "text.alignleft" : "clock")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.recorderQuiet)
-                .accessibilityIdentifier("resultTimestampToggle")
-            }
+        VStack(alignment: .leading, spacing: 14) {
+            TechLabel(text: "Actions")
 
-            HStack(spacing: 10) {
-                Button(action: {
-                    UIPasteboard.general.string = currentDisplayText()
+            VStack(spacing: 0) {
+                Button {
+                    UIPasteboard.general.string = plainText
                     showCopyConfirmation = true
-                }) {
-                    Label("Copy", systemImage: "doc.on.doc")
-                        .frame(maxWidth: .infinity)
+                } label: {
+                    TranscriptionDetailActionRow(
+                        icon: "doc.on.doc",
+                        title: Text("Copy Text")
+                    )
                 }
-                .buttonStyle(.recorderQuiet)
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("resultCopyText")
 
-                Button(action: {
-                    sharePayload = .text(currentDisplayText())
-                }) {
-                    Label("Share", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
+                Divider().overlay(Theme.stroke)
+                    .padding(.leading, 48)
+
+                Button {
+                    sharePayload = .text(plainText)
+                } label: {
+                    TranscriptionDetailActionRow(
+                        icon: "square.and.arrow.up",
+                        title: Text("Share Text")
+                    )
                 }
-                .buttonStyle(.recorderQuiet)
-            }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("resultShareText")
 
-            Button(action: {
-                showExportSheet = true
-            }) {
-                Label("Export", systemImage: "arrow.down.doc")
-                    .frame(maxWidth: .infinity)
+                Divider().overlay(Theme.stroke)
+                    .padding(.leading, 48)
+
+                Button {
+                    showExportSheet = true
+                } label: {
+                    TranscriptionDetailActionRow(
+                        icon: "arrow.down.doc",
+                        title: Text("Export")
+                    )
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.recorderQuiet)
+            .background(Theme.panelInset)
+            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         }
         .recorderPanel(padding: 14)
     }

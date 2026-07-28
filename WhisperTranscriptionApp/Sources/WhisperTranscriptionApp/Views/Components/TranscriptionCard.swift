@@ -8,6 +8,7 @@ struct TranscriptionCard: View, Equatable {
     let showsTimelineMarkers: Bool
     let displayStyle: TranscriptDisplayStyle
     let showsDisplayStyleControl: Bool
+    let displayStyleControlAccessibilityIdentifier: String
     let onDisplayStyleToggle: (() -> Void)?
     let onSegmentTap: ((TranscriptionSegment) -> Void)?
     let onSegmentLongPress: ((TranscriptionSegment) -> Void)?
@@ -21,6 +22,7 @@ struct TranscriptionCard: View, Equatable {
         showsTimelineMarkers: Bool = false,
         displayStyle: TranscriptDisplayStyle = .timeline,
         showsDisplayStyleControl: Bool = false,
+        displayStyleControlAccessibilityIdentifier: String = "historyTranscriptDisplayToggle",
         onDisplayStyleToggle: (() -> Void)? = nil,
         onSegmentTap: ((TranscriptionSegment) -> Void)? = nil,
         onSegmentLongPress: ((TranscriptionSegment) -> Void)? = nil
@@ -32,6 +34,7 @@ struct TranscriptionCard: View, Equatable {
         self.showsTimelineMarkers = showsTimelineMarkers
         self.displayStyle = displayStyle
         self.showsDisplayStyleControl = showsDisplayStyleControl
+        self.displayStyleControlAccessibilityIdentifier = displayStyleControlAccessibilityIdentifier
         self.onDisplayStyleToggle = onDisplayStyleToggle
         self.onSegmentTap = onSegmentTap
         self.onSegmentLongPress = onSegmentLongPress
@@ -50,6 +53,7 @@ struct TranscriptionCard: View, Equatable {
             && lhs.showsTimelineMarkers == rhs.showsTimelineMarkers
             && lhs.displayStyle == rhs.displayStyle
             && lhs.showsDisplayStyleControl == rhs.showsDisplayStyleControl
+            && lhs.displayStyleControlAccessibilityIdentifier == rhs.displayStyleControlAccessibilityIdentifier
             && (lhs.onDisplayStyleToggle == nil) == (rhs.onDisplayStyleToggle == nil)
             && (lhs.onSegmentTap == nil) == (rhs.onSegmentTap == nil)
             && (lhs.onSegmentLongPress == nil) == (rhs.onSegmentLongPress == nil)
@@ -153,16 +157,25 @@ struct TranscriptionCard: View, Equatable {
                 .frame(maxWidth: .infinity)
             }
             .buttonStyle(.recorderQuiet)
-            .accessibilityIdentifier("historyTranscriptDisplayToggle")
+            .accessibilityIdentifier(displayStyleControlAccessibilityIdentifier)
 
             Text(
-                isTimeline
-                    ? "Tap a line to play from there. Long-press to edit."
-                    : "Continuous text. Tapping does not move playback."
+                displayStyleDescription(isTimeline: isTimeline)
             )
             .font(Theme.sans(11))
             .foregroundColor(Theme.textSecondary)
         }
+    }
+
+    private func displayStyleDescription(isTimeline: Bool) -> LocalizedStringKey {
+        if isTimeline {
+            return onSegmentTap != nil || onSegmentLongPress != nil
+                ? "Tap a line to play from there. Long-press to edit."
+                : "Segments are arranged along 30-second timeline markers."
+        }
+        return onSegmentTap != nil
+            ? "Continuous text. Tapping does not move playback."
+            : "Continuous text for easier reading."
     }
 
     private var shouldShowSegmentRows: Bool {
@@ -192,6 +205,36 @@ struct TranscriptionCard: View, Equatable {
         }.value
         guard !Task.isCancelled else { return }
         textChunks = chunks
+    }
+}
+
+struct TranscriptionDetailActionRow: View {
+    let icon: String
+    let title: Text
+    var isDestructive = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(isDestructive ? Theme.rec : Theme.amber)
+                .frame(width: 24)
+
+            title
+                .font(Theme.sans(15, weight: .semibold))
+                .foregroundStyle(isDestructive ? Theme.rec : Theme.textPrimary)
+
+            Spacer()
+
+            if !isDestructive {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.textSecondary.opacity(0.55))
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 13)
+        .contentShape(Rectangle())
     }
 }
 

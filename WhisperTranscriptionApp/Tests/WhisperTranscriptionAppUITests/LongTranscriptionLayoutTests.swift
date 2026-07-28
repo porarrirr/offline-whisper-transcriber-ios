@@ -1,11 +1,11 @@
 import XCTest
 
 final class LongTranscriptionLayoutTests: XCTestCase {
-    func testResultLongTextScrollingAndTimestampChangesRemainStable() {
+    func testResultLongTextScrollingAndDisplayStyleChangesRemainStable() {
         exerciseLongTranscriptionScreen(
             extraArguments: [],
             cardIdentifier: "resultTranscriptionCard",
-            toggleIdentifier: "resultTimestampToggle"
+            toggleIdentifier: "resultTranscriptDisplayToggle"
         )
     }
 
