@@ -87,9 +87,8 @@ struct AppleSpeechTranscriptionService {
             throw AppleSpeechTranscriptionError.transcriptionUnavailable
         }
 
-        guard await SpeechAssetCoordinator.shared.isReady(locale: locale) else {
-            throw AppleSpeechTranscriptionError.assetsNotReady
-        }
+        await MainActor.run { onProgress(0) }
+        try await SpeechAssetCoordinator.shared.prepareAndWaitUntilReady(locale: locale)
         await MainActor.run { onProgress(1) }
     }
 

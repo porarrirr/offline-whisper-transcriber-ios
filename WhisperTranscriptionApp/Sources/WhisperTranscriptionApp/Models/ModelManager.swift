@@ -177,10 +177,12 @@ class ModelManager: NSObject, ObservableObject {
 
     func useSpeechAsset(locale: AppleSpeechLocale) {
         guard modelMutationIsAllowed() else { return }
-        switchModel(model: .appleSpeech(locale))
-        if !isSpeechAssetReady(locale: locale) {
-            speechAssetCoordinator.prepare(locale: locale)
-        }
+        switchModel(model: .appleSpeech(locale), refreshAvailability: false)
+        isDownloading = true
+        downloadProgress = 0
+        downloadStatusText = String(localized: "Checking speech model")
+        downloadError = nil
+        speechAssetCoordinator.prepare(locale: locale)
     }
 
     func releaseSpeechAssetReservation(_ reservedLocaleIdentifier: String) async -> Bool {
@@ -276,15 +278,6 @@ class ModelManager: NSObject, ObservableObject {
             .store(in: &cancellables)
     }
 
-    private func isSpeechAssetReady(locale: AppleSpeechLocale) -> Bool {
-        let identifier = SpeechAssetLocaleIdentifier.canonical(locale.localeIdentifier)
-        return speechAssetSnapshot.localeRecords.contains {
-            SpeechAssetLocaleIdentifier.canonical($0.localeIdentifier) == identifier
-                && $0.isInstalled
-                && $0.isReserved
-        }
-    }
-
     private static func localeRecordAlphabeticalOrder(
         _ lhs: SpeechLocaleRecord,
         _ rhs: SpeechLocaleRecord
@@ -333,11 +326,17 @@ class ModelManager: NSObject, ObservableObject {
     }
 
     func switchModel(model: TranscriptionModel) {
+        switchModel(model: model, refreshAvailability: true)
+    }
+
+    private func switchModel(model: TranscriptionModel, refreshAvailability: Bool) {
         guard model != currentTranscriptionModel else {
             if AppSettings.shared.selectedTranscriptionModel != model {
                 AppSettings.shared.selectedTranscriptionModel = model
             }
-            ensureModelAvailability()
+            if refreshAvailability {
+                ensureModelAvailability()
+            }
             return
         }
         guard modelMutationIsAllowed() else {
@@ -364,8 +363,10 @@ class ModelManager: NSObject, ObservableObject {
         downloadProgress = 0
         downloadStatusText = "Preparing model..."
         downloadError = nil
-        Task { @MainActor in
-            await refreshModelReadyState(autoInstallSystemAssets: false)
+        if refreshAvailability {
+            Task { @MainActor in
+                await refreshModelReadyState(autoInstallSystemAssets: false)
+            }
         }
     }
 

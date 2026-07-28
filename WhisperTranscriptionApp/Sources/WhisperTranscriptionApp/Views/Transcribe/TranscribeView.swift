@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct TranscribeView: View {
     @StateObject private var viewModel = TranscribeViewModel()
     @StateObject private var modelManager = ModelManager.shared
+    @StateObject private var settings = AppSettings.shared
     @State private var showFileImporter = false
     @State private var selectedFileURL: URL?
     @State private var selectedVideoItem: PhotosPickerItem?
@@ -38,7 +39,7 @@ struct TranscribeView: View {
                         )
                     }
 
-                    if let readinessError = modelReadinessError {
+                    if let readinessError = visibleModelReadinessError {
                         WarningStrip(
                             message: readinessError,
                             actionTitle: modelReadinessActionTitle,
@@ -219,7 +220,10 @@ struct TranscribeView: View {
             if recordingService.isRecording {
                 viewModel.stopRecordingAndTranscribe(recordingService: recordingService, modelContext: modelContext)
             } else {
-                viewModel.startRecording(recordingService: recordingService)
+                viewModel.startRecording(
+                    recordingService: recordingService,
+                    requiresTranscriptionReadiness: false
+                )
             }
         }
         .disabled(recordingButtonDisabled)
@@ -299,6 +303,14 @@ struct TranscribeView: View {
         modelManager.currentTranscriptionReadinessError()
     }
 
+    private var visibleModelReadinessError: String? {
+        guard !settings.isResolvingInitialTranscriptionModel,
+              !modelManager.isDownloading else {
+            return nil
+        }
+        return modelReadinessError
+    }
+
     private var modelAccelerationWarning: String? {
         modelManager.whisperAccelerationWarningMessage()
     }
@@ -338,7 +350,6 @@ struct TranscribeView: View {
             || recordingService.isChangingRecordingState
             || recordingService.liveState == .preparing
             || recordingService.liveState == .finalizing
-            || (!recordingService.isRecording && modelReadinessError != nil)
     }
 
     private var inputSelectionDisabled: Bool {

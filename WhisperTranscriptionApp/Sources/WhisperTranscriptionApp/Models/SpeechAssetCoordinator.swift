@@ -360,6 +360,24 @@ enum SpeechAssetUserAction: Equatable, Hashable, Sendable {
     case replaceLanguage
 }
 
+private struct SpeechAssetPreparationError: LocalizedError {
+    let errorDescription: String?
+    let recoverySuggestion: String?
+
+    init(
+        description: String,
+        recoverySuggestion: String? = nil
+    ) {
+        errorDescription = description
+        self.recoverySuggestion = recoverySuggestion
+    }
+
+    init(failure: SpeechAssetFailure) {
+        errorDescription = failure.message
+        recoverySuggestion = failure.recoverySuggestion
+    }
+}
+
 enum SpeechAssetBlockingIssue: Equatable, Sendable {
     case reservationLimit(maximum: Int, failure: SpeechAssetFailure?)
     case insufficientStorage(SpeechAssetFailure)
@@ -763,6 +781,55 @@ final class SpeechAssetCoordinator: ObservableObject {
         let reserved = await matchingReservedLocale(for: normalized, client: client) != nil
         let installed = await client.status(for: normalized) == .installed
         return reserved && installed
+    }
+
+    func prepareAndWaitUntilReady(locale: AppleSpeechLocale) async throws {
+        if await isReady(locale: locale) {
+            return
+        }
+
+        let targetIdentifier = SpeechAssetLocaleIdentifier.canonical(locale.localeIdentifier)
+        let activeIdentifier = (snapshot.normalizedLocaleIdentifier ?? snapshot.requestedLocaleIdentifier)
+            .map(SpeechAssetLocaleIdentifier.canonical)
+        if !snapshot.isOperationActive || activeIdentifier != targetIdentifier {
+            prepare(locale: locale)
+        }
+
+        for await latestSnapshot in $snapshot.values {
+            try Task.checkCancellation()
+
+            let latestIdentifier = (
+                latestSnapshot.normalizedLocaleIdentifier
+                    ?? latestSnapshot.requestedLocaleIdentifier
+            ).map(SpeechAssetLocaleIdentifier.canonical)
+            guard latestIdentifier == targetIdentifier else { continue }
+
+            switch latestSnapshot.state {
+            case .installed:
+                guard await isReady(locale: locale) else {
+                    throw SpeechAssetPreparationError(
+                        description: latestSnapshot.statusDetail
+                    )
+                }
+                return
+            case .reservationLimitReached(_, let failure):
+                if let failure {
+                    throw SpeechAssetPreparationError(failure: failure)
+                }
+                throw SpeechAssetPreparationError(description: latestSnapshot.statusDetail)
+            case .insufficientStorage(let failure), .failed(let failure):
+                throw SpeechAssetPreparationError(failure: failure)
+            case .unsupported:
+                throw SpeechAssetPreparationError(description: latestSnapshot.statusDetail)
+            case .cancelled:
+                throw CancellationError()
+            case .checking, .reserving, .systemManagedPending, .downloading,
+                 .verifying, .offline, .constrainedNetwork:
+                continue
+            }
+        }
+
+        throw CancellationError()
     }
 
     func markUsed(locale: AppleSpeechLocale) {

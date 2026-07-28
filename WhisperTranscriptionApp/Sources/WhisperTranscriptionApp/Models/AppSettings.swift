@@ -168,6 +168,8 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(transcriptDisplayStyle.rawValue, forKey: Self.transcriptDisplayStyleKey) }
     }
 
+    @Published private(set) var isResolvingInitialTranscriptionModel: Bool
+
     var selectedModelBackend: TranscriptionBackend {
         selectedTranscriptionModel.backend
     }
@@ -194,6 +196,7 @@ class AppSettings: ObservableObject {
         Self.migrateDefaultsIfNeeded()
 
         let defaults = UserDefaults.standard
+        self.isResolvingInitialTranscriptionModel = Self.hasPendingLocaleDefaultResolution(defaults: defaults)
         if let model = TranscriptionDefaultResolver.persistedModel(
             storageKey: defaults.string(forKey: Self.selectedTranscriptionModelKey)
         ) {
@@ -411,8 +414,10 @@ class AppSettings: ObservableObject {
         let defaults = UserDefaults.standard
         guard defaults.bool(forKey: Self.localeDefaultResolutionPendingKey),
               defaults.integer(forKey: Self.localeDefaultResolutionVersionKey) < Self.currentLocaleDefaultResolutionVersion else {
+            isResolvingInitialTranscriptionModel = false
             return
         }
+        defer { isResolvingInitialTranscriptionModel = false }
 
         guard TranscriptionDefaultResolver.shouldApplyResolvedLocaleDefault(
             expectedModelStorageKey: expectedModelKey,
@@ -437,18 +442,25 @@ class AppSettings: ObservableObject {
             selectedLanguage = resolvedDefaults.whisperLanguage
         }
         selectedTranscriptionModel = resolvedDefaults.model
-        completePendingLocaleDefaultResolution(defaults: defaults)
 
-        if ModelManager.shared.currentTranscriptionModel != resolvedDefaults.model {
+        if let locale = resolvedDefaults.model.appleSpeechLocale {
+            ModelManager.shared.useSpeechAsset(locale: locale)
+        } else if ModelManager.shared.currentTranscriptionModel != resolvedDefaults.model {
             ModelManager.shared.switchModel(model: resolvedDefaults.model)
         } else {
             ModelManager.shared.ensureModelAvailability()
         }
+        completePendingLocaleDefaultResolution(defaults: defaults)
     }
 
     private func completePendingLocaleDefaultResolution(defaults: UserDefaults) {
         defaults.set(false, forKey: Self.localeDefaultResolutionPendingKey)
         defaults.set(Self.currentLocaleDefaultResolutionVersion, forKey: Self.localeDefaultResolutionVersionKey)
+    }
+
+    private static func hasPendingLocaleDefaultResolution(defaults: UserDefaults) -> Bool {
+        defaults.bool(forKey: localeDefaultResolutionPendingKey)
+            && defaults.integer(forKey: localeDefaultResolutionVersionKey) < currentLocaleDefaultResolutionVersion
     }
 
     static let supportedLanguages: [(code: String, name: String)] = [

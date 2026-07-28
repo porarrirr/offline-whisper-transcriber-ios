@@ -324,6 +324,45 @@ final class SpeechAssetCoordinatorTests: XCTestCase {
         XCTAssertFalse(coordinator.snapshot.isOperationActive)
     }
 
+    func testPrepareAndWaitUsesActiveInstallationAndReturnsWhenReady() async throws {
+        let client = FakeSpeechAssetClient(maximumReservedLocales: 2)
+        client.statuses["ja-jp"] = .supported
+        let gate = FakeGate()
+        client.pendingInstallationGate = gate
+        let coordinator = makeCoordinator(client: client)
+
+        coordinator.prepare(locale: .jaJP)
+        await waitUntil {
+            coordinator.snapshot.isOperationActive
+                && client.installationRequestCount == 1
+        }
+
+        let waitTask = Task {
+            try await coordinator.prepareAndWaitUntilReady(locale: .jaJP)
+        }
+        await Task.yield()
+        XCTAssertEqual(client.installationRequestCount, 1)
+
+        gate.open()
+        try await waitTask.value
+
+        XCTAssertEqual(client.installationRequestCount, 1)
+        let isReady = await coordinator.isReady(locale: .jaJP)
+        XCTAssertTrue(isReady)
+    }
+
+    func testPrepareAndWaitStartsInstallationWhenNoneIsActive() async throws {
+        let client = FakeSpeechAssetClient(maximumReservedLocales: 2)
+        client.statuses["ja-jp"] = .supported
+        let coordinator = makeCoordinator(client: client)
+
+        try await coordinator.prepareAndWaitUntilReady(locale: .jaJP)
+
+        XCTAssertEqual(client.installationRequestCount, 1)
+        let isReady = await coordinator.isReady(locale: .jaJP)
+        XCTAssertTrue(isReady)
+    }
+
     func testNetworkRestorationTriggersInventoryRefresh() async {
         let offline = SpeechAssetNetworkSnapshot(
             status: .unsatisfied,
