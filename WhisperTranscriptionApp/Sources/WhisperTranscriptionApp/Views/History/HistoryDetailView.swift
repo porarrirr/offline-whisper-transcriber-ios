@@ -33,62 +33,11 @@ struct HistoryDetailView: View {
     @State private var undoDismissTask: Task<Void, Never>?
 
     var body: some View {
-        // This screen intentionally uses ScrollView: TranscriptionCard changes height
-        // asynchronously and must not participate in List/Form cell self-sizing.
-        ScrollView {
-            VStack(spacing: 12) {
-                headerPanel
+        sheetsView
+    }
 
-                if let error = viewModel.errorMessage {
-                    WarningStrip(message: error)
-                }
-
-                if let audioURL = cachedAudioURL {
-                    AudioPlaybackPanel(audioURL: audioURL, player: audioPlayer)
-                }
-
-                transcriptionProcessingStatus
-
-                if record.hasTranscriptionText {
-                    transcriptionToolbar
-
-                    TranscriptionCard(
-                        text: record.text,
-                        segments: cachedSegments,
-                        showTimestamps: false,
-                        isLoading: false,
-                        showsHeader: false,
-                        showsTimelineMarkers: true,
-                        displayStyle: settings.transcriptDisplayStyle,
-                        showsDisplayStyleControl: false,
-                        onSegmentTap: handleSegmentTap,
-                        onSegmentLongPress: { segment in
-                            editingSegment = segment
-                        }
-                    )
-                    .equatable()
-                    .accessibilityIdentifier("historyTranscriptionCard")
-                } else {
-                    VStack(alignment: .leading, spacing: 12) {
-                        transcriptionToolbar
-
-                        HStack(spacing: 10) {
-                            Image(systemName: "text.quote")
-                                .foregroundColor(Theme.textSecondary)
-                            Text("No transcription yet")
-                                .font(Theme.sans(14))
-                                .foregroundColor(Theme.textSecondary)
-                            Spacer()
-                        }
-                        .recorderPanel(padding: 14)
-                    }
-                }
-
-                Spacer(minLength: 88)
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-        }
+    private var baseScreen: some View {
+        detailScrollView
         .background(Theme.background)
         .safeAreaInset(edge: .bottom) {
             if let pendingUndo {
@@ -98,8 +47,7 @@ struct HistoryDetailView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .navigationTitle("Details")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .onAppear {
             if cachedSegments.isEmpty {
                 cachedSegments = record.segments
@@ -118,16 +66,10 @@ struct HistoryDetailView: View {
             undoDismissTask = nil
             pendingUndo = nil
         }
-        .toolbar {
-            ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: {
-                    viewModel.toggleFavorite(record)
-                }) {
-                    Image(systemName: record.isFavorite ? "star.fill" : "star")
-                        .foregroundColor(record.isFavorite ? Theme.amber : Theme.textSecondary)
-                }
-            }
-        }
+    }
+
+    private var alertsView: some View {
+        baseScreen
         .alert("Confirm Deletion", isPresented: $showDeleteConfirmation) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -176,6 +118,10 @@ struct HistoryDetailView: View {
                 viewModel.updateTitle(record, title: editableTitle)
             }
         }
+    }
+
+    private var sheetsView: some View {
+        alertsView
         .sheet(item: $sharePayload) { payload in
             ShareSheet(activityItems: payload.activityItems)
         }
@@ -225,7 +171,104 @@ struct HistoryDetailView: View {
         }
     }
 
+    private var detailScrollView: some View {
+        // This screen intentionally uses ScrollView: TranscriptionCard changes height
+        // asynchronously and must not participate in List/Form cell self-sizing.
+        ScrollView {
+            LazyVStack(spacing: 10, pinnedViews: [.sectionHeaders]) {
+                compactNavigationBar
+                headerPanel
+
+                if let error = viewModel.errorMessage {
+                    WarningStrip(message: error)
+                }
+
+                if let audioURL = cachedAudioURL {
+                    AudioPlaybackPanel(audioURL: audioURL, player: audioPlayer)
+                }
+
+                transcriptionProcessingStatus
+
+                Section {
+                    if record.hasTranscriptionText {
+                        TranscriptionCard(
+                            text: record.text,
+                            segments: cachedSegments,
+                            showTimestamps: false,
+                            isLoading: false,
+                            showsHeader: false,
+                            showsTimelineMarkers: true,
+                            displayStyle: settings.transcriptDisplayStyle,
+                            showsDisplayStyleControl: false,
+                            onSegmentTap: handleSegmentTap,
+                            onSegmentLongPress: { segment in
+                                editingSegment = segment
+                            }
+                        )
+                        .equatable()
+                        .accessibilityIdentifier("historyTranscriptionCard")
+                    } else {
+                        HStack(spacing: 10) {
+                            Image(systemName: "text.quote")
+                                .foregroundColor(Theme.textSecondary)
+                            Text("No transcription yet")
+                                .font(Theme.sans(14))
+                                .foregroundColor(Theme.textSecondary)
+                            Spacer()
+                        }
+                        .recorderPanel(padding: 14)
+                    }
+                } header: {
+                    transcriptionToolbar
+                        .padding(.vertical, 8)
+                        .background(Theme.background)
+                        .zIndex(1)
+                }
+
+                Spacer(minLength: 88)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+        }
+    }
+
     // MARK: - Panels
+
+    private var compactNavigationBar: some View {
+        HStack {
+            Button {
+                dismiss()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.textPrimary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Back"))
+
+            Spacer()
+
+            favoriteButton
+                .frame(width: 44, height: 44)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var favoriteButton: some View {
+        Button {
+            viewModel.toggleFavorite(record)
+        } label: {
+            Image(systemName: record.isFavorite ? "star.fill" : "star")
+                .font(.system(size: 17, weight: .medium))
+                .foregroundColor(record.isFavorite ? Theme.amber : Theme.textSecondary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(
+            record.isFavorite ? Text("Remove from Favorites") : Text("Add to Favorites")
+        )
+    }
 
     private var headerPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -234,6 +277,15 @@ struct HistoryDetailView: View {
                     .font(Theme.sans(21, weight: .bold))
                     .foregroundColor(Theme.textPrimary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        editableTitle = record.displayTitle
+                        showEditTitle = true
+                    }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint(Text("Edit Title"))
 
                 Button {
                     editableTitle = record.displayTitle
@@ -255,7 +307,7 @@ struct HistoryDetailView: View {
 
             Text(metadataSummary)
                 .font(Theme.sans(13, weight: .medium))
-                .foregroundStyle(Theme.textSecondary)
+                .foregroundStyle(Theme.textPrimary.opacity(0.7))
                 .lineLimit(2)
 
             if !record.tags.isEmpty {
@@ -282,17 +334,17 @@ struct HistoryDetailView: View {
 
     private var transcriptionToolbar: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Text("Transcription")
-                    .font(Theme.sans(18, weight: .bold))
-                    .foregroundStyle(Theme.textPrimary)
+            if !cachedSegments.isEmpty {
+                transcriptDisplayStyleControl
+            }
 
-                Spacer(minLength: 8)
+            HStack(spacing: 8) {
+                Spacer(minLength: 0)
 
                 if record.hasTranscriptionText {
                     compactActionButton(
+                        title: "Copy",
                         systemImage: "doc.on.doc",
-                        accessibilityLabel: "Copy Text",
                         accessibilityIdentifier: "historyCopyText"
                     ) {
                         UIPasteboard.general.string = TranscriptionSegment.plainText(
@@ -303,8 +355,8 @@ struct HistoryDetailView: View {
                     }
 
                     compactActionButton(
+                        title: "Share",
                         systemImage: "square.and.arrow.up",
-                        accessibilityLabel: "Export",
                         accessibilityIdentifier: "historyExport"
                     ) {
                         showExportSheet = true
@@ -312,10 +364,6 @@ struct HistoryDetailView: View {
                 }
 
                 moreActionsMenu
-            }
-
-            if !cachedSegments.isEmpty {
-                transcriptDisplayStyleControl
             }
         }
     }
@@ -327,7 +375,7 @@ struct HistoryDetailView: View {
         }
         .padding(3)
         .background(Theme.panelInset, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-        .frame(maxWidth: 250)
+        .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
     }
 
@@ -338,11 +386,11 @@ struct HistoryDetailView: View {
         } label: {
             Text(title)
                 .font(Theme.sans(13, weight: .semibold))
-                .foregroundStyle(isSelected ? Theme.textPrimary : Theme.textSecondary)
+                .foregroundStyle(isSelected ? Theme.onAmber : Theme.textPrimary.opacity(0.72))
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 7)
+                .padding(.vertical, 9)
                 .background(
-                    isSelected ? Theme.panel : Color.clear,
+                    isSelected ? Theme.amberFill : Color.clear,
                     in: RoundedRectangle(cornerRadius: 7, style: .continuous)
                 )
         }
@@ -352,20 +400,20 @@ struct HistoryDetailView: View {
     }
 
     private func compactActionButton(
+        title: LocalizedStringKey,
         systemImage: String,
-        accessibilityLabel: LocalizedStringKey,
         accessibilityIdentifier: String,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
+            Label(title, systemImage: systemImage)
+                .font(Theme.sans(12, weight: .semibold))
                 .foregroundStyle(Theme.amber)
-                .frame(width: 34, height: 34)
+                .padding(.horizontal, 10)
+                .frame(height: 34)
                 .background(Theme.panelInset, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(Text(accessibilityLabel))
         .accessibilityIdentifier(accessibilityIdentifier)
     }
 
@@ -573,23 +621,14 @@ private struct AudioPlaybackPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 9) {
+            HStack(spacing: 7) {
+                skipButton(interval: -15, systemImage: "gobackward.15", label: "Go Back 15 Seconds")
                 playPauseButton
-
-                Text(formatTime(player.currentTime))
-                    .frame(minWidth: 38, alignment: .trailing)
+                skipButton(interval: 15, systemImage: "goforward.15", label: "Go Forward 15 Seconds")
 
                 if player.duration > 0 {
-                    Slider(value: Binding(
-                        get: { player.currentTime },
-                        set: { player.seek(to: $0) }
-                    ), in: 0...player.duration)
-                    .tint(Theme.amberFill)
-                    .accessibilityLabel(Text("Playback Position"))
+                    CompactPlaybackSlider(player: player)
                 }
-
-                Text(formatTime(player.duration))
-                    .frame(minWidth: 38, alignment: .leading)
 
                 Button {
                     player.cyclePlaybackRate()
@@ -604,8 +643,11 @@ private struct AudioPlaybackPanel: View {
                 .accessibilityLabel(Text("Playback Speed"))
                 .accessibilityValue(Text(playbackRateLabel))
             }
-            .font(Theme.mono(10, weight: .medium))
-            .foregroundColor(Theme.textSecondary)
+
+            Text("\(formatTime(player.currentTime)) / \(formatTime(player.duration))")
+                .font(Theme.mono(11, weight: .medium))
+                .foregroundStyle(Theme.textPrimary.opacity(0.7))
+                .frame(maxWidth: .infinity)
 
             if let error = player.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
@@ -643,8 +685,78 @@ private struct AudioPlaybackPanel: View {
         .accessibilityLabel(Text(player.isPlaying ? "Pause Audio" : "Play Audio"))
     }
 
+    private func skipButton(
+        interval: TimeInterval,
+        systemImage: String,
+        label: LocalizedStringKey
+    ) -> some View {
+        Button {
+            player.skip(by: interval)
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(Theme.textPrimary.opacity(0.78))
+                .frame(width: 30, height: 36)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(label))
+    }
+
     private var playbackRateLabel: String {
         player.playbackRate == 1 ? "1.0×" : "\(player.playbackRate.formatted())×"
+    }
+}
+
+/// 標準Sliderより小さなノブを使い、限られた幅でも再生位置を見渡せるシークバー。
+private struct CompactPlaybackSlider: View {
+    let player: AudioPlayer
+
+    var body: some View {
+        GeometryReader { geometry in
+            let trackWidth = max(1, geometry.size.width)
+            let progress = player.duration > 0
+                ? min(max(player.currentTime / player.duration, 0), 1)
+                : 0
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Theme.panelInset)
+                    .frame(height: 4)
+
+                Capsule()
+                    .fill(Theme.amberFill)
+                    .frame(width: trackWidth * progress, height: 4)
+
+                Circle()
+                    .fill(Theme.amberFill)
+                    .frame(width: 10, height: 10)
+                    .offset(x: max(0, min(trackWidth - 10, trackWidth * progress - 5)))
+            }
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        let ratio = min(max(value.location.x / trackWidth, 0), 1)
+                        player.seek(to: player.duration * ratio)
+                    }
+            )
+        }
+        .frame(minWidth: 64)
+        .frame(height: 36)
+        .accessibilityElement()
+        .accessibilityLabel(Text("Playback Position"))
+        .accessibilityValue(Text("\(formatTime(player.currentTime)) / \(formatTime(player.duration))"))
+        .accessibilityAdjustableAction { direction in
+            switch direction {
+            case .increment:
+                player.skip(by: 15)
+            case .decrement:
+                player.skip(by: -15)
+            @unknown default:
+                break
+            }
+        }
     }
 }
 

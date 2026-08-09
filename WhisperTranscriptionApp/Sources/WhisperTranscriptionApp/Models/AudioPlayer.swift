@@ -90,6 +90,10 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         currentTime = clampedTime
     }
 
+    func skip(by interval: TimeInterval) {
+        seek(to: currentTime + interval)
+    }
+
     func cyclePlaybackRate() {
         switch playbackRate {
         case 1:

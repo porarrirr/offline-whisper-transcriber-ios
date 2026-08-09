@@ -9037,6 +9037,26 @@
         }
       }
     },
+    "Go Back 15 Seconds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Retroceder 15 segundos" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Reculer de 15 secondes" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "15秒戻る" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "后退15秒" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "倒退15秒" } }
+      }
+    },
+    "Go Forward 15 Seconds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Avanzar 15 segundos" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Avancer de 15 secondes" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "15秒進む" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "前进15秒" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "前進15秒" } }
+      }
+    },
     "More Actions" : {
       "extractionState" : "manual",
       "localizations" : {
