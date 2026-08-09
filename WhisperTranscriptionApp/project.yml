@@ -32,6 +32,8 @@ targets:
         CODE_SIGN_IDENTITY: "Apple Development"
         MARKETING_VERSION: "1.6"
         CURRENT_PROJECT_VERSION: "2"
+        INFOPLIST_PREPROCESS: YES
+        INFOPLIST_PREFIX_HEADER: "$(PROJECT_TEMP_DIR)/BuildVersion.h"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
@@ -40,8 +42,8 @@ targets:
       properties:
         CFBundleDisplayName: Whisper Transcriber
         CFBundleDevelopmentRegion: en
-        CFBundleShortVersionString: "$(MARKETING_VERSION)"
-        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        CFBundleShortVersionString: WT_BUILD_DATE
+        CFBundleVersion: WT_BUILD_TIME
         NSMicrophoneUsageDescription: "Microphone access is required to record audio for transcription."
         NSSpeechRecognitionUsageDescription: "Speech recognition is required to transcribe audio on device."
         NSSupportsLiveActivities: true
@@ -68,12 +70,6 @@ targets:
       - sdk: Speech.framework
       - target: RecordingActivityWidget
         embed: true
-    preBuildScripts:
-      - name: Set Build Version
-        script: "\"${SRCROOT}/Scripts/set-build-version.sh\" \"${SRCROOT}/Info.plist\" \"${SRCROOT}/Sources/RecordingActivityWidget/Info.plist\""
-        outputFiles:
-          - "$(SRCROOT)/Info.plist"
-        basedOnDependencyAnalysis: false
     scheme:
       testTargets:
         - WhisperTranscriptionAppTests
@@ -144,6 +140,8 @@ targets:
         CODE_SIGN_IDENTITY: "Apple Development"
         APPLICATION_EXTENSION_API_ONLY: YES
         INFOPLIST_FILE: Sources/RecordingActivityWidget/Info.plist
+        INFOPLIST_PREPROCESS: YES
+        INFOPLIST_PREFIX_HEADER: "$(PROJECT_TEMP_DIR)/BuildVersion.h"
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
     dependencies:
@@ -151,8 +149,8 @@ targets:
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
     preBuildScripts:
-      - name: Set Build Version
-        script: "\"${SRCROOT}/Scripts/set-build-version.sh\" \"${SRCROOT}/Sources/RecordingActivityWidget/Info.plist\""
+      - name: Generate Build Version
+        script: "\"${SRCROOT}/Scripts/generate-build-version-header.sh\" \"${PROJECT_TEMP_DIR}/BuildVersion.h\""
         outputFiles:
-          - "$(SRCROOT)/Sources/RecordingActivityWidget/Info.plist"
+          - "$(PROJECT_TEMP_DIR)/BuildVersion.h"
         basedOnDependencyAnalysis: false

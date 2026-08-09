@@ -60,85 +60,18 @@ struct OpenTranscriptionHistoryIntent: AppIntent {
 }
 
 @available(iOS 18.0, *)
-struct StartBackgroundRecordingIntent: AppIntent, AudioRecordingIntent, LiveActivityIntent {
+struct StartBackgroundRecordingIntent: AppIntent {
     static var title: LocalizedStringResource = "Start Recording"
-    static var description = IntentDescription("Starts an audio recording in the background")
-    static var openAppWhenRun = false
+    static var description = IntentDescription("Opens the app and starts an audio recording")
+    static var openAppWhenRun = true
 
     @available(iOS 26.0, *)
-    static var supportedModes: IntentModes { [.background, .foreground(.dynamic)] }
+    static var supportedModes: IntentModes { .foreground(.immediate) }
 
     @MainActor
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
-        do {
-            let result = try await RecordingService.shared.startRecordingFromIntent()
-            return .result(value: Self.message(for: result))
-        } catch AudioRecorderError.backgroundSessionActivationDenied {
-            let result = try await startRecordingByContinuingInForeground()
-            return .result(value: Self.message(for: result))
-        } catch AudioRecorderError.microphonePermissionRequired {
-            throw IntentError.microphonePermissionRequired
-        } catch AudioRecorderError.stopInProgress {
-            throw IntentError.recordingBusy
-        } catch is RecordingLiveActivityError {
-            throw IntentError.liveActivityRequired
-        } catch {
-            AppLogger.error("Failed to start recording from shortcut", context: "StartBackgroundRecordingIntent", error: error)
-            throw IntentError.recordingStartFailed(error.localizedDescription)
-        }
-    }
-
-    private static func message(for result: RecordingStartResult) -> String {
-        switch result {
-        case .started:
-            return String(localized: "Recording started.")
-        case .alreadyRecording:
-            return String(localized: "Recording is already in progress.")
-        }
-    }
-
-    /// iOS refuses to activate a recording audio session from the background,
-    /// even for an AudioRecordingIntent with an active Live Activity. The only
-    /// supported continuation is bringing the app to the foreground and
-    /// starting the recording there.
-    @MainActor
-    private func startRecordingByContinuingInForeground() async throws -> RecordingStartResult {
-        guard #available(iOS 26.0, *) else {
-            AppLogger.error(
-                "Background session activation denied and foreground continuation requires iOS 26",
-                context: "StartBackgroundRecordingIntent"
-            )
-            throw IntentError.foregroundRequiredToStartRecording
-        }
-
-        guard systemContext.currentMode.canContinueInForeground else {
-            AppLogger.error(
-                "Background session activation denied and the system refused foreground continuation",
-                context: "StartBackgroundRecordingIntent"
-            )
-            throw IntentError.foregroundRequiredToStartRecording
-        }
-
-        AppLogger.info(
-            "Background session activation denied; continuing recording start in the foreground",
-            context: "StartBackgroundRecordingIntent"
-        )
-        try await continueInForeground(alwaysConfirm: false)
-
-        do {
-            return try await RecordingService.shared.startRecordingFromApp()
-        } catch AudioRecorderError.microphonePermissionRequired {
-            throw IntentError.microphonePermissionRequired
-        } catch AudioRecorderError.stopInProgress {
-            throw IntentError.recordingBusy
-        } catch {
-            AppLogger.error(
-                "Failed to start recording after foreground continuation",
-                context: "StartBackgroundRecordingIntent",
-                error: error
-            )
-            throw IntentError.recordingStartFailed(error.localizedDescription)
-        }
+    func perform() async throws -> some IntentResult {
+        WhisperAppDestination.transcribe.requestOpen(startRecordingRequested: true)
+        return .result()
     }
 }
 
