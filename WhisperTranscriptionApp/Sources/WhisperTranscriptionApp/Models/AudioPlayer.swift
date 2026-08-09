@@ -9,6 +9,7 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     var isPlaying = false
     var currentTime: TimeInterval = 0
     var duration: TimeInterval = 0
+    var playbackRate: Float = 1
     var errorMessage: String?
 
     @ObservationIgnored private var player: AVAudioPlayer?
@@ -18,6 +19,8 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         do {
             player = try AVAudioPlayer(contentsOf: url)
             player?.delegate = self
+            player?.enableRate = true
+            player?.rate = playbackRate
             player?.prepareToPlay()
             duration = player?.duration ?? 0
             currentTime = player?.currentTime ?? 0
@@ -85,6 +88,18 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         let clampedTime = min(max(0, time), max(0, duration))
         player?.currentTime = clampedTime
         currentTime = clampedTime
+    }
+
+    func cyclePlaybackRate() {
+        switch playbackRate {
+        case 1:
+            playbackRate = 1.5
+        case 1.5:
+            playbackRate = 2
+        default:
+            playbackRate = 1
+        }
+        player?.rate = playbackRate
     }
 
     func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {

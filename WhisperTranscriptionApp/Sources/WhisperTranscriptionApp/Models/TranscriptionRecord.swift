@@ -72,10 +72,15 @@ class TranscriptionRecord: Identifiable {
     var formattedDate: String {
         Self.displayDateFormatter.string(from: createdAt)
     }
+
+    var compactFormattedDate: String {
+        Self.compactDateFormatter.string(from: createdAt)
+    }
     
     var displayTitle: String {
-        if title.isEmpty {
-            return Self.defaultTitle(for: createdAt)
+        let defaultTitle = Self.defaultTitle(for: createdAt)
+        if title.isEmpty || title == defaultTitle {
+            return Self.generatedTitle(from: text) ?? defaultTitle
         }
         return title
     }
@@ -115,6 +120,23 @@ class TranscriptionRecord: Identifiable {
         displayDateFormatter.string(from: date)
     }
 
+    /// 日時だけの既定タイトルを、文字起こし冒頭の読みやすい短い見出しに置き換える。
+    /// 保存値は変更しないため、ユーザーが編集したタイトルとは明確に区別できる。
+    static func generatedTitle(from text: String, maximumLength: Int = 32) -> String? {
+        let normalized = text
+            .split(whereSeparator: { $0.isWhitespace })
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else { return nil }
+
+        let sentenceTerminators = CharacterSet(charactersIn: "。！？.!?\n")
+        let firstSentence = normalized.components(separatedBy: sentenceTerminators).first ?? normalized
+        let candidate = firstSentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !candidate.isEmpty else { return nil }
+        guard candidate.count > maximumLength else { return candidate }
+        return String(candidate.prefix(maximumLength)).trimmingCharacters(in: .whitespaces) + "…"
+    }
+
     static func normalizedTags(from input: String) -> [String] {
         let separators = CharacterSet(charactersIn: ",、\n")
         let rawTags = input.components(separatedBy: separators)
@@ -146,6 +168,14 @@ class TranscriptionRecord: Identifiable {
         let formatter = DateFormatter()
         formatter.locale = Locale.current
         formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    private static let compactDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale.current
+        formatter.dateStyle = .short
         formatter.timeStyle = .short
         return formatter
     }()

@@ -2,6 +2,30 @@ import XCTest
 @testable import WhisperTranscriptionApp
 
 final class TranscriptionRecordTests: XCTestCase {
+    func testDefaultDateTitleUsesTranscriptionOpeningAsDisplayTitle() {
+        let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let record = TranscriptionRecord(
+            title: TranscriptionRecord.defaultTitle(for: createdAt),
+            text: "  今日のミーティングについて話します。次の話題です。 ",
+            sourceType: .recording,
+            duration: 1,
+            createdAt: createdAt
+        )
+
+        XCTAssertEqual(record.displayTitle, "今日のミーティングについて話します")
+    }
+
+    func testGeneratedDisplayTitleDoesNotReplaceCustomTitle() {
+        let record = TranscriptionRecord(
+            title: "ユーザーのタイトル",
+            text: "文字起こし本文",
+            sourceType: .file,
+            duration: 1
+        )
+
+        XCTAssertEqual(record.displayTitle, "ユーザーのタイトル")
+    }
+
     func testHasTranscriptionTextTreatsWhitespaceOnlyTextAsEmpty() {
         func record(text: String) -> TranscriptionRecord {
             TranscriptionRecord(title: "t", text: text, sourceType: .file, duration: 1)

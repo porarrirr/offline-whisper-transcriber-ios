@@ -9037,6 +9037,56 @@
         }
       }
     },
+    "More Actions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Más acciones" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Plus d’actions" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "その他の操作" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更多操作" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "更多操作" } }
+      }
+    },
+    "Playback Position" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Posición de reproducción" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Position de lecture" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "再生位置" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "播放位置" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "播放位置" } }
+      }
+    },
+    "Playback Speed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Velocidad de reproducción" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Vitesse de lecture" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "再生速度" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "播放速度" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "播放速度" } }
+      }
+    },
+    "Text" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Texto" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Texte" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "テキスト" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文本" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "文字" } }
+      }
+    },
+    "Timeline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cronología" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Chronologie" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タイムライン" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "时间线" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "時間軸" } }
+      }
+    },
     "Transcription" : {
       "extractionState" : "manual",
       "localizations" : {

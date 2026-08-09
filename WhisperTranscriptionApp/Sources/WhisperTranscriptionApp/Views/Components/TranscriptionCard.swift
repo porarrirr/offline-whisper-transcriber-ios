@@ -5,6 +5,7 @@ struct TranscriptionCard: View, Equatable {
     let segments: [TranscriptionSegment]
     let showTimestamps: Bool
     let isLoading: Bool
+    let showsHeader: Bool
     let showsTimelineMarkers: Bool
     let displayStyle: TranscriptDisplayStyle
     let showsDisplayStyleControl: Bool
@@ -19,6 +20,7 @@ struct TranscriptionCard: View, Equatable {
         segments: [TranscriptionSegment] = [],
         showTimestamps: Bool = false,
         isLoading: Bool,
+        showsHeader: Bool = true,
         showsTimelineMarkers: Bool = false,
         displayStyle: TranscriptDisplayStyle = .timeline,
         showsDisplayStyleControl: Bool = false,
@@ -31,6 +33,7 @@ struct TranscriptionCard: View, Equatable {
         self.segments = segments
         self.showTimestamps = showTimestamps
         self.isLoading = isLoading
+        self.showsHeader = showsHeader
         self.showsTimelineMarkers = showsTimelineMarkers
         self.displayStyle = displayStyle
         self.showsDisplayStyleControl = showsDisplayStyleControl
@@ -50,6 +53,7 @@ struct TranscriptionCard: View, Equatable {
     static func == (lhs: TranscriptionCard, rhs: TranscriptionCard) -> Bool {
         lhs.showTimestamps == rhs.showTimestamps
             && lhs.isLoading == rhs.isLoading
+            && lhs.showsHeader == rhs.showsHeader
             && lhs.showsTimelineMarkers == rhs.showsTimelineMarkers
             && lhs.displayStyle == rhs.displayStyle
             && lhs.showsDisplayStyleControl == rhs.showsDisplayStyleControl
@@ -67,15 +71,17 @@ struct TranscriptionCard: View, Equatable {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                TechLabel(text: "Transcription Result")
+            if showsHeader {
+                HStack {
+                    TechLabel(text: "Transcription Result")
 
-                Spacer()
+                    Spacer()
 
-                if isLoading {
-                    ProgressView()
-                        .tint(Theme.amber)
-                        .controlSize(.small)
+                    if isLoading {
+                        ProgressView()
+                            .tint(Theme.amber)
+                            .controlSize(.small)
+                    }
                 }
             }
 
