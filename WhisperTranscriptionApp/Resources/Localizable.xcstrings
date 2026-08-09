@@ -1219,6 +1219,9 @@
         }
       }
     },
+    "Back" : {
+
+    },
     "Base (Balanced)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3862,6 +3865,76 @@
         }
       }
     },
+    "Go Back 15 Seconds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retroceder 15 segundos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reculer de 15 secondes"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15秒戻る"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "后退15秒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "倒退15秒"
+          }
+        }
+      }
+    },
+    "Go Forward 15 Seconds" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avanzar 15 segundos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avancer de 15 secondes"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "15秒進む"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前进15秒"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前進15秒"
+          }
+        }
+      }
+    },
     "High-Accuracy Offline AI Transcription" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5359,6 +5432,41 @@
         }
       }
     },
+    "More Actions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Más acciones"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Plus d’actions"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "その他の操作"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多操作"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更多操作"
+          }
+        }
+      }
+    },
     "Network connection is constrained" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5901,6 +6009,76 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "ここから再生"
+          }
+        }
+      }
+    },
+    "Playback Position" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posición de reproducción"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Position de lecture"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生位置"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放位置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放位置"
+          }
+        }
+      }
+    },
+    "Playback Speed" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Velocidad de reproducción"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vitesse de lecture"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生速度"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放速度"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "播放速度"
           }
         }
       }
@@ -6966,6 +7144,41 @@
         }
       }
     },
+    "Segments are arranged along 30-second timeline markers." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los segmentos se organizan con marcadores de línea de tiempo cada 30 segundos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les segments sont organisés avec des repères chronologiques toutes les 30 secondes."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "セグメントを30秒ごとのタイムラインマーカーで区切って表示します"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "片段按每 30 秒一个时间线标记排列。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "片段按每 30 秒一個時間軸標記排列。"
+          }
+        }
+      }
+    },
     "Select Export Format" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7137,41 +7350,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "設定"
-          }
-        }
-      }
-    },
-    "Segments are arranged along 30-second timeline markers." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Los segmentos se organizan con marcadores de línea de tiempo cada 30 segundos."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Les segments sont organisés avec des repères chronologiques toutes les 30 secondes."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "セグメントを30秒ごとのタイムラインマーカーで区切って表示します"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "片段按每 30 秒一个时间线标记排列。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "片段按每 30 秒一個時間軸標記排列。"
           }
         }
       }
@@ -8177,6 +8355,41 @@
         }
       }
     },
+    "Text" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Texte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキスト"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字"
+          }
+        }
+      }
+    },
     "Text (.txt)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8548,6 +8761,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "このアプリの言語予約を解除します。モデル本体の削除はiOSが管理するため、端末上に残る場合があります。"
+          }
+        }
+      }
+    },
+    "Timeline" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cronología"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chronologie"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タイムライン"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "时间线"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "時間軸"
           }
         }
       }
@@ -9035,76 +9283,6 @@
             "value" : "正在轉寫... %lld%%"
           }
         }
-      }
-    },
-    "Go Back 15 Seconds" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Retroceder 15 segundos" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Reculer de 15 secondes" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "15秒戻る" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "后退15秒" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "倒退15秒" } }
-      }
-    },
-    "Go Forward 15 Seconds" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Avanzar 15 segundos" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Avancer de 15 secondes" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "15秒進む" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "前进15秒" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "前進15秒" } }
-      }
-    },
-    "More Actions" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Más acciones" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Plus d’actions" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "その他の操作" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "更多操作" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "更多操作" } }
-      }
-    },
-    "Playback Position" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Posición de reproducción" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Position de lecture" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "再生位置" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "播放位置" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "播放位置" } }
-      }
-    },
-    "Playback Speed" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Velocidad de reproducción" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Vitesse de lecture" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "再生速度" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "播放速度" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "播放速度" } }
-      }
-    },
-    "Text" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Texto" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Texte" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "テキスト" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "文本" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "文字" } }
-      }
-    },
-    "Timeline" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cronología" } },
-        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Chronologie" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "タイムライン" } },
-        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "时间线" } },
-        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "時間軸" } }
       }
     },
     "Transcription" : {
