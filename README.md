@@ -53,7 +53,7 @@ open WhisperTranscriptionApp.xcodeproj
 ## プロジェクト構成
 
 ```
-dff/
+offline-whisper-transcriber-ios/
 ├── README.md
 ├── AGENTS.md
 ├── .github/workflows/          # CI/CD（unsigned IPA ビルド）
@@ -71,6 +71,8 @@ dff/
 │       ├── Views/              # SwiftUI ビュー
 │       ├── AppIntents/         # Siri/Shortcuts 対応
 │       └── DesignSystem/       # カラー・フォント
+├── distribution/app-store/     # App Store Connect メタデータ・提出資料
+└── docs/                       # GitHub Pages・サポート文書
 ```
 
 ## モデルサイズ比較
@@ -84,4 +86,4 @@ dff/
 
 ## ライセンス
 
-本アプリのソースコードは MIT ライセンスです。whisper.cpp は各ライセンスに従います。
+本アプリのソースコードは [MIT License](LICENSE) で提供します。サブモジュールと第三者依存関係には、それぞれのライセンスが適用されます。
