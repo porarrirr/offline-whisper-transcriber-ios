@@ -40,4 +40,4 @@ More detailed setup instructions are available in [`WhisperTranscriptionApp/READ
 
 ## License
 
-The app source is provided under the [MIT License](LICENSE). Submodules and third-party dependencies remain subject to their own licenses.
+The app source is provided under the [MIT License](LICENSE). Submodules, the bundled whisper.cpp framework, models, and other third-party components remain subject to their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

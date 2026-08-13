@@ -40,4 +40,4 @@ open WhisperTranscriptionApp.xcodeproj
 
 ## ライセンス
 
-アプリのソースコードは [MIT License](LICENSE) で公開しています。サブモジュールと第三者依存関係には、それぞれのライセンスが適用されます。
+アプリのソースコードは [MIT License](LICENSE) で公開しています。サブモジュール、同梱するwhisper.cppフレームワーク、モデル、その他の第三者コンポーネントには個別のライセンスが適用されます。詳細は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を参照してください。
