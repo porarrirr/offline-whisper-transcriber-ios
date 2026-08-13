@@ -1,89 +1,43 @@
 # Offline Whisper Transcriber for iOS
 
-iPhone上でAI音声文字起こしを行うアプリ。OpenAI Whisperモデル ([whisper.cpp](https://github.com/ggerganov/whisper.cpp)) をオンデバイスで実行し、音声ファイル・リアルタイム録音から高精度な文字起こしを行います。初回にモデルをダウンロードした後は、文字起こし処理はオフラインで完結します。
+English | [日本語](README.ja.md)
 
-> 詳細なセットアップ手順は [WhisperTranscriptionApp/README.md](WhisperTranscriptionApp/README.md) を参照してください。
+An iPhone app for transcribing recordings and imported audio with Whisper running on the device. After the selected model is downloaded, transcription can be completed without sending audio to a transcription server.
 
-## 主な特徴
+## Highlights
 
-- **オフライン推論** — 初回のモデルダウンロード後はインターネット不要。すべての推論がデバイス上で完結
-- **リアルタイム録音 & 文字起こし** — 録音完了後すぐにテキスト化
-- **ファイルインポート対応** — m4a / wav / mp3 / mp4 / mov から文字起こし
-- **マルチ言語** — 日本語を含む約20言語に対応
-- **VAD（Voice Activity Detection）** — 無音区間を自動スキップ
-- **履歴管理** — SwiftDataで永続化、検索・お気に入り・Siriショートカット対応
-- **ダークモード UI** — SwiftUIによる洗練されたダークテーマ
+- On-device Whisper transcription powered by [whisper.cpp](https://github.com/ggerganov/whisper.cpp)
+- Record audio and transcribe it after recording
+- Import M4A, WAV, MP3, MP4, and MOV files
+- Support for Japanese and roughly 20 languages
+- Voice activity detection to skip silence
+- Searchable history, favorites, and Siri Shortcuts
+- Multiple Whisper model sizes for balancing download size, speed, and accuracy
 
-## 技術スタック
+## Privacy
 
-| レイヤー | 技術 |
-|----------|------|
-| 言語 | Swift 5.9 |
-| UI | SwiftUI |
-| 永続化 | SwiftData, UserDefaults |
-| 音声処理 | AVFoundation |
-| Whisperエンジン | whisper.cpp (C/C++) + Metal GPUアクセラレーション |
-| プロジェクト生成 | XcodeGen |
-| CI/CD | GitHub Actions (macOS 15, タグプッシュでunsigned IPAビルド) |
+Transcription runs locally after the model download. Audio does not need to be uploaded to a project-operated transcription service. Model downloads and any external files you choose to import still use the corresponding network or file providers.
 
-## 必要環境
+## Requirements
 
-- macOS 14.0 Sonoma 以降
-- Xcode 15.0 以降
-- iOS 17.0 以降の実機（Whisper は実機推奨。iOS SpeechTranscriber は iOS 26.0 以降で利用可）
-- [XcodeGen](https://github.com/yonaskolb/XcodeGen)（`brew install xcodegen`）
+- iOS 17 or later; a physical device is recommended for Whisper
+- macOS 14 or later and Xcode 15 or later for development
+- [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 
-## クイックスタート
+## Build
 
 ```bash
-# サブモジュール込みでクローン
 git clone --recursive https://github.com/porarrirr/offline-whisper-transcriber-ios.git
 cd offline-whisper-transcriber-ios/WhisperTranscriptionApp
-
-# whisper.xcframework のビルド（初回のみ・必要に応じて）
 cd whisper.cpp && ./build-xcframework.sh && cd ..
-cp -R whisper.cpp/build-apple/whisper.xcframework Frameworks/ 2>/dev/null || true
+cp -R whisper.cpp/build-apple/whisper.xcframework Frameworks/
 ./Scripts/sign-whisper-xcframework.sh
-
-# Xcodeプロジェクト生成 & ビルド
 xcodegen generate
 open WhisperTranscriptionApp.xcodeproj
 ```
 
-## プロジェクト構成
+More detailed setup instructions are available in [`WhisperTranscriptionApp/README.md`](WhisperTranscriptionApp/README.md).
 
-```
-offline-whisper-transcriber-ios/
-├── README.md
-├── AGENTS.md
-├── .github/workflows/          # CI/CD（unsigned IPA ビルド）
-├── WhisperTranscriptionApp/
-│   ├── README.md               # 詳細セットアップ手順
-│   ├── Package.swift
-│   ├── project.yml             # XcodeGen 設定
-│   ├── Info.plist
-│   ├── Frameworks/whisper.xcframework
-│   ├── whisper.cpp/            # Git Submodule
-│   └── Sources/WhisperTranscriptionApp/
-│       ├── App/                # エントリポイント
-│       ├── Models/             # Whisperラッパー・音声処理
-│       ├── ViewModels/         # 状態管理
-│       ├── Views/              # SwiftUI ビュー
-│       ├── AppIntents/         # Siri/Shortcuts 対応
-│       └── DesignSystem/       # カラー・フォント
-├── distribution/app-store/     # App Store Connect メタデータ・提出資料
-└── docs/                       # GitHub Pages・サポート文書
-```
+## License
 
-## モデルサイズ比較
-
-| モデル | ファイル名 | サイズ | 精度 |
-|--------|-----------|--------|------|
-| Tiny | `ggml-tiny.bin` | ~39MB | 低 |
-| Base | `ggml-base.bin` | ~142MB | 中（デフォルト） |
-| Small | `ggml-small.bin` | ~466MB | 高 |
-| Large v3 Turbo | `ggml-large-v3-turbo.bin` | ~874MB | 最高 |
-
-## ライセンス
-
-本アプリのソースコードは [MIT License](LICENSE) で提供します。サブモジュールと第三者依存関係には、それぞれのライセンスが適用されます。
+The app source is provided under the [MIT License](LICENSE). Submodules and third-party dependencies remain subject to their own licenses.
