@@ -95,6 +95,8 @@ class AudioConverter {
         guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
             throw AudioConverterError.converterCreationFailed
         }
+        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
+        converter.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
 
         let inputCapacity: AVAudioFrameCount = 4096
         let outputCapacity = AVAudioFrameCount(
@@ -456,6 +458,8 @@ class AudioConverter {
         guard let converter = AVAudioConverter(from: inputBuffer.format, to: outputFormat) else {
             throw AudioConverterError.converterCreationFailed
         }
+        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
+        converter.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
 
         let outputCapacity = AVAudioFrameCount(
             max(

@@ -34,6 +34,7 @@ struct TranscriptionChunkProcessor {
         prompt basePrompt: String,
         useVAD: Bool,
         vadModelPath: String?,
+        preprocessAudio: Bool,
         onChunkProgress: @escaping (WhisperAudioChunk, Double) -> Void = { _, _ in }
     ) async throws -> ChunkedTranscriptionResult {
         let cancellationToken = WhisperCancellationToken()
@@ -47,6 +48,7 @@ struct TranscriptionChunkProcessor {
                 prompt: basePrompt,
                 useVAD: useVAD,
                 vadModelPath: vadModelPath,
+                preprocessAudio: preprocessAudio,
                 cancellationToken: cancellationToken,
                 onChunkProgress: onChunkProgress
             )
@@ -63,6 +65,7 @@ struct TranscriptionChunkProcessor {
         prompt basePrompt: String,
         useVAD: Bool,
         vadModelPath: String?,
+        preprocessAudio: Bool,
         cancellationToken: WhisperCancellationToken,
         onChunkProgress: @escaping (WhisperAudioChunk, Double) -> Void
     ) async throws -> ChunkedTranscriptionResult {
@@ -72,6 +75,7 @@ struct TranscriptionChunkProcessor {
         var recentPromptContext = ""
 
         try Task.checkCancellation()
+        let preprocessor: AudioPreprocessor? = preprocessAudio ? AudioPreprocessor() : nil
         try await AudioConverter.shared.convertToWhisperChunks(
             inputURL: inputURL,
             chunkDuration: config.chunkDuration,
@@ -80,8 +84,9 @@ struct TranscriptionChunkProcessor {
             try Task.checkCancellation()
             let chunkPrompt = makeChunkPrompt(basePrompt: basePrompt, recentContext: recentPromptContext)
             let chunkStartedAt = Date()
+            let processedSamples = preprocessor.map { $0.process(chunk.samples) } ?? chunk.samples
             let result = try await whisperContext.transcribeChunk(
-                samples: chunk.samples,
+                samples: processedSamples,
                 startOffset: chunk.startTime,
                 segmentIDOffset: 0,
                 language: language,

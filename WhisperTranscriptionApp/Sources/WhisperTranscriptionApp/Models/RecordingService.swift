@@ -253,8 +253,8 @@ final class RecordingService: ObservableObject {
                 let service = self.makeLiveTranscriptionService(locale: locale)
                 liveService = service
                 try await service.start(inputFormat: inputFormat, recordingURL: audioRecorder.currentRecordingURL)
-                audioRecorder.setAudioBufferHandler { [weak service] buffer, _, _ in
-                    service?.handleAudioBuffer(buffer)
+                audioRecorder.setAudioBufferHandler { [weak service] buffer, audioTime, _ in
+                    service?.handleAudioBuffer(buffer, at: audioTime)
                 }
             } catch {
                 self.audioRecorder.setAudioBufferHandler(nil)

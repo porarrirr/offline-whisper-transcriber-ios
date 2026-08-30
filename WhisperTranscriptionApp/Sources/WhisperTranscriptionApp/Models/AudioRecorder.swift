@@ -11,7 +11,7 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private static let recordingSampleRate = 48_000.0
     private static let bluetoothHFPRecordingSampleRate = 16_000.0
-    private static let recordingBitRate = 64_000
+    private static let recordingBitRate = 96_000
 
     @Published var isRecording = false
     @Published var currentTime: TimeInterval = 0

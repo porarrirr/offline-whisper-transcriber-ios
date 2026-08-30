@@ -263,6 +263,7 @@ private func transcribeWithWhisperIntent(
             prompt: settings.promptText,
             useVAD: settings.useVAD,
             vadModelPath: settings.useVAD ? modelManager.vadModelPath : nil,
+            preprocessAudio: settings.useAudioPreprocessing,
             onChunkProgress: { _, _ in }
         )
         return result.text

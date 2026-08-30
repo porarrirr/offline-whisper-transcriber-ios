@@ -148,6 +148,10 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(useVAD, forKey: "useVAD") }
     }
 
+    @Published var useAudioPreprocessing: Bool {
+        didSet { UserDefaults.standard.set(useAudioPreprocessing, forKey: "useAudioPreprocessing") }
+    }
+
     @Published var keepScreenOn: Bool {
         didSet { UserDefaults.standard.set(keepScreenOn, forKey: "keepScreenOn") }
     }
@@ -210,6 +214,9 @@ class AppSettings: ObservableObject {
         self.promptText = defaults.string(forKey: "promptText") ?? ""
         self.useFlashAttention = defaults.bool(forKey: "useFlashAttention")
         self.useVAD = defaults.bool(forKey: "useVAD")
+        self.useAudioPreprocessing = defaults.object(forKey: "useAudioPreprocessing") == nil
+            ? true
+            : defaults.bool(forKey: "useAudioPreprocessing")
         self.keepScreenOn = defaults.object(forKey: "keepScreenOn") == nil
             ? true
             : defaults.bool(forKey: "keepScreenOn")

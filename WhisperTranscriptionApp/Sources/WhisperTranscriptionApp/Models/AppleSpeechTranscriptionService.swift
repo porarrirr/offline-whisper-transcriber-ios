@@ -109,6 +109,92 @@ struct AppleSpeechTranscriptionService {
         let transcriber = try await makeTranscriber(locale: locale)
         let detector = AppleSpeechModuleFactory.speechDetector()
         let modules: [any SpeechModule] = [transcriber, detector]
+
+        let analysis: SpeechFileAnalysis
+        if #available(iOS 27.0, *) {
+            analysis = try await transcribeAsset(
+                at: inputURL,
+                modules: modules,
+                transcriber: transcriber,
+                onProgress: onProgress
+            )
+        } else {
+            analysis = try await transcribeAudioFile(
+                at: inputURL,
+                modules: modules,
+                transcriber: transcriber,
+                onProgress: onProgress
+            )
+        }
+
+        let collected = analysis.collected
+        let duration = analysis.duration
+        AppLogger.info(
+            "Apple SpeechTranscriber results collected: source=\(inputURL.lastPathComponent), input=\(analysis.inputPath), events=\(collected.resultCount), final=\(collected.finalResultCount), nonFinal=\(collected.nonFinalResultCount), nonEmpty=\(collected.nonEmptyResultCount), characters=\(collected.text.count), segments=\(collected.segments.count)",
+            context: "AppleSpeechTranscriptionService"
+        )
+        await MainActor.run { onProgress(1) }
+
+        guard !collected.text.isEmpty else {
+            AppLogger.error(
+                "Apple SpeechTranscriber produced no final text: source=\(inputURL.lastPathComponent), input=\(analysis.inputPath), duration=\(String(format: "%.2f", duration))s, events=\(collected.resultCount), final=\(collected.finalResultCount), nonFinal=\(collected.nonFinalResultCount), nonEmpty=\(collected.nonEmptyResultCount)",
+                context: "AppleSpeechTranscriptionService"
+            )
+            throw AppleSpeechTranscriptionError.emptyTranscription
+        }
+
+        return ChunkedTranscriptionResult(
+            text: collected.text,
+            segments: collected.segments,
+            language: locale.locale.language.languageCode?.identifier,
+            processedDuration: duration
+        )
+    }
+
+    @available(iOS 27.0, *)
+    private func transcribeAsset(
+        at inputURL: URL,
+        modules: [any SpeechModule],
+        transcriber: SpeechTranscriber,
+        onProgress: @escaping @MainActor (Double) -> Void
+    ) async throws -> SpeechFileAnalysis {
+        let asset = AVURLAsset(url: inputURL)
+        let duration = try await Self.duration(of: asset)
+
+        await MainActor.run { onProgress(0.3) }
+        let provider = try await AssetInputSequenceProvider.provider(
+            from: asset,
+            compatibleWith: modules,
+            priority: .userInitiated
+        )
+        AppLogger.info(
+            "Apple SpeechTranscriber input prepared: source=\(inputURL.lastPathComponent), input=AssetInputSequenceProvider, duration=\(String(format: "%.2f", duration))s",
+            context: "AppleSpeechTranscriptionService"
+        )
+
+        let collected = try await analyze(
+            provider.analyzerInputs,
+            modules: modules,
+            transcriber: transcriber,
+            preparationFormat: nil,
+            sourceName: inputURL.lastPathComponent,
+            inputPath: "AssetInputSequenceProvider",
+            expectedDuration: duration,
+            onProgress: onProgress
+        )
+        return SpeechFileAnalysis(
+            collected: collected,
+            duration: duration,
+            inputPath: "AssetInputSequenceProvider"
+        )
+    }
+
+    private func transcribeAudioFile(
+        at inputURL: URL,
+        modules: [any SpeechModule],
+        transcriber: SpeechTranscriber,
+        onProgress: @escaping @MainActor (Double) -> Void
+    ) async throws -> SpeechFileAnalysis {
         let naturalFormat = try await AudioConverter.shared.naturalAudioFormatForSpeechInput(inputURL: inputURL)
         guard let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
             compatibleWith: modules,
@@ -142,35 +228,62 @@ struct AppleSpeechTranscriptionService {
         )
 
         await MainActor.run { onProgress(0.4) }
+        let collected = try await analyze(
+            SpeechAudioFileInputSequence(audioFile: audioFile),
+            modules: modules,
+            transcriber: transcriber,
+            preparationFormat: audioFile.processingFormat,
+            sourceName: preparedAudio.url.lastPathComponent,
+            inputPath: "SpeechAudioFileInputSequence",
+            expectedDuration: duration,
+            onProgress: onProgress
+        )
+        return SpeechFileAnalysis(
+            collected: collected,
+            duration: duration,
+            inputPath: "SpeechAudioFileInputSequence"
+        )
+    }
 
+    private func analyze<InputSequence: AsyncSequence & Sendable>(
+        _ inputSequence: InputSequence,
+        modules: [any SpeechModule],
+        transcriber: SpeechTranscriber,
+        preparationFormat: AVAudioFormat?,
+        sourceName: String,
+        inputPath: String,
+        expectedDuration: TimeInterval,
+        onProgress: @escaping @MainActor (Double) -> Void
+    ) async throws -> CollectedSpeechResult where InputSequence.Element == AnalyzerInput {
         let collector = ResultCollector()
         let resultsTask = Task {
             try await collector.collect(from: transcriber.results)
         }
-
         let analyzer = SpeechAnalyzer(modules: modules)
+
         do {
             try await withTaskCancellationHandler {
                 try Task.checkCancellation()
-                try await analyzer.prepareToAnalyze(in: audioFile.processingFormat)
+                if let preparationFormat {
+                    try await analyzer.prepareToAnalyze(in: preparationFormat)
+                }
                 AppLogger.info(
-                    "Apple SpeechTranscriber analyzer started: audio=\(preparedAudio.url.lastPathComponent), input=bufferSequence, frames=\(audioFile.length), format=\(Self.formatDescription(audioFile.processingFormat))",
+                    "Apple SpeechTranscriber analyzer started: source=\(sourceName), input=\(inputPath), format=\(Self.formatDescription(preparationFormat))",
                     context: "AppleSpeechTranscriptionService"
                 )
                 await MainActor.run { onProgress(0.5) }
 
-                let inputSequence = SpeechAudioFileInputSequence(audioFile: audioFile)
                 let lastSampleTime = try await analyzer.analyzeSequence(inputSequence)
                 try Task.checkCancellation()
                 if let lastSampleTime {
                     AppLogger.info(
-                        "Apple SpeechTranscriber input consumed: audio=\(preparedAudio.url.lastPathComponent), through=\(Self.timeDescription(lastSampleTime)), expectedDuration=\(String(format: "%.2f", duration))s",
+                        "Apple SpeechTranscriber input consumed: source=\(sourceName), input=\(inputPath), through=\(Self.timeDescription(lastSampleTime)), expectedDuration=\(String(format: "%.2f", expectedDuration))s",
                         context: "AppleSpeechTranscriptionService"
                     )
                     try await analyzer.finalizeAndFinish(through: lastSampleTime)
                 } else {
                     AppLogger.error(
-                        "Apple SpeechTranscriber consumed no audio samples: audio=\(preparedAudio.url.lastPathComponent), frames=\(audioFile.length), format=\(Self.formatDescription(audioFile.processingFormat))",
+                        "Apple SpeechTranscriber consumed no audio samples: source=\(sourceName), input=\(inputPath)",
                         context: "AppleSpeechTranscriptionService"
                     )
                     await analyzer.cancelAndFinishNow()
@@ -181,15 +294,11 @@ struct AppleSpeechTranscriptionService {
                     await analyzer.cancelAndFinishNow()
                 }
             }
-            AppLogger.info(
-                "Apple SpeechTranscriber analyzer finished: audio=\(preparedAudio.url.lastPathComponent)",
-                context: "AppleSpeechTranscriptionService"
-            )
         } catch {
             resultsTask.cancel()
             await analyzer.cancelAndFinishNow()
             AppLogger.error(
-                "Apple SpeechTranscriber analyzer failed: audio=\(preparedAudio.url.lastPathComponent), consumedFrames=\(audioFile.framePosition), totalFrames=\(audioFile.length), format=\(Self.formatDescription(audioFile.processingFormat))",
+                "Apple SpeechTranscriber analyzer failed: source=\(sourceName), input=\(inputPath)",
                 context: "AppleSpeechTranscriptionService",
                 error: error
             )
@@ -197,27 +306,15 @@ struct AppleSpeechTranscriptionService {
         }
 
         try Task.checkCancellation()
-        let collected = try await resultsTask.value
-        AppLogger.info(
-            "Apple SpeechTranscriber results collected: audio=\(preparedAudio.url.lastPathComponent), events=\(collected.resultCount), final=\(collected.finalResultCount), nonFinal=\(collected.nonFinalResultCount), nonEmpty=\(collected.nonEmptyResultCount), characters=\(collected.text.count), segments=\(collected.segments.count)",
-            context: "AppleSpeechTranscriptionService"
-        )
-        await MainActor.run { onProgress(1) }
+        return try await resultsTask.value
+    }
 
-        guard !collected.text.isEmpty else {
-            AppLogger.error(
-                "Apple SpeechTranscriber produced no final text: audio=\(preparedAudio.url.lastPathComponent), duration=\(String(format: "%.2f", duration))s, frames=\(audioFile.length), format=\(Self.formatDescription(audioFile.processingFormat)), events=\(collected.resultCount), final=\(collected.finalResultCount), nonFinal=\(collected.nonFinalResultCount), nonEmpty=\(collected.nonEmptyResultCount)",
-                context: "AppleSpeechTranscriptionService"
-            )
-            throw AppleSpeechTranscriptionError.emptyTranscription
+    private static func duration(of asset: AVAsset) async throws -> TimeInterval {
+        let duration = try await asset.load(.duration).seconds
+        guard duration.isFinite, duration > 0 else {
+            throw AudioConverter.AudioConverterError.emptyAudioFile
         }
-
-        return ChunkedTranscriptionResult(
-            text: collected.text,
-            segments: collected.segments,
-            language: locale.locale.language.languageCode?.identifier,
-            processedDuration: duration
-        )
+        return duration
     }
 
     private func makeTranscriber(locale: AppleSpeechLocale) async throws -> SpeechTranscriber {
@@ -322,6 +419,12 @@ private struct CollectedSpeechResult {
     let finalResultCount: Int
     let nonFinalResultCount: Int
     let nonEmptyResultCount: Int
+}
+
+private struct SpeechFileAnalysis {
+    let collected: CollectedSpeechResult
+    let duration: TimeInterval
+    let inputPath: String
 }
 
 @available(iOS 26.0, *)

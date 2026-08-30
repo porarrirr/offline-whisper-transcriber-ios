@@ -162,6 +162,17 @@ struct SettingsView: View {
                     .tint(Theme.amberFill)
                     .disabled(modelManager.isTranscriptionInProgress)
 
+                    Toggle(isOn: $settings.useAudioPreprocessing) {
+                        VStack(alignment: .leading) {
+                            Text("Audio Preprocessing")
+                            Text("Reduce noise and normalize volume before transcription")
+                                .font(Theme.sans(12))
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                    }
+                    .tint(Theme.amberFill)
+                    .disabled(modelManager.isTranscriptionInProgress)
+
                     Toggle(isOn: $settings.useVAD) {
                         VStack(alignment: .leading) {
                             Text("Skip Silence (VAD)")

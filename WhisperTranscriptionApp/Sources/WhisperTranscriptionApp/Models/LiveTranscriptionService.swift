@@ -66,6 +66,88 @@ enum LiveTranscriptionError: LocalizedError {
 }
 
 @available(iOS 26.0, *)
+protocol LiveAnalyzerInputConverting: AnyObject {
+    func convert(_ buffer: AVAudioPCMBuffer, at audioTime: AVAudioTime?) throws -> [AnalyzerInput]
+    func flush() throws -> [AnalyzerInput]
+}
+
+@available(iOS 26.0, *)
+final class LegacyLiveAnalyzerInputConverter: LiveAnalyzerInputConverting {
+    private let inputFormat: AVAudioFormat
+    private let analyzerFormat: AVAudioFormat
+    private let converter: AVAudioConverter
+
+    init(inputFormat: AVAudioFormat, analyzerFormat: AVAudioFormat) throws {
+        guard let converter = AVAudioConverter(from: inputFormat, to: analyzerFormat) else {
+            throw LiveTranscriptionError.audioFormatUnavailable
+        }
+        self.inputFormat = inputFormat
+        self.analyzerFormat = analyzerFormat
+        self.converter = converter
+    }
+
+    func convert(_ buffer: AVAudioPCMBuffer, at audioTime: AVAudioTime?) throws -> [AnalyzerInput] {
+        if inputFormat == analyzerFormat {
+            return [AnalyzerInput(buffer: buffer)]
+        }
+
+        let ratio = analyzerFormat.sampleRate / inputFormat.sampleRate
+        let frameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
+        guard let convertedBuffer = AVAudioPCMBuffer(
+            pcmFormat: analyzerFormat,
+            frameCapacity: frameCapacity
+        ) else {
+            throw LiveTranscriptionError.audioFormatUnavailable
+        }
+
+        var didProvideBuffer = false
+        let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
+            if didProvideBuffer {
+                outStatus.pointee = .noDataNow
+                return nil
+            }
+            didProvideBuffer = true
+            outStatus.pointee = .haveData
+            return buffer
+        }
+
+        var error: NSError?
+        converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputBlock)
+        if let error {
+            throw error
+        }
+        guard convertedBuffer.frameLength > 0 else { return [] }
+        return [AnalyzerInput(buffer: convertedBuffer)]
+    }
+
+    func flush() throws -> [AnalyzerInput] {
+        []
+    }
+}
+
+@available(iOS 27.0, *)
+final class SystemLiveAnalyzerInputConverter: LiveAnalyzerInputConverting {
+    private let converter: AnalyzerInputConverter
+
+    init(converter: AnalyzerInputConverter) {
+        self.converter = converter
+    }
+
+    static func make(compatibleWith modules: [any SpeechModule]) async throws -> SystemLiveAnalyzerInputConverter {
+        let converter = try await AnalyzerInputConverter.converter(compatibleWith: modules)
+        return SystemLiveAnalyzerInputConverter(converter: converter)
+    }
+
+    func convert(_ buffer: AVAudioPCMBuffer, at audioTime: AVAudioTime?) throws -> [AnalyzerInput] {
+        try converter.convert(buffer, at: audioTime)
+    }
+
+    func flush() throws -> [AnalyzerInput] {
+        try converter.flush()
+    }
+}
+
+@available(iOS 26.0, *)
 final class LiveTranscriptionService {
     typealias SnapshotHandler = @MainActor (LiveTranscriptionSnapshot) -> Void
 
@@ -79,9 +161,7 @@ final class LiveTranscriptionService {
     private var resultsTask: Task<Void, Never>?
     private var timer: Timer?
     private var recordingURL: URL?
-    private var converter: AVAudioConverter?
-    private var compatibleFormat: AVAudioFormat?
-    private var inputFormat: AVAudioFormat?
+    private var inputConverter: (any LiveAnalyzerInputConverting)?
     private var startedAt: Date?
     private var snapshot = LiveTranscriptionSnapshot()
     private let snapshotLock = NSLock()
@@ -118,22 +198,18 @@ final class LiveTranscriptionService {
             let modules: [any SpeechModule] = [transcriber, detector]
             try await ensureAssetsInstalled(for: transcriber)
 
-            guard let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: modules) else {
-                throw LiveTranscriptionError.audioFormatUnavailable
-            }
+            let inputConverter = try await makeInputConverter(
+                inputFormat: inputFormat,
+                modules: modules
+            )
 
             let (inputSequence, inputContinuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
             let analyzer = SpeechAnalyzer(modules: modules)
             self.transcriber = transcriber
             self.analyzer = analyzer
             self.inputContinuation = inputContinuation
-            self.compatibleFormat = compatibleFormat
-            self.inputFormat = inputFormat
+            self.inputConverter = inputConverter
             self.recordingURL = recordingURL
-            guard let converter = AVAudioConverter(from: inputFormat, to: compatibleFormat) else {
-                throw LiveTranscriptionError.audioFormatUnavailable
-            }
-            self.converter = converter
             updateSnapshot { snapshot in
                 snapshot.recordingURL = recordingURL
             }
@@ -166,11 +242,24 @@ final class LiveTranscriptionService {
 
     func stop(recordingURL: URL? = nil) async throws -> LiveTranscriptionSnapshot {
         guard currentSnapshot().state.isActive else { return currentSnapshot() }
-        markStopping()
         setState(.finalizing)
 
-        inputContinuation?.finish()
-        inputContinuation = nil
+        do {
+            try processingQueue.sync {
+                markStopping()
+                guard let inputConverter else {
+                    throw LiveTranscriptionError.audioFormatUnavailable
+                }
+                for input in try inputConverter.flush() {
+                    inputContinuation?.yield(input)
+                }
+                inputContinuation?.finish()
+                inputContinuation = nil
+            }
+        } catch {
+            stopSpeechProcessing(for: error)
+            throw error
+        }
         stopTimer()
 
         if let analyzer {
@@ -211,18 +300,23 @@ final class LiveTranscriptionService {
         setState(.idle)
     }
 
-    func handleAudioBuffer(_ buffer: AVAudioPCMBuffer) {
+    func handleAudioBuffer(_ buffer: AVAudioPCMBuffer, at audioTime: AVAudioTime) {
         guard !isStoppingNow() else { return }
 
         updateAudioLevel(from: buffer)
 
         do {
             let copiedBuffer = try copyBuffer(buffer)
-            processingQueue.async { [weak self, copiedBuffer] in
+            processingQueue.async { [weak self, copiedBuffer, audioTime] in
                 guard let self, !self.isStoppingNow() else { return }
                 do {
-                    if let converted = try self.convert(copiedBuffer), !self.isStoppingNow() {
-                        self.inputContinuation?.yield(AnalyzerInput(buffer: converted))
+                    guard let inputConverter = self.inputConverter else {
+                        throw LiveTranscriptionError.audioFormatUnavailable
+                    }
+                    let inputs = try inputConverter.convert(copiedBuffer, at: audioTime)
+                    guard !self.isStoppingNow() else { return }
+                    for input in inputs {
+                        self.inputContinuation?.yield(input)
                     }
                 } catch {
                     self.stopSpeechProcessing(for: error)
@@ -258,38 +352,28 @@ final class LiveTranscriptionService {
         return copiedBuffer
     }
 
-    private func convert(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer? {
-        guard let compatibleFormat, let inputFormat, let converter else {
+    private func makeInputConverter(
+        inputFormat: AVAudioFormat,
+        modules: [any SpeechModule]
+    ) async throws -> any LiveAnalyzerInputConverting {
+        if #available(iOS 27.0, *) {
+            let converter = try await SystemLiveAnalyzerInputConverter.make(compatibleWith: modules)
+            AppLogger.info(
+                "Live Apple Speech input prepared with AnalyzerInputConverter",
+                context: "LiveTranscriptionService"
+            )
+            return converter
+        }
+
+        guard let compatibleFormat = await SpeechAnalyzer.bestAvailableAudioFormat(
+            compatibleWith: modules
+        ) else {
             throw LiveTranscriptionError.audioFormatUnavailable
         }
-
-        if inputFormat == compatibleFormat {
-            return buffer
-        }
-
-        let ratio = compatibleFormat.sampleRate / inputFormat.sampleRate
-        let frameCapacity = AVAudioFrameCount(Double(buffer.frameLength) * ratio) + 1
-        guard let convertedBuffer = AVAudioPCMBuffer(pcmFormat: compatibleFormat, frameCapacity: frameCapacity) else {
-            throw LiveTranscriptionError.audioFormatUnavailable
-        }
-
-        var didProvideBuffer = false
-        let inputBlock: AVAudioConverterInputBlock = { _, outStatus in
-            if didProvideBuffer {
-                outStatus.pointee = .noDataNow
-                return nil
-            }
-            didProvideBuffer = true
-            outStatus.pointee = .haveData
-            return buffer
-        }
-
-        var error: NSError?
-        converter.convert(to: convertedBuffer, error: &error, withInputFrom: inputBlock)
-        if let error {
-            throw error
-        }
-        return convertedBuffer.frameLength > 0 ? convertedBuffer : nil
+        return try LegacyLiveAnalyzerInputConverter(
+            inputFormat: inputFormat,
+            analyzerFormat: compatibleFormat
+        )
     }
 
     private func consumeResults(from transcriber: SpeechTranscriber) async throws {

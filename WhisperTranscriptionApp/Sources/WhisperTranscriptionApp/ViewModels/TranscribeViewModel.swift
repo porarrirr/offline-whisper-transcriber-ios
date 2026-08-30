@@ -246,7 +246,7 @@ class TranscribeViewModel: ObservableObject {
             }
 
             AppLogger.info(
-                "Transcription started: source=\(sourceType), file=\(transcriptionURL.lastPathComponent), model=\(settings.selectedTranscriptionModel.storageKey), language=\(settings.selectedLanguage), translate=\(settings.translateToEnglish), useVAD=\(settings.useVAD)",
+                "Transcription started: source=\(sourceType), file=\(transcriptionURL.lastPathComponent), model=\(settings.selectedTranscriptionModel.storageKey), language=\(settings.selectedLanguage), translate=\(settings.translateToEnglish), useVAD=\(settings.useVAD), preprocess=\(settings.useAudioPreprocessing)",
                 context: "TranscribeViewModel"
             )
 
@@ -351,7 +351,8 @@ class TranscribeViewModel: ObservableObject {
             translate: settings.translateToEnglish,
             prompt: settings.promptText,
             useVAD: useVAD,
-            vadModelPath: useVAD ? modelManager.vadModelPath : nil
+            vadModelPath: useVAD ? modelManager.vadModelPath : nil,
+            preprocessAudio: settings.useAudioPreprocessing
         ) { [weak self] chunk, progress in
             let totalDuration = chunk.totalDuration > 0 ? chunk.totalDuration : max(duration, chunk.startTime + chunk.duration)
             let progressStart = totalDuration > 0 ? min(chunk.startTime / totalDuration, 0.99) : 0

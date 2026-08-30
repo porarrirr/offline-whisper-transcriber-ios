@@ -27,6 +27,92 @@ final class AppleSpeechEnhancementTests: XCTestCase {
         )
     }
 
+    func testIOS27AnalyzerInputConverterConvertsAndFlushesTimedLiveAudio() throws {
+        guard #available(iOS 27.0, *) else {
+            throw XCTSkip("AnalyzerInputConverter requires iOS 27")
+        }
+
+        let inputFormat = try XCTUnwrap(AVAudioFormat(
+            standardFormatWithSampleRate: 48_000,
+            channels: 1
+        ))
+        let analyzerFormat = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: true
+        ))
+        let frameCount: AVAudioFrameCount = 4_800
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(
+            pcmFormat: inputFormat,
+            frameCapacity: frameCount
+        ))
+        buffer.frameLength = frameCount
+        if let samples = buffer.floatChannelData?[0] {
+            for frame in 0..<Int(frameCount) {
+                samples[frame] = sin(Float(frame) * 0.05) * 0.2
+            }
+        }
+
+        let converter = SystemLiveAnalyzerInputConverter(
+            converter: AnalyzerInputConverter(analyzerFormat: analyzerFormat)
+        )
+        let audioTime = AVAudioTime(sampleTime: 48_000, atRate: inputFormat.sampleRate)
+        let inputs = try converter.convert(buffer, at: audioTime) + converter.flush()
+
+        XCTAssertFalse(inputs.isEmpty)
+        XCTAssertTrue(inputs.allSatisfy {
+            $0.bufferFormat.sampleRate == analyzerFormat.sampleRate
+                && $0.bufferFormat.channelCount == analyzerFormat.channelCount
+        })
+        let firstStartTime = try XCTUnwrap(inputs.first?.bufferStartTime?.seconds)
+        XCTAssertEqual(firstStartTime, 1, accuracy: 0.001)
+        let convertedDuration = inputs.reduce(0) { $0 + $1.bufferDuration.seconds }
+        XCTAssertEqual(convertedDuration, 0.1, accuracy: 0.01)
+    }
+
+    func testIOS27AssetInputSequenceProviderReadsAssetDirectly() async throws {
+        guard #available(iOS 27.0, *) else {
+            throw XCTSkip("AssetInputSequenceProvider requires iOS 27")
+        }
+
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("asset-provider-\(UUID().uuidString)")
+            .appendingPathExtension("m4a")
+        try makeSilentM4A(at: sourceURL, duration: 0.25)
+        addTeardownBlock {
+            try? FileManager.default.removeItem(at: sourceURL)
+        }
+
+        let analyzerFormat = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatInt16,
+            sampleRate: 16_000,
+            channels: 1,
+            interleaved: true
+        ))
+        let asset = AVURLAsset(url: sourceURL)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        let audioTrack = try XCTUnwrap(audioTracks.first)
+        let provider = AssetInputSequenceProvider(
+            asset: asset,
+            track: audioTrack,
+            analyzerFormat: analyzerFormat
+        )
+
+        var inputCount = 0
+        var totalDuration: TimeInterval = 0
+        for try await input in provider.analyzerInputs {
+            inputCount += 1
+            totalDuration += input.bufferDuration.seconds
+            XCTAssertEqual(input.bufferFormat.sampleRate, analyzerFormat.sampleRate)
+            XCTAssertEqual(input.bufferFormat.channelCount, analyzerFormat.channelCount)
+            XCTAssertEqual(input.bufferFormat.commonFormat, analyzerFormat.commonFormat)
+        }
+
+        XCTAssertGreaterThan(inputCount, 0)
+        XCTAssertEqual(totalDuration, 0.25, accuracy: 0.02)
+    }
+
     func testAudioPlayerSeekClampsToPreparedDuration() {
         let player = AudioPlayer()
         player.duration = 10

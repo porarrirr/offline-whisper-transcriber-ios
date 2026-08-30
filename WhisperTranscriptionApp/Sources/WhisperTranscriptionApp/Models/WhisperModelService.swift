@@ -137,6 +137,7 @@ actor WhisperModelService {
         prompt: String,
         useVAD: Bool,
         vadModelPath: String?,
+        preprocessAudio: Bool,
         onChunkProgress: @escaping (WhisperAudioChunk, Double) -> Void
     ) async throws -> ChunkedTranscriptionResult {
         activeTranscriptionCount += 1
@@ -150,6 +151,7 @@ actor WhisperModelService {
             prompt: prompt,
             useVAD: useVAD,
             vadModelPath: vadModelPath,
+            preprocessAudio: preprocessAudio,
             onChunkProgress: onChunkProgress
         )
     }

@@ -338,7 +338,7 @@ final class WhisperContext: @unchecked Sendable {
             throw WhisperContextError.emptyAudioFile
         }
         
-        var params = whisper_full_default_params(WHISPER_SAMPLING_GREEDY)
+        var params = whisper_full_default_params(WHISPER_SAMPLING_BEAM_SEARCH)
         params.print_realtime = false
         params.print_progress = false
         params.print_timestamps = false
@@ -348,7 +348,7 @@ final class WhisperContext: @unchecked Sendable {
         // Keep decoding stable on long audio while allowing whisper.cpp to recover from repetition loops.
         params.temperature = 0.0
         params.temperature_inc = 0.2
-        params.greedy.best_of = 1
+        params.beam_search.beam_size = 5
         params.suppress_nst = true
         params.max_tokens = 96
         // `detect_language` は言語検出のみで終了するモード。自動言語の文字起こしでは false のまま language を "auto" にする。
@@ -385,9 +385,10 @@ final class WhisperContext: @unchecked Sendable {
             vadModelCString = strdup(vadModelPath)
             params.vad_model_path = UnsafePointer(vadModelCString!)
             var vadParams = whisper_vad_default_params()
-            vadParams.threshold = 0.6
+            vadParams.threshold = 0.5
             vadParams.min_speech_duration_ms = 250
             vadParams.min_silence_duration_ms = 500
+            vadParams.speech_pad_ms = 100
             params.vad_params = vadParams
         } else {
             vadModelCString = nil

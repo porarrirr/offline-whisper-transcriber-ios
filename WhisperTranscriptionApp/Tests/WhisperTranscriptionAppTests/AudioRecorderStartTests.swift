@@ -3,13 +3,13 @@ import XCTest
 @testable import WhisperTranscriptionApp
 
 final class AudioRecorderStartTests: XCTestCase {
-    func testRecordingFileSettingsUseMono64KbpsHighQualityAAC() {
+    func testRecordingFileSettingsUseMono96KbpsHighQualityAAC() {
         let settings = AudioRecorder.recordingFileSettings(sampleRate: 48_000)
 
         XCTAssertEqual(settings[AVFormatIDKey] as? Int, Int(kAudioFormatMPEG4AAC))
         XCTAssertEqual(settings[AVSampleRateKey] as? Double, 48_000)
         XCTAssertEqual(settings[AVNumberOfChannelsKey] as? Int, 1)
-        XCTAssertEqual(settings[AVEncoderBitRateKey] as? Int, 64_000)
+        XCTAssertEqual(settings[AVEncoderBitRateKey] as? Int, 96_000)
         XCTAssertEqual(
             settings[AVEncoderAudioQualityKey] as? Int,
             AVAudioQuality.high.rawValue
