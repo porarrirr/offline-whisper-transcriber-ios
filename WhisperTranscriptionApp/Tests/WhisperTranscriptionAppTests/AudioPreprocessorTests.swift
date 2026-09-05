@@ -143,6 +143,24 @@ final class AudioPreprocessorTests: XCTestCase {
         XCTAssertEqual(AudioPreprocessor().process([]), [])
     }
 
+    func testNoisePercentileSelectionMatchesFullSort() {
+        var generator = SeededNoiseGenerator(seed: 0x9876_5432)
+        for count in [1, 2, 3, 4, 17, 512, 37_501] {
+            let random = (0..<count).map { _ in generator.next() }
+            let ascending = random.sorted()
+            let cases = [random, ascending, Array(ascending.reversed()),
+                         [Float](repeating: 0, count: count),
+                         (0..<count).map { Float($0 % 3) }]
+            for values in cases {
+                let sorted = values.sorted()
+                for index in Set([0, Int(0.1 * Double(count - 1)), count / 2, count - 1]) {
+                    var working = values
+                    XCTAssertEqual(AudioPreprocessor.selectValue(at: index, in: &working), sorted[index])
+                }
+            }
+        }
+    }
+
     private func sine(frequency: Float, amplitude: Float, seconds: Float) -> [Float] {
         let count = Int(sampleRate * seconds)
         return (0..<count).map { index in

@@ -35,7 +35,19 @@ final class SpeechAudioPreprocessor {
         }
         output.frameLength = input.frameLength
         let channels = Int(inputFormat.channelCount)
-        let sampleStride = inputFormat.isInterleaved ? channels : 1
+        let isInterleaved = inputFormat.isInterleaved
+        let isFloat = inputFormat.commonFormat == .pcmFormatFloat32
+        // Resolve AVAudioPCMBuffer's channel pointers once per buffer, not twice
+        // per sample. Keep the buffers alive for the entire pointer access.
+        defer {
+            withExtendedLifetime(input) {}
+            withExtendedLifetime(output) {}
+        }
+        let inputFloatChannels = isFloat ? input.floatChannelData : nil
+        let outputFloatChannels = isFloat ? output.floatChannelData : nil
+        let inputInt16Channels = isFloat ? nil : input.int16ChannelData
+        let outputInt16Channels = isFloat ? nil : output.int16ChannelData
+        let sampleStride = isInterleaved ? channels : 1
         let sampleRate = inputFormat.sampleRate
         let highPassPole = exp(-2 * Double.pi * 60 / sampleRate)
         let measurementFrames = max(1, Int(sampleRate * 0.1))
@@ -48,13 +60,13 @@ final class SpeechAudioPreprocessor {
             var framePower = 0.0
             var peak = 0.0
             for channel in 0..<channels {
-                let plane = inputFormat.isInterleaved ? 0 : channel
-                let offset = frame * sampleStride + (inputFormat.isInterleaved ? channel : 0)
+                let plane = isInterleaved ? 0 : channel
+                let offset = frame * sampleStride + (isInterleaved ? channel : 0)
                 let sample: Double
-                if inputFormat.commonFormat == .pcmFormatFloat32 {
-                    sample = Double(input.floatChannelData![plane][offset])
+                if isFloat {
+                    sample = Double(inputFloatChannels![plane][offset])
                 } else {
-                    sample = Double(input.int16ChannelData![plane][offset]) / 32_768
+                    sample = Double(inputInt16Channels![plane][offset]) / 32_768
                 }
                 guard sample.isFinite else {
                     throw AudioConverter.AudioConverterError.invalidAudioFile
@@ -82,13 +94,13 @@ final class SpeechAudioPreprocessor {
             let safeGain = peak * gain > 0.95 ? 0.95 / (peak * gain) : 1
             limiterGain = min(safeGain, limiterGain + (1 - limiterGain) * limiterRelease)
             for channel in 0..<channels {
-                let plane = inputFormat.isInterleaved ? 0 : channel
-                let offset = frame * sampleStride + (inputFormat.isInterleaved ? channel : 0)
+                let plane = isInterleaved ? 0 : channel
+                let offset = frame * sampleStride + (isInterleaved ? channel : 0)
                 let value = filtered[channel] * gain * limiterGain
-                if inputFormat.commonFormat == .pcmFormatFloat32 {
-                    output.floatChannelData![plane][offset] = Float(value)
+                if isFloat {
+                    outputFloatChannels![plane][offset] = Float(value)
                 } else {
-                    output.int16ChannelData![plane][offset] = Int16((value * 32_768).rounded())
+                    outputInt16Channels![plane][offset] = Int16((value * 32_768).rounded())
                 }
             }
         }

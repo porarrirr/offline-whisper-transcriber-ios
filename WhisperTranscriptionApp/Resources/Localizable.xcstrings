@@ -280,17 +280,6 @@
         }
       }
     },
-    "Add %@ to %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$@に%1$@を追加"
-          }
-        }
-      }
-    },
     "Add / Prepare" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -302,24 +291,13 @@
         }
       }
     },
-    "Adds a saved transcription to favorites" : {
+    "Add %@ to %@" : {
       "extractionState" : "manual",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "保存済みの文字起こしをお気に入りに追加します"
-          }
-        }
-      }
-    },
-    "Adds one or more tags to a saved transcription" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "保存済みの文字起こしにタグを追加します"
+            "value" : "%2$@に%1$@を追加"
           }
         }
       }
@@ -377,6 +355,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "加入收藏"
+          }
+        }
+      }
+    },
+    "Adds a saved transcription to favorites" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みの文字起こしをお気に入りに追加します"
+          }
+        }
+      }
+    },
+    "Adds one or more tags to a saved transcription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みの文字起こしにタグを追加します"
           }
         }
       }
@@ -1100,6 +1100,9 @@
           }
         }
       }
+    },
+    "Audio Preprocessing" : {
+
     },
     "Auto-Delete Recordings" : {
       "extractionState" : "manual",
@@ -3723,6 +3726,39 @@
         }
       }
     },
+    "Favorite %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@をお気に入りに追加"
+          }
+        }
+      }
+    },
+    "Favorite %@ in %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@で%1$@をお気に入りに追加"
+          }
+        }
+      }
+    },
+    "Favorite Transcription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしをお気に入りに追加"
+          }
+        }
+      }
+    },
     "File selection error" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -3754,39 +3790,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檔案選擇錯誤"
-          }
-        }
-      }
-    },
-    "Favorite %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@をお気に入りに追加"
-          }
-        }
-      }
-    },
-    "Favorite %@ in %@" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%2$@で%1$@をお気に入りに追加"
-          }
-        }
-      }
-    },
-    "Favorite Transcription" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "文字起こしをお気に入りに追加"
           }
         }
       }
@@ -5566,17 +5569,6 @@
         }
       }
     },
-    "No recording is currently active." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "現在録音していません。"
-          }
-        }
-      }
-    },
     "No audio file specified." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5676,6 +5668,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "準備済みモデルがありません"
+          }
+        }
+      }
+    },
+    "No recording is currently active." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在録音していません。"
           }
         }
       }
@@ -6764,6 +6767,9 @@
           }
         }
       }
+    },
+    "Reduce noise and normalize volume before transcription" : {
+
     },
     "Release" : {
       "extractionState" : "manual",
@@ -8726,6 +8732,28 @@
         }
       }
     },
+    "The requested transcription could not be found." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指定された文字起こしが見つかりませんでした。"
+          }
+        }
+      }
+    },
+    "The requested transcription may have been deleted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指定された文字起こしは削除された可能性があります。"
+          }
+        }
+      }
+    },
     "The saved history database could not be opened. Existing recording files are left untouched." : {
       "comment" : "A description of the error that occurs when the app cannot access the user's history.",
       "isCommentAutoGenerated" : true
@@ -8759,28 +8787,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選択した発言が見つかりません。"
-          }
-        }
-      }
-    },
-    "The requested transcription could not be found." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "指定された文字起こしが見つかりませんでした。"
-          }
-        }
-      }
-    },
-    "The requested transcription may have been deleted." : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "指定された文字起こしは削除された可能性があります。"
           }
         }
       }
@@ -9507,17 +9513,6 @@
         }
       }
     },
-    "Transcription Not Found" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "文字起こしが見つかりません"
-          }
-        }
-      }
-    },
     "Transcription failed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9605,6 +9600,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "轉寫語言"
+          }
+        }
+      }
+    },
+    "Transcription Not Found" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしが見つかりません"
           }
         }
       }

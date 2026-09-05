@@ -164,8 +164,7 @@ final class AudioPreprocessor {
             Self.noisePercentile * Double(frameCount - 1)
         )
         for bin in 0..<Self.binCount {
-            powersByBin[bin].sort()
-            noiseFloor[bin] = powersByBin[bin][noiseIndex]
+            noiseFloor[bin] = Self.selectValue(at: noiseIndex, in: &powersByBin[bin])
         }
 
         var overlapAdd = [Float](repeating: 0, count: padded.count)
@@ -226,6 +225,45 @@ final class AudioPreprocessor {
             output[sampleIndex] = overlapAdd[leadingPadding + sampleIndex] / Self.colaNormalization
         }
         return output
+    }
+
+    /// Return the exact order statistic used by the noise percentile without
+    /// sorting every frame. Three-way partitioning also handles silent / equal
+    /// powers in one pass. This only reorders powers, never the audio samples.
+    static func selectValue(at index: Int, in values: inout [Float]) -> Float {
+        precondition(values.indices.contains(index))
+        var lower = 0
+        var upper = values.count - 1
+        while lower < upper {
+            let middle = lower + (upper - lower) / 2
+            let a = values[lower]
+            let b = values[middle]
+            let c = values[upper]
+            let pivot = max(min(a, b), min(max(a, b), c))
+            var less = lower
+            var current = lower
+            var greater = upper
+            while current <= greater {
+                if values[current] < pivot {
+                    values.swapAt(less, current)
+                    less += 1
+                    current += 1
+                } else if values[current] > pivot {
+                    values.swapAt(current, greater)
+                    greater -= 1
+                } else {
+                    current += 1
+                }
+            }
+            if index < less {
+                upper = less - 1
+            } else if index > greater {
+                lower = greater + 1
+            } else {
+                return values[index]
+            }
+        }
+        return values[lower]
     }
 
     /// 有声フレームの RMS からファイル共通ゲインを算出する。有声フレームが無ければ nil(確定しない)。
