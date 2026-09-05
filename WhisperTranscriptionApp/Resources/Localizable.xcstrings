@@ -280,6 +280,17 @@
         }
       }
     },
+    "Add %@ to %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@に%1$@を追加"
+          }
+        }
+      }
+    },
     "Add / Prepare" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -287,6 +298,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "追加／準備"
+          }
+        }
+      }
+    },
+    "Adds a saved transcription to favorites" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みの文字起こしをお気に入りに追加します"
+          }
+        }
+      }
+    },
+    "Adds one or more tags to a saved transcription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存済みの文字起こしにタグを追加します"
           }
         }
       }
@@ -2644,6 +2677,17 @@
         }
       }
     },
+    "End recording with %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@の録音を終了"
+          }
+        }
+      }
+    },
     "English" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2675,6 +2719,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "英語"
+          }
+        }
+      }
+    },
+    "Enter at least one tag." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タグを1つ以上入力してください。"
           }
         }
       }
@@ -3699,6 +3754,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檔案選擇錯誤"
+          }
+        }
+      }
+    },
+    "Favorite %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@をお気に入りに追加"
+          }
+        }
+      }
+    },
+    "Favorite %@ in %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@で%1$@をお気に入りに追加"
+          }
+        }
+      }
+    },
+    "Favorite Transcription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしをお気に入りに追加"
           }
         }
       }
@@ -5478,6 +5566,17 @@
         }
       }
     },
+    "No recording is currently active." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "現在録音していません。"
+          }
+        }
+      }
+    },
     "No audio file specified." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5881,6 +5980,17 @@
       }
     },
     "Open Transcriber" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしを開く"
+          }
+        }
+      }
+    },
+    "Open Transcription" : {
       "extractionState" : "manual",
       "localizations" : {
         "ja" : {
@@ -7937,6 +8047,28 @@
         }
       }
     },
+    "Stop recording with %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@の録音を停止"
+          }
+        }
+      }
+    },
+    "Stops the active recording, saves it, and starts transcription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音を停止して保存し、文字起こしを開始します"
+          }
+        }
+      }
+    },
     "Subtitles (.srt)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8200,6 +8332,39 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "システムからダウンロード"
+          }
+        }
+      }
+    },
+    "Tag" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タグ"
+          }
+        }
+      }
+    },
+    "Tag %@ in %@" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$@で%1$@にタグを付ける"
+          }
+        }
+      }
+    },
+    "Tag Transcription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしにタグを追加"
           }
         }
       }
@@ -8594,6 +8759,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "選択した発言が見つかりません。"
+          }
+        }
+      }
+    },
+    "The requested transcription could not be found." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指定された文字起こしが見つかりませんでした。"
+          }
+        }
+      }
+    },
+    "The requested transcription may have been deleted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指定された文字起こしは削除された可能性があります。"
           }
         }
       }
@@ -9316,6 +9503,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "轉寫"
+          }
+        }
+      }
+    },
+    "Transcription Not Found" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしが見つかりません"
           }
         }
       }

@@ -9,8 +9,8 @@ enum WhisperAppDestination: String {
     case history
 
     static let pendingDestinationKey = "WhisperAppIntentPendingDestination"
-    static let pendingStartRecordingKey = "WhisperAppIntentPendingStartRecording"
-    static let pendingLiveRecordingKey = "WhisperAppIntentPendingLiveRecording"
+    static let pendingRecordingActionKey = "WhisperAppIntentPendingRecordingAction"
+    static let pendingTranscriptionIDKey = "WhisperAppIntentPendingTranscriptionID"
 
     var tabIndex: Int {
         switch self {
@@ -22,15 +22,29 @@ enum WhisperAppDestination: String {
     }
 
     @MainActor
-    func requestOpen(startRecordingRequested: Bool = false, liveTranscriptionRequested: Bool = false) {
-        UserDefaults.standard.set(rawValue, forKey: Self.pendingDestinationKey)
-        if startRecordingRequested {
-            UserDefaults.standard.set(true, forKey: Self.pendingStartRecordingKey)
+    func requestOpen(
+        recordingAction: WhisperRecordingIntentAction? = nil,
+        transcriptionID: UUID? = nil,
+        userDefaults: UserDefaults = .standard
+    ) {
+        if let recordingAction {
+            userDefaults.set(recordingAction.rawValue, forKey: Self.pendingRecordingActionKey)
+        } else if self == .transcribe {
+            userDefaults.removeObject(forKey: Self.pendingRecordingActionKey)
         }
-        if liveTranscriptionRequested {
-            UserDefaults.standard.set(true, forKey: Self.pendingLiveRecordingKey)
+        if let transcriptionID {
+            userDefaults.set(transcriptionID.uuidString, forKey: Self.pendingTranscriptionIDKey)
+        } else if self == .history {
+            userDefaults.removeObject(forKey: Self.pendingTranscriptionIDKey)
         }
+        userDefaults.set(rawValue, forKey: Self.pendingDestinationKey)
     }
+}
+
+enum WhisperRecordingIntentAction: String {
+    case start
+    case startLiveTranscription
+    case stopAndTranscribe
 }
 
 @available(iOS 18.0, *)
@@ -60,6 +74,61 @@ struct OpenTranscriptionHistoryIntent: AppIntent {
 }
 
 @available(iOS 18.0, *)
+struct OpenTranscriptionRecordIntent: OpenIntent {
+    static var title: LocalizedStringResource = "Open Transcription"
+
+    @Parameter(title: "Transcription")
+    var target: TranscriptionEntity
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        WhisperAppDestination.history.requestOpen(transcriptionID: target.id)
+        return .result()
+    }
+}
+
+@available(iOS 18.0, *)
+struct FavoriteTranscriptionIntent: AppIntent {
+    static var title: LocalizedStringResource = "Favorite Transcription"
+    static var description = IntentDescription("Adds a saved transcription to favorites")
+
+    @Parameter(title: "Transcription")
+    var transcription: TranscriptionEntity
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Favorite \(\.$transcription)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<TranscriptionEntity> {
+        let updated = try TranscriptionEntityRecordStore.markAsFavorite(transcription)
+        return .result(value: updated)
+    }
+}
+
+@available(iOS 18.0, *)
+struct TagTranscriptionIntent: AppIntent {
+    static var title: LocalizedStringResource = "Tag Transcription"
+    static var description = IntentDescription("Adds one or more tags to a saved transcription")
+
+    @Parameter(title: "Transcription")
+    var transcription: TranscriptionEntity
+
+    @Parameter(title: "Tag")
+    var tag: String
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Add \(\.$tag) to \(\.$transcription)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<TranscriptionEntity> {
+        let updated = try TranscriptionEntityRecordStore.addTag(tag, to: transcription)
+        return .result(value: updated)
+    }
+}
+
+@available(iOS 18.0, *)
 struct StartBackgroundRecordingIntent: AppIntent {
     static var title: LocalizedStringResource = "Start Recording"
     static var description = IntentDescription("Opens the app and starts an audio recording")
@@ -70,7 +139,7 @@ struct StartBackgroundRecordingIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        WhisperAppDestination.transcribe.requestOpen(startRecordingRequested: true)
+        WhisperAppDestination.transcribe.requestOpen(recordingAction: .start)
         return .result()
     }
 }
@@ -86,7 +155,27 @@ struct OpenLiveRecordingIntent: AppIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
-        WhisperAppDestination.transcribe.requestOpen(startRecordingRequested: true, liveTranscriptionRequested: true)
+        WhisperAppDestination.transcribe.requestOpen(recordingAction: .startLiveTranscription)
+        return .result()
+    }
+}
+
+@available(iOS 18.0, *)
+struct StopRecordingIntent: AppIntent {
+    static var title: LocalizedStringResource = "Stop Recording"
+    static var description = IntentDescription("Stops the active recording, saves it, and starts transcription")
+    static var openAppWhenRun = true
+
+    @available(iOS 26.0, *)
+    static var supportedModes: IntentModes { .foreground(.immediate) }
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        guard RecordingService.shared.isRecording else {
+            throw IntentError.noActiveRecording
+        }
+
+        WhisperAppDestination.transcribe.requestOpen(recordingAction: .stopAndTranscribe)
         return .result()
     }
 }
@@ -194,6 +283,31 @@ struct WhisperShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Live Recorder",
             systemImageName: "quote.bubble"
+        )
+        AppShortcut(
+            intent: StopRecordingIntent(),
+            phrases: [
+                "Stop recording with \(.applicationName)",
+                "End recording with \(.applicationName)"
+            ],
+            shortTitle: "Stop Recording",
+            systemImageName: "stop.circle"
+        )
+        AppShortcut(
+            intent: FavoriteTranscriptionIntent(),
+            phrases: [
+                "Favorite \(\.$transcription) in \(.applicationName)"
+            ],
+            shortTitle: "Favorite Transcription",
+            systemImageName: "star"
+        )
+        AppShortcut(
+            intent: TagTranscriptionIntent(),
+            phrases: [
+                "Tag \(\.$transcription) in \(.applicationName)"
+            ],
+            shortTitle: "Tag Transcription",
+            systemImageName: "tag"
         )
         AppShortcut(
             intent: OpenTranscriptionIntent(),
@@ -322,6 +436,9 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case liveActivityRequired
     case foregroundRequiredToStartRecording
     case invalidHistoryLimit
+    case noActiveRecording
+    case transcriptionNotFound
+    case emptyTag
     
     var localizedStringResource: LocalizedStringResource {
         switch self {
@@ -355,6 +472,12 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
             return "iOS does not allow starting recording while the app is in the background. Open the app to start recording."
         case .invalidHistoryLimit:
             return "History count must be between 1 and 100."
+        case .noActiveRecording:
+            return "No recording is currently active."
+        case .transcriptionNotFound:
+            return "The requested transcription could not be found."
+        case .emptyTag:
+            return "Enter at least one tag."
         }
     }
 }

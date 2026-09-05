@@ -110,22 +110,12 @@ struct AppleSpeechTranscriptionService {
         let detector = AppleSpeechModuleFactory.speechDetector()
         let modules: [any SpeechModule] = [transcriber, detector]
 
-        let analysis: SpeechFileAnalysis
-        if #available(iOS 27.0, *) {
-            analysis = try await transcribeAsset(
-                at: inputURL,
-                modules: modules,
-                transcriber: transcriber,
-                onProgress: onProgress
-            )
-        } else {
-            analysis = try await transcribeAudioFile(
-                at: inputURL,
-                modules: modules,
-                transcriber: transcriber,
-                onProgress: onProgress
-            )
-        }
+        let analysis = try await transcribeAudioFile(
+            at: inputURL,
+            modules: modules,
+            transcriber: transcriber,
+            onProgress: onProgress
+        )
 
         let collected = analysis.collected
         let duration = analysis.duration
@@ -161,7 +151,7 @@ struct AppleSpeechTranscriptionService {
         let asset = AVURLAsset(url: inputURL)
         let duration = try await Self.duration(of: asset)
 
-        await MainActor.run { onProgress(0.3) }
+        await MainActor.run { onProgress(0.4) }
         let provider = try await AssetInputSequenceProvider.provider(
             from: asset,
             compatibleWith: modules,
@@ -210,12 +200,24 @@ struct AppleSpeechTranscriptionService {
         await MainActor.run { onProgress(0.22) }
         let preparedAudio = try await AudioConverter.shared.prepareAudioFileForSpeechTranscriber(
             inputURL: inputURL,
-            compatibleFormat: compatibleFormat
+            compatibleFormat: compatibleFormat,
+            preprocessAudio: true
         )
         defer {
             if preparedAudio.requiresCleanup {
                 try? FileManager.default.removeItem(at: preparedAudio.url)
             }
+        }
+        // iOS 27's asset provider exposes opaque AnalyzerInput storage, not
+        // editable PCM. Condition the decoded audio first, then use its native
+        // provider on the prepared file. Both OS versions receive the same PCM.
+        if #available(iOS 27.0, *) {
+            return try await transcribeAsset(
+                at: preparedAudio.url,
+                modules: modules,
+                transcriber: transcriber,
+                onProgress: onProgress
+            )
         }
         let audioFile = try AudioConverter.shared.openAudioFileForSpeechTranscriber(
             at: preparedAudio.url,

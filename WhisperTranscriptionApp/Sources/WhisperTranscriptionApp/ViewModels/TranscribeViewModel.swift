@@ -295,6 +295,7 @@ class TranscribeViewModel: ObservableObject {
             transcriptionDuration = savedDuration
             do {
                 try modelContext.save()
+                TranscriptionSpotlightSync.index(record)
                 shouldKeepPersistedImportedAudio = true
                 showResult = true
             } catch {
@@ -489,6 +490,7 @@ class TranscribeViewModel: ObservableObject {
         modelContext.insert(record)
         do {
             try modelContext.save()
+            TranscriptionSpotlightSync.index(record)
         } catch {
             modelContext.delete(record)
             throw TranscriptionPipelineError.historySaveFailed(error.localizedDescription)

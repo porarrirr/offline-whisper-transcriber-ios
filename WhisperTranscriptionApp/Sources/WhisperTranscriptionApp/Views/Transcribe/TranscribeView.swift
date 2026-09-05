@@ -13,8 +13,7 @@ struct TranscribeView: View {
     @State private var videoImportTask: Task<Void, Never>?
     @State private var isImportingVideo = false
     @State private var liveTranscriptionRequested = false
-    @AppStorage(WhisperAppDestination.pendingStartRecordingKey) private var pendingStartRecording = false
-    @AppStorage(WhisperAppDestination.pendingLiveRecordingKey) private var pendingLiveRecording = false
+    @AppStorage(WhisperAppDestination.pendingRecordingActionKey) private var pendingRecordingAction = ""
     @Environment(\.modelContext) private var modelContext
     @EnvironmentObject private var recordingService: RecordingService
 
@@ -142,10 +141,7 @@ struct TranscribeView: View {
         .onAppear {
             consumePendingIntentRequest()
         }
-        .onChange(of: pendingStartRecording) { _, _ in
-            consumePendingIntentRequest()
-        }
-        .onChange(of: pendingLiveRecording) { _, _ in
+        .onChange(of: pendingRecordingAction) { _, _ in
             consumePendingIntentRequest()
         }
         .onChange(of: recordingService.isRecording) { _, isRecording in
@@ -383,20 +379,30 @@ struct TranscribeView: View {
     }
 
     private func consumePendingIntentRequest() {
-        let shouldStartRecording = pendingStartRecording
-        let shouldStartLiveTranscription = pendingLiveRecording
+        let actionValue = pendingRecordingAction
+        guard !actionValue.isEmpty else { return }
+        pendingRecordingAction = ""
+        guard let action = WhisperRecordingIntentAction(rawValue: actionValue) else { return }
 
-        guard shouldStartRecording || shouldStartLiveTranscription else { return }
+        if action == .stopAndTranscribe {
+            guard recordingService.isRecording else {
+                viewModel.setError(String(localized: "No recording is currently active."))
+                return
+            }
+            viewModel.stopRecordingAndTranscribe(
+                recordingService: recordingService,
+                modelContext: modelContext
+            )
+            return
+        }
 
-        pendingStartRecording = false
-        pendingLiveRecording = false
-
+        let shouldStartLiveTranscription = action == .startLiveTranscription
         if shouldStartLiveTranscription {
             liveTranscriptionRequested = true
         }
 
         Task { @MainActor in
-            if shouldStartRecording, !recordingService.isRecording {
+            if !recordingService.isRecording {
                 let startResult = await viewModel.startRecordingAsync(
                     recordingService: recordingService,
                     requiresTranscriptionReadiness: false

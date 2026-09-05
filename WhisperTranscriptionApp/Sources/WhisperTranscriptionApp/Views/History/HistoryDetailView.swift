@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftUI
 import SwiftData
 import UIKit
@@ -32,8 +33,15 @@ struct HistoryDetailView: View {
     @State private var pendingUndo: SegmentEditUndo?
     @State private var undoDismissTask: Task<Void, Never>?
 
+    @ViewBuilder
     var body: some View {
-        sheetsView
+        if #available(iOS 18.4, *) {
+            sheetsView.appEntityIdentifier(
+                EntityIdentifier(for: TranscriptionEntity.self, identifier: record.id)
+            )
+        } else {
+            sheetsView
+        }
     }
 
     private var baseScreen: some View {

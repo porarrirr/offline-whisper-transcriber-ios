@@ -67,6 +67,16 @@ class HistoryViewModel: ObservableObject {
             self?.performFetchRecords()
         }
     }
+
+    func record(withID id: UUID) -> TranscriptionRecord? {
+        guard let modelContext else { return nil }
+        let descriptor = FetchDescriptor<TranscriptionRecord>(
+            predicate: #Predicate<TranscriptionRecord> { record in
+                record.id == id
+            }
+        )
+        return try? modelContext.fetch(descriptor).first
+    }
     
     @discardableResult
     func deleteRecord(_ record: TranscriptionRecord) -> Bool {
@@ -76,6 +86,7 @@ class HistoryViewModel: ObservableObject {
     @discardableResult
     func deleteRecords(_ recordsToDelete: [TranscriptionRecord]) -> Bool {
         guard let modelContext = modelContext else { return false }
+        let deletedRecordIDs = recordsToDelete.map(\.id)
         let audioFilePaths = Array(Set(recordsToDelete.compactMap(\.audioFilePath)))
         let stagedFiles: [StagedRecordingDeletion]
         do {
@@ -105,6 +116,7 @@ class HistoryViewModel: ObservableObject {
         }
 
         removeStagedRecordingFiles(stagedFiles)
+        TranscriptionSpotlightSync.delete(identifiers: deletedRecordIDs)
         availableTagsNeedRefresh = true
         fetchRecords()
         return true
@@ -119,6 +131,7 @@ class HistoryViewModel: ObservableObject {
         record.updateTags(tags)
         do {
             try modelContext?.save()
+            TranscriptionSpotlightSync.index(record)
         } catch {
             record.tagsJSON = previousTagsJSON
             setError(String(localized: "Failed to update tags") + ": \(error.localizedDescription)")
@@ -145,6 +158,7 @@ class HistoryViewModel: ObservableObject {
         record.isFavorite.toggle()
         do {
             try modelContext?.save()
+            TranscriptionSpotlightSync.index(record)
         } catch {
             record.isFavorite.toggle()
             setError(String(localized: "Failed to update favorite status") + ": \(error.localizedDescription)")
@@ -158,6 +172,7 @@ class HistoryViewModel: ObservableObject {
         record.title = trimmedTitle.isEmpty ? TranscriptionRecord.defaultTitle(for: record.createdAt) : trimmedTitle
         do {
             try modelContext?.save()
+            TranscriptionSpotlightSync.index(record)
         } catch {
             record.title = previousTitle
             setError(String(localized: "Failed to update title") + ": \(error.localizedDescription)")
@@ -200,6 +215,7 @@ class HistoryViewModel: ObservableObject {
             record.segmentsJSON = encodedSegments
             record.text = TranscriptionSegment.plainText(from: updatedSegments, fallback: previousText)
             try modelContext.save()
+            TranscriptionSpotlightSync.index(record)
             errorMessage = nil
             return true
         } catch {

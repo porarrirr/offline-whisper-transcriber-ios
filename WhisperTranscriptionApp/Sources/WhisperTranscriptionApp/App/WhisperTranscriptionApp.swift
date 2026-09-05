@@ -73,6 +73,7 @@ struct WhisperTranscriptionApp: App {
         if AppSettings.shared.autoDeleteRecordings {
             viewModel.cleanupOldRecordings()
         }
+        TranscriptionSpotlightSync.indexAll(using: modelContainer)
         ModelManager.shared.scheduleWhisperSessionStartIfNeeded()
     }
 }

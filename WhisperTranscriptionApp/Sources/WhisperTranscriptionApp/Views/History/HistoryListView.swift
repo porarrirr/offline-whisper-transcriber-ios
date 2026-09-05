@@ -1,8 +1,11 @@
+import AppIntents
 import SwiftUI
 import SwiftData
 
 struct HistoryListView: View {
     @StateObject private var viewModel = HistoryViewModel()
+    @State private var selectedRecordID: UUID?
+    @AppStorage(WhisperAppDestination.pendingTranscriptionIDKey) private var pendingTranscriptionID = ""
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
@@ -75,14 +78,7 @@ struct HistoryListView: View {
                 .listRowSeparator(.hidden)
             } else {
                 ForEach(viewModel.records) { record in
-                    ZStack {
-                        NavigationLink(destination: HistoryDetailView(record: record, viewModel: viewModel)) {
-                            EmptyView()
-                        }
-                        .opacity(0)
-
-                        HistoryRow(record: record)
-                    }
+                    historyRowLink(record)
                     .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 5, trailing: 16))
                     .listRowBackground(Color.clear)
                     .listRowSeparator(.hidden)
@@ -97,6 +93,17 @@ struct HistoryListView: View {
         .scrollContentBackground(.hidden)
         .background(Theme.background)
         .navigationTitle("History")
+        .navigationDestination(item: $selectedRecordID) { id in
+            if let record = viewModel.record(withID: id) {
+                HistoryDetailView(record: record, viewModel: viewModel)
+            } else {
+                ContentUnavailableView(
+                    "Transcription Not Found",
+                    systemImage: "text.badge.xmark",
+                    description: Text("The requested transcription may have been deleted.")
+                )
+            }
+        }
         .searchable(text: $viewModel.searchText, prompt: "Search title, text, or tags")
         .onChange(of: viewModel.searchText) { _, _ in
             viewModel.scheduleFetchRecords()
@@ -114,7 +121,39 @@ struct HistoryListView: View {
         }
         .onAppear {
             viewModel.setModelContext(modelContext)
+            consumePendingTranscriptionRequest()
         }
+        .onChange(of: pendingTranscriptionID) { _, _ in
+            consumePendingTranscriptionRequest()
+        }
+    }
+
+    @ViewBuilder
+    private func historyRowLink(_ record: TranscriptionRecord) -> some View {
+        let row = ZStack {
+            NavigationLink(destination: HistoryDetailView(record: record, viewModel: viewModel)) {
+                EmptyView()
+            }
+            .opacity(0)
+
+            HistoryRow(record: record)
+        }
+
+        if #available(iOS 18.4, *) {
+            row.appEntityIdentifier(
+                EntityIdentifier(for: TranscriptionEntity.self, identifier: record.id)
+            )
+        } else {
+            row
+        }
+    }
+
+    private func consumePendingTranscriptionRequest() {
+        let identifier = pendingTranscriptionID
+        guard !identifier.isEmpty else { return }
+        pendingTranscriptionID = ""
+        guard let id = UUID(uuidString: identifier) else { return }
+        selectedRecordID = id
     }
 }
 

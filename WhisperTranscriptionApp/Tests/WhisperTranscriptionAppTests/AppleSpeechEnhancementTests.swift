@@ -90,7 +90,11 @@ final class AppleSpeechEnhancementTests: XCTestCase {
             channels: 1,
             interleaved: true
         ))
-        let asset = AVURLAsset(url: sourceURL)
+        let prepared = try await AudioConverter.shared.prepareAudioFileForSpeechTranscriber(
+            inputURL: sourceURL, compatibleFormat: analyzerFormat, preprocessAudio: true
+        )
+        defer { try? FileManager.default.removeItem(at: prepared.url) }
+        let asset = AVURLAsset(url: prepared.url)
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
         let audioTrack = try XCTUnwrap(audioTracks.first)
         let provider = AssetInputSequenceProvider(
@@ -199,6 +203,79 @@ final class AppleSpeechEnhancementTests: XCTestCase {
         let asset = AVURLAsset(url: resolvedOutputURL)
         let audioTracks = try await asset.loadTracks(withMediaType: .audio)
         XCTAssertFalse(audioTracks.isEmpty)
+    }
+
+    func testSpeechPreprocessingIsIndependentOfPacketSizeAndPreservesInput() throws {
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let samples = (0..<48_000).map { Float(0.01 * sin(2 * Double.pi * 440 * Double($0) / 16_000)) }
+        func process(packetSize: Int) throws -> [Float] {
+            let processor = SpeechAudioPreprocessor()
+            var result: [Float] = []
+            for start in stride(from: 0, to: samples.count, by: packetSize) {
+                let count = min(packetSize, samples.count - start)
+                let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)))
+                buffer.frameLength = AVAudioFrameCount(count)
+                let data = try XCTUnwrap(buffer.floatChannelData?[0])
+                for index in 0..<count { data[index] = samples[start + index] }
+                let output = try processor.process(buffer)
+                XCTAssertEqual(output.frameLength, buffer.frameLength)
+                XCTAssertEqual(output.format, buffer.format)
+                XCTAssertEqual(data[0], samples[start])
+                result += Array(UnsafeBufferPointer(start: output.floatChannelData![0], count: count))
+            }
+            return result
+        }
+        let whole = try process(packetSize: samples.count)
+        XCTAssertEqual(try process(packetSize: 137), whole)
+        let tail = whole.suffix(16_000)
+        let rms = sqrt(tail.reduce(0.0) { $0 + Double($1 * $1) } / Double(tail.count))
+        XCTAssertGreaterThan(rms, 0.035)
+        XCTAssertLessThan(rms, 0.05)
+    }
+
+    func testSpeechPreprocessingLimitsClicksLocallyAndLeavesSilenceSilent() throws {
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 80_000))
+        buffer.frameLength = buffer.frameCapacity
+        let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+        samples.initialize(repeating: 0, count: 80_000)
+        let silence = try SpeechAudioPreprocessor().process(buffer)
+        XCTAssertTrue((0..<80_000).allSatisfy { silence.floatChannelData![0][$0] == 0 })
+        for frame in 0..<80_000 {
+            samples[frame] = Float(0.01 * sin(2 * Double.pi * 440 * Double(frame) / 16_000))
+        }
+        samples[48_000] = 1
+        let processed = try SpeechAudioPreprocessor().process(buffer)
+        let data = try XCTUnwrap(processed.floatChannelData?[0])
+        XCTAssertTrue((0..<80_000).allSatisfy { data[$0].isFinite && abs(data[$0]) <= 0.95001 })
+        let recoveredRMS = sqrt((64_000..<80_000).reduce(0.0) { $0 + Double(data[$1] * data[$1]) } / 16_000)
+        XCTAssertGreaterThan(recoveredRMS, 0.035)
+    }
+
+    func testSpeechPreprocessingPreservesInt16StereoChannels() throws {
+        let format = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatInt16, sampleRate: 48_000, channels: 2, interleaved: true
+        ))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_800))
+        buffer.frameLength = buffer.frameCapacity
+        let data = try XCTUnwrap(buffer.int16ChannelData?[0])
+        for frame in 0..<4_800 {
+            data[frame * 2] = Int16(1_000 * sin(2 * Double.pi * 440 * Double(frame) / 48_000))
+            data[frame * 2 + 1] = -data[frame * 2]
+        }
+        let result = try SpeechAudioPreprocessor().process(buffer)
+        XCTAssertEqual(result.format, format)
+        XCTAssertEqual(result.frameLength, 4_800)
+        let output = try XCTUnwrap(result.int16ChannelData?[0])
+        for frame in 0..<4_800 { XCTAssertEqual(output[frame * 2], -output[frame * 2 + 1]) }
+    }
+
+    func testSpeechPreprocessingRejectsNonFiniteAudio() throws {
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1))
+        buffer.frameLength = 1
+        buffer.floatChannelData![0][0] = .nan
+        XCTAssertThrowsError(try SpeechAudioPreprocessor().process(buffer))
     }
 
     private func makeSilentM4A(at url: URL, duration: TimeInterval = 0.25) throws {

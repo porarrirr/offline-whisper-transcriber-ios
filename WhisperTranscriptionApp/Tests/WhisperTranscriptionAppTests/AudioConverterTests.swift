@@ -104,6 +104,65 @@ final class AudioConverterTests: XCTestCase {
         XCTAssertEqual(speechAudioFile.framePosition, speechAudioFile.length)
     }
 
+    func testSpeechConversionPreservesContinuousWaveformAcrossReaderPackets() async throws {
+        for sampleRate in [44_100.0, 48_000.0] {
+            let source = try makeAudioFile(duration: 3.73, sampleRate: sampleRate)
+            let format = try XCTUnwrap(AVAudioFormat(
+                commonFormat: .pcmFormatFloat32, sampleRate: 16_000,
+                channels: 1, interleaved: false
+            ))
+            let prepared = try await AudioConverter.shared.prepareAudioFileForSpeechTranscriber(
+                inputURL: source, compatibleFormat: format
+            )
+            defer { try? FileManager.default.removeItem(at: prepared.url) }
+            let file = try AVAudioFile(forReading: prepared.url)
+            XCTAssertEqual(Double(file.length), 3.73 * 16_000, accuracy: 2)
+            let buffer = try XCTUnwrap(AVAudioPCMBuffer(
+                pcmFormat: file.processingFormat, frameCapacity: AVAudioFrameCount(file.length)
+            ))
+            try file.read(into: buffer)
+            let samples = try XCTUnwrap(buffer.floatChannelData?[0])
+            var errorPower = 0.0
+            // Exclude only the true file edges, not internal packet boundaries.
+            for frame in 160..<(Int(buffer.frameLength) - 160) {
+                let expected = 0.2 * sin(2 * Double.pi * 440 * Double(frame) / 16_000)
+                errorPower += pow(Double(samples[frame]) - expected, 2)
+            }
+            XCTAssertLessThan(sqrt(errorPower / Double(Int(buffer.frameLength) - 320)), 0.002)
+        }
+    }
+
+    func testPreparedSpeechAudioNormalizesQuietInputAndPreservesTimeline() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Requires SpeechAnalyzer") }
+        let sourceFormat = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1))
+        let source = try makeAudioFile(duration: 3, format: sourceFormat, amplitude: 0.01)
+        let format = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatInt16, sampleRate: 16_000, channels: 1, interleaved: true
+        ))
+        let prepared = try await AudioConverter.shared.prepareAudioFileForSpeechTranscriber(
+            inputURL: source, compatibleFormat: format, preprocessAudio: true
+        )
+        defer { try? FileManager.default.removeItem(at: prepared.url) }
+        let file = try AudioConverter.shared.openAudioFileForSpeechTranscriber(at: prepared.url, compatibleFormat: format)
+        var frameCount = 0
+        var tailPower = 0.0
+        for try await input in SpeechAudioFileInputSequence(audioFile: file, frameCapacity: 137) {
+            XCTAssertEqual(input.bufferStartTime?.seconds ?? -1, Double(frameCount) / 16_000, accuracy: 0.00001)
+            let buffer = input.buffer
+            for index in 0..<Int(buffer.frameLength) {
+                if frameCount + index >= 32_000 {
+                    let sample = Double(buffer.int16ChannelData![0][index]) / 32_768
+                    tailPower += sample * sample
+                }
+            }
+            frameCount += Int(buffer.frameLength)
+        }
+        XCTAssertEqual(frameCount, 48_000)
+        XCTAssertEqual(prepared.duration, 3, accuracy: 0.0001)
+        XCTAssertGreaterThan(sqrt(tailPower / 16_000), 0.035)
+        XCTAssertLessThan(sqrt(tailPower / 16_000), 0.05)
+    }
+
     private func makeAudioFile(duration: Double, sampleRate: Double) throws -> URL {
         let format = try XCTUnwrap(AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
@@ -114,7 +173,7 @@ final class AudioConverterTests: XCTestCase {
         return try makeAudioFile(duration: duration, format: format)
     }
 
-    private func makeAudioFile(duration: Double, format: AVAudioFormat) throws -> URL {
+    private func makeAudioFile(duration: Double, format: AVAudioFormat, amplitude: Double = 0.2) throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("WhisperAudioTests-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -136,13 +195,13 @@ final class AudioConverterTests: XCTestCase {
             let samples = try XCTUnwrap(buffer.floatChannelData?[0])
             for frame in 0..<Int(frameCount) {
                 let phase = 2 * Double.pi * 440 * Double(frame) / format.sampleRate
-                samples[frame] = Float(sin(phase) * 0.2)
+                samples[frame] = Float(sin(phase) * amplitude)
             }
         case .pcmFormatInt16:
             let samples = try XCTUnwrap(buffer.int16ChannelData?[0])
             for frame in 0..<Int(frameCount) {
                 let phase = 2 * Double.pi * 440 * Double(frame) / format.sampleRate
-                samples[frame] = Int16(sin(phase) * Double(Int16.max) * 0.2)
+                samples[frame] = Int16(sin(phase) * Double(Int16.max) * amplitude)
             }
         default:
             XCTFail("Unsupported test format: \(format.commonFormat)")
