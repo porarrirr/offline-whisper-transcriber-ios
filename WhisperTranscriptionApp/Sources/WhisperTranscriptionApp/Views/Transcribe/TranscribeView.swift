@@ -21,94 +21,24 @@ struct TranscribeView: View {
         ZStack {
             Color(uiColor: .systemBackground).ignoresSafeArea()
 
-            ScrollView {
-                VStack(spacing: 20) {
-                    header
-
-                    recorderDisplay
-
-                    if viewModel.isProcessing {
-                        TranscriptionProgressPanel(
-                            progress: viewModel.transcriptionProgress,
-                            statusText: viewModel.processingStatusText,
-                            usesDeterminateProgress: viewModel.usesDeterminateProgress,
-                            onCancel: {
-                                viewModel.cancelTranscription()
-                            }
-                        )
-                    }
-
-                    if let readinessError = visibleModelReadinessError {
-                        WarningStrip(
-                            message: readinessError,
-                            actionTitle: modelReadinessActionTitle,
-                            action: modelReadinessAction
-                        )
-                    } else if let accelerationWarning = modelAccelerationWarning {
-                        WarningStrip(
-                            message: accelerationWarning,
-                            actionTitle: modelAccelerationActionTitle,
-                            action: modelAccelerationAction
-                        )
-                    }
-
-                    transport
-                        .opacity(viewModel.isProcessing ? 0.35 : 1)
-
-                    LiveTranscriptionToggle(
-                        isOn: liveTranscriptionBinding,
-                        isAvailable: recordingService.canStartLiveTranscription,
-                        unavailableMessage: recordingService.liveUnavailableMessage,
-                        isRecording: recordingService.isRecording
-                    )
-
-                    if shouldShowLivePanel {
-                        // ライブ文字起こし自体がiOS 26以降のみで、`shouldShowLivePanel`が真になるのも同条件。
-                        if #available(iOS 26.0, *) {
-                            LiveTranscriptionPanel(
-                                finalizedText: recordingService.liveFinalizedText,
-                                volatileText: recordingService.liveVolatileText,
-                                state: recordingService.liveState
-                            )
+            if isImportingVideo || viewModel.isProcessing {
+                TranscriptionProcessingScreen(
+                    isImportingVideo: isImportingVideo,
+                    progress: viewModel.transcriptionProgress,
+                    statusText: viewModel.processingStatusText,
+                    usesDeterminateProgress: viewModel.usesDeterminateProgress,
+                    onCancel: {
+                        if isImportingVideo {
+                            videoImportTask?.cancel()
+                        } else {
+                            viewModel.cancelTranscription()
                         }
                     }
-
-                    inputSection
-
-                    if let error = displayedError {
-                        WarningStrip(message: error)
-                    }
-
-                    if viewModel.isProcessing {
-                        Text("Processing will continue while this screen is open.")
-                            .font(Theme.sans(12))
-                            .foregroundColor(Theme.textSecondary)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 24)
-                            .accessibilityHidden(true)
-                    }
-
-                    LegalDisclaimerFootnote()
-                        .padding(.horizontal, 8)
-                        .padding(.top, 4)
-
-                    Spacer(minLength: 12)
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 20)
-            }
-            .disabled(isImportingVideo)
-            .accessibilityHidden(isImportingVideo)
-
-            if isImportingVideo {
-                VideoImportOverlay {
-                    videoImportTask?.cancel()
-                }
-                .transition(.opacity)
-                .zIndex(1)
+                )
+            } else {
+                homeContent
             }
         }
-        .animation(.easeOut(duration: 0.15), value: isImportingVideo)
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $viewModel.showResult) {
             ResultView(
@@ -153,6 +83,64 @@ struct TranscribeView: View {
             if recordingService.isRecording, state == .idle, recordingService.liveMessage != nil {
                 liveTranscriptionRequested = false
             }
+        }
+    }
+
+    private var homeContent: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                header
+
+                recorderDisplay
+
+                if let readinessError = visibleModelReadinessError {
+                    WarningStrip(
+                        message: readinessError,
+                        actionTitle: modelReadinessActionTitle,
+                        action: modelReadinessAction
+                    )
+                } else if let accelerationWarning = modelAccelerationWarning {
+                    WarningStrip(
+                        message: accelerationWarning,
+                        actionTitle: modelAccelerationActionTitle,
+                        action: modelAccelerationAction
+                    )
+                }
+
+                transport
+
+                LiveTranscriptionToggle(
+                    isOn: liveTranscriptionBinding,
+                    isAvailable: recordingService.canStartLiveTranscription,
+                    unavailableMessage: recordingService.liveUnavailableMessage,
+                    isRecording: recordingService.isRecording
+                )
+
+                if shouldShowLivePanel {
+                    // ライブ文字起こし自体がiOS 26以降のみで、`shouldShowLivePanel`が真になるのも同条件。
+                    if #available(iOS 26.0, *) {
+                        LiveTranscriptionPanel(
+                            finalizedText: recordingService.liveFinalizedText,
+                            volatileText: recordingService.liveVolatileText,
+                            state: recordingService.liveState
+                        )
+                    }
+                }
+
+                inputSection
+
+                if let error = displayedError {
+                    WarningStrip(message: error)
+                }
+
+                LegalDisclaimerFootnote()
+                    .padding(.horizontal, 8)
+                    .padding(.top, 4)
+
+                Spacer(minLength: 12)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
         }
     }
 
@@ -722,126 +710,85 @@ private struct LiveTranscriptionPanel: View {
 
 // MARK: - Processing
 
-private struct VideoImportOverlay: View {
-    let onCancel: () -> Void
-
-    var body: some View {
-        ZStack {
-            Color.black.opacity(0.32)
-                .ignoresSafeArea()
-
-            VStack(spacing: 18) {
-                ProgressView()
-                    .controlSize(.large)
-                    .tint(Theme.amber)
-
-                VStack(spacing: 6) {
-                    Text("Importing video")
-                        .font(Theme.sans(18, weight: .semibold))
-                        .foregroundStyle(Theme.textPrimary)
-
-                    Text("Loading the selected video from Photos...")
-                        .font(Theme.sans(13))
-                        .foregroundStyle(Theme.textSecondary)
-                        .multilineTextAlignment(.center)
-                }
-
-                Button(role: .cancel, action: onCancel) {
-                    Text("Cancel")
-                }
-                .buttonStyle(.recorderQuiet)
-            }
-            .padding(.horizontal, 28)
-            .padding(.vertical, 24)
-            .frame(maxWidth: 320)
-            .background(Theme.panel, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Theme.stroke, lineWidth: 1)
-            }
-            .shadow(color: .black.opacity(0.2), radius: 24, y: 10)
-            .padding(.horizontal, 24)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityAddTraits(.isModal)
-    }
-}
-
-private struct TranscriptionProgressPanel: View {
+private struct TranscriptionProcessingScreen: View {
+    let isImportingVideo: Bool
     let progress: Double
     let statusText: String
     let usesDeterminateProgress: Bool
     let onCancel: () -> Void
 
-    private var clampedProgress: Double {
-        min(max(progress, 0), 1)
-    }
-
     private var percentText: String {
-        "\(Int((clampedProgress * 100).rounded()))%"
-    }
-
-    private var visibleStatusText: LocalizedStringKey {
-        statusText.isEmpty ? "Preparing audio" : LocalizedStringKey(statusText)
+        "\(Int((min(max(progress, 0), 1) * 100).rounded()))%"
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    TechLabel(text: "Transcription in progress", color: Theme.amber)
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 28) {
+                    Spacer(minLength: 16)
 
-                    Text(visibleStatusText)
-                        .font(Theme.sans(13))
-                        .foregroundColor(Theme.textSecondary)
+                    Image(systemName: isImportingVideo ? "photo.on.rectangle.angled" : "waveform")
+                        .font(.system(size: 40, weight: .medium))
+                        .foregroundStyle(Theme.amber)
+                        .frame(width: 96, height: 96)
+                        .background(Theme.amber.opacity(0.1), in: Circle())
+                        .accessibilityHidden(true)
+
+                    VStack(spacing: 12) {
+                        Text(isImportingVideo ? "Importing video" : "Transcription in progress")
+                            .font(Theme.sans(28, weight: .bold))
+                            .foregroundStyle(Theme.textPrimary)
+                            .accessibilityAddTraits(.isHeader)
+
+
+                    }
+                    .multilineTextAlignment(.center)
+
+                    VStack(spacing: 18) {
+                        if !isImportingVideo, usesDeterminateProgress {
+                            Text(percentText)
+                                .font(Theme.mono(56, weight: .semibold))
+                                .foregroundStyle(Theme.amber)
+                                .accessibilityLabel(Text("Transcription progress"))
+                                .accessibilityValue(Text(percentText))
+                            ProgressBar(progress: progress)
+                                .frame(height: 8)
+                                .accessibilityHidden(true)
+                        } else {
+                            ProgressView()
+                                .controlSize(.large)
+                                .tint(Theme.amber)
+                        }
+
+                        Text(isImportingVideo
+                             ? String(localized: "Loading the selected video from Photos...")
+                             : statusText)
+                            .font(Theme.sans(17, weight: .medium))
+                            .foregroundStyle(Theme.textPrimary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+
+                    Text("Please keep the app open until this finishes.")
+                        .font(Theme.sans(14))
+                        .foregroundStyle(Theme.textSecondary)
+                        .multilineTextAlignment(.center)
+
+                    Button(role: .cancel, action: onCancel) {
+                        Text("Cancel")
+                            .frame(minWidth: 120, minHeight: 44)
+                    }
+                    .buttonStyle(.recorderQuiet)
+
+                    Spacer(minLength: 16)
                 }
-
-                Spacer(minLength: 8)
-
-                if usesDeterminateProgress {
-                    Text(percentText)
-                        .font(Theme.mono(30, weight: .semibold))
-                        .foregroundColor(Theme.amber)
-                        .accessibilityLabel(Text("Transcription progress"))
-                        .accessibilityValue(Text(percentText))
-                } else {
-                    ProgressView()
-                        .tint(Theme.amber)
-                        .accessibilityLabel(Text("Transcription in progress"))
-                }
-            }
-
-            if usesDeterminateProgress {
-                ProgressBar(progress: clampedProgress)
-                    .frame(height: 6)
-            } else {
-                HStack(spacing: 8) {
-                    Image(systemName: "cpu")
-                        .font(.system(size: 12))
-                        .foregroundColor(Theme.amber)
-                    Text("On-device speech recognition is processing.")
-                        .font(Theme.sans(12))
-                        .foregroundColor(Theme.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-
-            HStack {
-                Text("Please keep the app open until this finishes.")
-                    .font(Theme.sans(12))
-                    .foregroundColor(Theme.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
-                Spacer(minLength: 8)
-
-                Button(role: .cancel, action: onCancel) {
-                    Text("Cancel")
-                }
-                .buttonStyle(.recorderQuiet)
+                .frame(maxWidth: 480)
+                .padding(28)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: geometry.size.height)
             }
         }
-        .recorderPanel()
-        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("transcriptionProcessingScreen")
     }
 }
 
