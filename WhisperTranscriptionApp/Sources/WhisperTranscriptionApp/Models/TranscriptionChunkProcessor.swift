@@ -28,7 +28,7 @@ struct TranscriptionChunkProcessor {
 
     func transcribe(
         inputURL: URL,
-        whisperContext: WhisperContext,
+        whisperContext: any WhisperContextManaging,
         language: String,
         translate: Bool,
         prompt basePrompt: String,
@@ -59,7 +59,7 @@ struct TranscriptionChunkProcessor {
 
     private func transcribe(
         inputURL: URL,
-        whisperContext: WhisperContext,
+        whisperContext: any WhisperContextManaging,
         language: String,
         translate: Bool,
         prompt basePrompt: String,
@@ -149,7 +149,16 @@ struct TranscriptionChunkProcessor {
         previousSegments: [TranscriptionSegment]
     ) -> [TranscriptionSegment] {
         var acceptedSegments: [TranscriptionSegment] = []
-        var precedingText = TranscriptionSegment.plainText(from: previousSegments)
+        let boundaryLimit = candidateSegments.filter { $0.start < acceptedStart }.map { $0.text.count }.max() ?? 0
+        var tailParts: [String] = []
+        var tailCount = 0
+        for segment in previousSegments.reversed() {
+            guard tailCount < boundaryLimit else { break }
+            let tail = String(segment.text.suffix(boundaryLimit))
+            tailParts.append(tail)
+            tailCount += tail.count
+        }
+        var precedingText = String(TranscriptionSegment.joinedPlainText(from: tailParts.reversed()).suffix(boundaryLimit))
 
         for segment in candidateSegments where segment.end > acceptedStart {
             var text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -174,9 +183,9 @@ struct TranscriptionChunkProcessor {
                 text: text
             )
             acceptedSegments.append(accepted)
-            precedingText = TranscriptionSegment.plainText(
-                from: previousSegments + acceptedSegments
-            )
+            if boundaryLimit > 0 {
+                precedingText = String(TranscriptionSegment.joinedPlainText(from: [precedingText, text]).suffix(boundaryLimit))
+            }
         }
 
         return acceptedSegments

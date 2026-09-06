@@ -177,14 +177,49 @@ enum TranscriptionEntityRecordStore {
 }
 
 @available(iOS 18.0, *)
+protocol TranscriptionSearchIndex: Sendable {
+    func indexEntities(_ entities: [TranscriptionEntity]) async throws
+    func deleteEntities(_ identifiers: [UUID]) async throws
+    func deleteAll() async throws
+}
+
+@available(iOS 18.0, *)
+private struct SystemTranscriptionSearchIndex: TranscriptionSearchIndex, @unchecked Sendable {
+    private let index = CSSearchableIndex(name: "Transcriptions")
+    func indexEntities(_ entities: [TranscriptionEntity]) async throws { try await index.indexAppEntities(entities) }
+    func deleteEntities(_ identifiers: [UUID]) async throws {
+        try await index.deleteAppEntities(identifiedBy: identifiers, ofType: TranscriptionEntity.self)
+    }
+    func deleteAll() async throws { try await index.deleteAllSearchableItems() }
+}
+
+@available(iOS 18.0, *)
 actor TranscriptionSpotlightIndexer {
     static let shared = TranscriptionSpotlightIndexer()
 
-    private let index = CSSearchableIndex(name: "Transcriptions")
+    private let index: any TranscriptionSearchIndex
+
+    init(index: any TranscriptionSearchIndex = SystemTranscriptionSearchIndex()) {
+        self.index = index
+    }
+    private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    private func acquire() async {
+        if busy { await withCheckedContinuation { waiters.append($0) } }
+        else { busy = true }
+    }
+
+    private func release() {
+        if waiters.isEmpty { busy = false }
+        else { waiters.removeFirst().resume() }
+    }
 
     func index(_ entity: TranscriptionEntity) async {
+        await acquire()
+        defer { release() }
         do {
-            try await index.indexAppEntities([entity])
+            try await index.indexEntities([entity])
         } catch {
             AppLogger.error(
                 "文字起こし履歴のSpotlight更新に失敗しました: id=\(entity.id)",
@@ -195,12 +230,11 @@ actor TranscriptionSpotlightIndexer {
     }
 
     func delete(identifiers: [UUID]) async {
+        await acquire()
+        defer { release() }
         guard !identifiers.isEmpty else { return }
         do {
-            try await index.deleteAppEntities(
-                identifiedBy: identifiers,
-                ofType: TranscriptionEntity.self
-            )
+            try await index.deleteEntities(identifiers)
         } catch {
             AppLogger.error(
                 "文字起こし履歴のSpotlight削除に失敗しました: count=\(identifiers.count)",
@@ -211,9 +245,11 @@ actor TranscriptionSpotlightIndexer {
     }
 
     func indexAll(_ entities: [TranscriptionEntity]) async {
-        guard !entities.isEmpty else { return }
+        await acquire()
+        defer { release() }
         do {
-            try await index.indexAppEntities(entities)
+            try await index.deleteAll()
+            if !entities.isEmpty { try await index.indexEntities(entities) }
         } catch {
             AppLogger.error(
                 "文字起こし履歴のSpotlight一括更新に失敗しました: count=\(entities.count)",
@@ -226,17 +262,27 @@ actor TranscriptionSpotlightIndexer {
 
 @MainActor
 enum TranscriptionSpotlightSync {
+    private static var pendingUpdate: Task<Void, Never>?
+
+    private static func enqueue(_ operation: @escaping () async -> Void) {
+        let precedingUpdate = pendingUpdate
+        pendingUpdate = Task {
+            await precedingUpdate?.value
+            await operation()
+        }
+    }
+
     static func index(_ record: TranscriptionRecord) {
         guard #available(iOS 18.0, *) else { return }
         let entity = TranscriptionEntity(record: record)
-        Task {
+        enqueue {
             await TranscriptionSpotlightIndexer.shared.index(entity)
         }
     }
 
     static func delete(identifiers: [UUID]) {
         guard #available(iOS 18.0, *) else { return }
-        Task {
+        enqueue {
             await TranscriptionSpotlightIndexer.shared.delete(identifiers: identifiers)
         }
     }
@@ -250,7 +296,7 @@ enum TranscriptionSpotlightSync {
                 sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
             ))
             let entities = records.map(TranscriptionEntity.init(record:))
-            Task {
+            enqueue {
                 await TranscriptionSpotlightIndexer.shared.indexAll(entities)
             }
         } catch {

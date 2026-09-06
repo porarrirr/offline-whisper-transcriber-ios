@@ -1,6 +1,50 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Live transcription stopped because recognition could not keep up. The audio recording is preserved.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声認識が追いつかないためライブ文字起こしを停止しました。録音データは保持されています。"
+          }
+        }
+      }
+    },
+    "This transcription was edited or deleted while recognition was running. Your saved changes were preserved.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "音声認識中にこの履歴が編集または削除されました。保存済みの変更は上書きしていません。"
+          }
+        }
+      }
+    },
+    "The VAD model is invalid. Download the model again.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "VADモデルが無効です。モデルを再ダウンロードしてください。"
+          }
+        }
+      }
+    },
+    "Audio playback is unavailable while recording.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "録音中は音声を再生できません。"
+          }
+        }
+      }
+    },
     "" : {
 
     },

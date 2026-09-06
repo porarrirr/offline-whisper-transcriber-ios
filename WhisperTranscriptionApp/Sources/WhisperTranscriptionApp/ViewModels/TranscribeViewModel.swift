@@ -159,9 +159,6 @@ class TranscribeViewModel: ObservableObject {
 
     func cancelTranscription() {
         transcriptionTask?.cancel()
-        Task {
-            await WhisperModelService.shared.cancelLoad()
-        }
     }
 
     func cancelLiveTranscription(recordingService: RecordingService) {
@@ -199,6 +196,7 @@ class TranscribeViewModel: ObservableObject {
         updating existingRecord: TranscriptionRecord? = nil,
         cleanupAfterProcessing: Bool = false
     ) async {
+        let originalRevision = existingRecord?.transcriptionRevision
         errorMessage = nil
         transcriptionResult = ""
         transcriptionSegments = []
@@ -285,12 +283,18 @@ class TranscribeViewModel: ObservableObject {
             if existingRecord == nil {
                 modelContext.insert(record)
             }
-            record.updateTranscription(
-                text: result.text,
-                duration: savedDuration,
-                segments: result.segments,
-                language: result.language
-            )
+            try Task.checkCancellation()
+            if let originalRevision {
+                try record.updateTranscription(
+                    text: result.text, duration: savedDuration, segments: result.segments,
+                    language: result.language, ifUnchangedSince: originalRevision
+                )
+            } else {
+                record.updateTranscription(
+                    text: result.text, duration: savedDuration, segments: result.segments,
+                    language: result.language
+                )
+            }
             transcriptionTitle = record.displayTitle
             transcriptionDuration = savedDuration
             do {
@@ -347,6 +351,8 @@ class TranscribeViewModel: ObservableObject {
         }
 
         return try await WhisperModelService.shared.transcribe(
+            modelPath: modelManager.modelPath,
+            useFlashAttention: settings.useFlashAttention,
             inputURL: url,
             language: language,
             translate: settings.translateToEnglish,

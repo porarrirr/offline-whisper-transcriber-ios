@@ -359,6 +359,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     private func setupSession(context: RecordingStartContext) async throws {
+        AudioSessionOwnership.shared.beginRecording()
         let session = AVAudioSession.sharedInstance()
         let bluetoothInput = session.availableInputs?.first(where: { $0.portType == .bluetoothHFP })
         let usesBluetoothHFP = bluetoothInput != nil || session.currentRoute.inputs.contains { $0.portType == .bluetoothHFP }
@@ -887,10 +888,12 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     private func deactivateSession() {
-        do {
-            try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        } catch {
-            AppLogger.error("Failed to deactivate audio session after recording", context: "AudioRecorder", error: error)
+        AudioSessionOwnership.shared.endRecording {
+            do {
+                try AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            } catch {
+                AppLogger.error("Failed to deactivate audio session after recording", context: "AudioRecorder", error: error)
+            }
         }
     }
 }

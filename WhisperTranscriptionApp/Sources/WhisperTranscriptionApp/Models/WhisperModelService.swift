@@ -17,120 +17,78 @@ enum WhisperModelServiceError: LocalizedError {
 actor WhisperModelService {
     static let shared = WhisperModelService()
 
-    private let context = WhisperContext()
+    private let context: any WhisperContextManaging
     private var accelerationMode: WhisperAccelerationMode = .metal(reason: .encoderMissing)
-    private var loadTask: Task<Void, Error>?
-    private var loadGeneration: UInt64 = 0
-    private var activeTranscriptionCount = 0
+    private var busy = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var sessionEncoders: [String: String] = [:]
+    private var releaseWhenFinished = false
 
-    private init() {}
+    init(context: any WhisperContextManaging = WhisperContext()) {
+        self.context = context
+    }
 
-    /// Resolves acceleration exactly once for the session. Core ML is never probed or
-    /// loaded before the OS policy and the versioned encoder have both been validated.
-    func startSession(
-        modelPath: String,
-        encoderPath: String?,
-        useFlashAttention: Bool,
-        coreMLMelBinCount: Int
-    ) {
-        _ = modelPath
-        _ = useFlashAttention
-        _ = coreMLMelBinCount
-        accelerationMode = CoreMLCompatibilityPolicy.accelerationMode(
-            hasVerifiedEncoder: encoderPath.map { FileManager.default.fileExists(atPath: $0) } ?? false
-        )
-        AppLogger.info(
-            "Whisper acceleration policy: \(accelerationMode.description)",
-            context: "WhisperModelService"
-        )
-        Task { await publishRuntimeSnapshot(isLoadingModel: false) }
+    // A lease covers loading AND all chunks. Actor isolation alone does not protect
+    // the native model across suspension points.
+    private func acquire() async throws {
+        if busy {
+            await withCheckedContinuation { waiters.append($0) }
+        } else {
+            busy = true
+        }
+        if Task.isCancelled {
+            release()
+            throw CancellationError()
+        }
+    }
+
+    private func release() {
+        if releaseWhenFinished {
+            context.unloadModel()
+            releaseWhenFinished = false
+        }
+        if waiters.isEmpty { busy = false }
+        else { waiters.removeFirst().resume() }
+    }
+
+    func startSession(modelPath: String, encoderPath: String?, useFlashAttention: Bool, coreMLMelBinCount: Int) {
+        sessionEncoders[modelPath] = encoderPath
     }
 
     func ensureModelLoaded(path: String, useFlashAttention: Bool) async throws {
+        try await acquire()
+        defer { release() }
+        try await load(path: path, useFlashAttention: useFlashAttention)
+    }
+
+    private func load(path: String, useFlashAttention: Bool) async throws {
         guard FileManager.default.fileExists(atPath: path) else {
             throw WhisperModelServiceError.modelFileMissing
         }
-
-        if context.isLoaded(
-            path: path,
-            useFlashAttention: useFlashAttention,
-            useCoreML: accelerationMode.usesCoreML
-        ) {
-            await publishRuntimeSnapshot(isLoadingModel: false)
-            return
+        let encoder = sessionEncoders[path]
+        accelerationMode = CoreMLCompatibilityPolicy.accelerationMode(hasVerifiedEncoder: encoder != nil)
+        // whisper.cpp derives the encoder path from the model basename. Verify the
+        // exact canonical path it will open; never claim a different artifact is used.
+        if accelerationMode.usesCoreML {
+            let expected = String(path.dropLast(4)).replacingOccurrences(of: "-q[0-9]_[0-9]$", with: "", options: .regularExpression) + "-encoder.mlmodelc"
+            guard encoder == expected else { throw WhisperModelServiceError.modelLoadFailed }
         }
-
-        if let loadTask {
-            try await loadTask.value
-            guard context.isLoaded(
-                path: path,
-                useFlashAttention: useFlashAttention,
-                useCoreML: accelerationMode.usesCoreML
-            ) else {
-                throw WhisperModelServiceError.modelLoadFailed
-            }
-            return
-        }
-
-        let generation = loadGeneration + 1
-        loadGeneration = generation
+        if context.isLoaded(path: path, useFlashAttention: useFlashAttention, useCoreML: accelerationMode.usesCoreML) { return }
         await publishRuntimeSnapshot(isLoadingModel: true)
-
-        let requestedMode = accelerationMode
-        let task = Task<Void, Error> {
-            do {
-                try await self.context.loadModel(
-                    path: path,
-                    useFlashAttention: useFlashAttention,
-                    useCoreML: requestedMode.usesCoreML
-                )
-            } catch {
-                guard requestedMode.usesCoreML else { throw error }
-
-                // This is the single explicitly authorised fallback. It only handles
-                // errors returned by whisper/Core ML; OS-level exit()/abort failures are
-                // prevented by CoreMLCompatibilityPolicy before this point.
-                self.accelerationMode = .metal(reason: .coreMLLoadFailed)
-                await MainActor.run {
-                    AppLogger.error(
-                        "Core ML load failed; retrying this session once with Metal",
-                        context: "WhisperModelService",
-                        error: error
-                    )
-                }
-                try await self.context.loadModel(
-                    path: path,
-                    useFlashAttention: useFlashAttention,
-                    useCoreML: false
-                )
-            }
-        }
-        loadTask = task
-
         do {
-            try await task.value
-            loadTask = nil
-            guard generation == loadGeneration else { throw CancellationError() }
-            guard context.isLoaded(
-                path: path,
-                useFlashAttention: useFlashAttention,
-                useCoreML: accelerationMode.usesCoreML
-            ) else {
-                throw WhisperModelServiceError.modelLoadFailed
-            }
-            AppLogger.info(
-                "Whisper model load completed: \(accelerationMode.description)",
-                context: "WhisperModelService"
-            )
+            try Task.checkCancellation()
+            try await context.loadModel(path: path, useFlashAttention: useFlashAttention, useCoreML: accelerationMode.usesCoreML)
+            try Task.checkCancellation()
             await publishRuntimeSnapshot(isLoadingModel: false)
         } catch {
-            loadTask = nil
             await publishRuntimeSnapshot(isLoadingModel: false)
             throw error
         }
     }
 
     func transcribe(
+        modelPath: String,
+        useFlashAttention: Bool,
         inputURL: URL,
         language: String,
         translate: Bool,
@@ -140,9 +98,9 @@ actor WhisperModelService {
         preprocessAudio: Bool,
         onChunkProgress: @escaping (WhisperAudioChunk, Double) -> Void
     ) async throws -> ChunkedTranscriptionResult {
-        activeTranscriptionCount += 1
-        defer { activeTranscriptionCount -= 1 }
-
+        try await acquire()
+        defer { release() }
+        try await load(path: modelPath, useFlashAttention: useFlashAttention)
         return try await TranscriptionChunkProcessor().transcribe(
             inputURL: inputURL,
             whisperContext: context,
@@ -157,64 +115,26 @@ actor WhisperModelService {
     }
 
     func releaseForRecording() async {
-        AppLogger.info("Whisper model release requested: reason=recording started", context: "WhisperModelService")
-        await cancelAndWaitForInFlightLoads()
-
-        guard activeTranscriptionCount == 0 else {
-            await publishRuntimeSnapshot(isLoadingModel: false)
-            AppLogger.info(
-                "Whisper model release deferred: activeTranscriptions=\(activeTranscriptionCount)",
-                context: "WhisperModelService"
-            )
+        if busy {
+            releaseWhenFinished = true
             return
         }
-
+        busy = true
+        defer { release() }
         await context.unloadModelAndWait()
         await publishRuntimeSnapshot(isLoadingModel: false)
     }
 
     func invalidateAndUnload() async {
-        await cancelAndWaitForInFlightLoads()
-        await waitForActiveTranscriptionsToFinish()
+        do { try await acquire() } catch { return }
+        defer { release() }
         await context.unloadModelAndWait()
         accelerationMode = .metal(reason: .encoderMissing)
         await publishRuntimeSnapshot(isLoadingModel: false)
     }
 
     func cancelLoad() async {
-        await cancelAndWaitForInFlightLoads()
-        if activeTranscriptionCount == 0 {
-            await context.unloadModelAndWait()
-            await publishRuntimeSnapshot(isLoadingModel: false)
-        }
-    }
-
-    private func cancelInFlightLoad() -> Task<Void, Error>? {
-        loadGeneration += 1
-        let task = loadTask
-        task?.cancel()
-        loadTask = nil
-        return task
-    }
-
-    private func cancelAndWaitForInFlightLoads() async {
-        while let task = cancelInFlightLoad() {
-            do {
-                try await task.value
-            } catch is CancellationError {
-                continue
-            } catch {
-                await MainActor.run {
-                    AppLogger.error("Cancelled model load finished with error", context: "WhisperModelService", error: error)
-                }
-            }
-        }
-    }
-
-    private func waitForActiveTranscriptionsToFinish() async {
-        while activeTranscriptionCount > 0 {
-            try? await Task.sleep(nanoseconds: 50_000_000)
-        }
+        await invalidateAndUnload()
     }
 
     private func publishRuntimeSnapshot(isLoadingModel: Bool) async {

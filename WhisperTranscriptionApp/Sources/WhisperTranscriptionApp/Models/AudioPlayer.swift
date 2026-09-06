@@ -35,20 +35,11 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         guard let player = player else { return }
 
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playback, mode: .default)
-            try session.setActive(true)
+            try AudioSessionOwnership.shared.startPlayback(player)
         } catch {
             let message = String(localized: "Failed to start audio playback") + ": \(error.localizedDescription)"
             errorMessage = message
             AppLogger.error(message, context: "AudioPlayer", error: error)
-            return
-        }
-
-        guard player.play() else {
-            let message = String(localized: "Failed to start audio playback")
-            errorMessage = message
-            AppLogger.error(message, context: "AudioPlayer")
             return
         }
 
@@ -58,6 +49,10 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         invalidateProgressTimer()
         timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             self?.currentTime = player.currentTime
+            if !player.isPlaying {
+                self?.isPlaying = false
+                self?.invalidateProgressTimer()
+            }
         }
     }
 
@@ -113,5 +108,43 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
     private func invalidateProgressTimer() {
         timer?.invalidate()
         timer = nil
+    }
+}
+
+/// Serializes category changes and playback starts against recording ownership.
+final class AudioSessionOwnership: @unchecked Sendable {
+    static let shared = AudioSessionOwnership()
+    private let lock = NSLock()
+    private var recording = false
+    private weak var playback: AVAudioPlayer?
+
+    func beginRecording() {
+        lock.lock()
+        defer { lock.unlock() }
+        recording = true
+        playback?.stop()
+        playback = nil
+    }
+
+    func endRecording(_ deactivate: () -> Void) {
+        lock.lock()
+        defer { lock.unlock() }
+        deactivate()
+        recording = false
+    }
+
+    func startPlayback(_ player: AVAudioPlayer) throws {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !recording else {
+            throw NSError(domain: "AudioSessionOwnership", code: 1, userInfo: [NSLocalizedDescriptionKey: String(localized: "Audio playback is unavailable while recording.")])
+        }
+        let session = AVAudioSession.sharedInstance()
+        try session.setCategory(.playback, mode: .default)
+        try session.setActive(true)
+        playback = player
+        guard player.play() else {
+            throw NSError(domain: "AudioSessionOwnership", code: 2, userInfo: [NSLocalizedDescriptionKey: String(localized: "Failed to start audio playback")])
+        }
     }
 }

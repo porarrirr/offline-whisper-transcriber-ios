@@ -42,6 +42,7 @@ enum LiveTranscriptionError: LocalizedError {
     case audioFormatUnavailable
     case recordingFileMissing
     case emptyTranscription
+    case inputBacklogExceeded
 
     var errorDescription: String? {
         switch self {
@@ -59,6 +60,8 @@ enum LiveTranscriptionError: LocalizedError {
             return String(localized: "Could not prepare the live audio format.")
         case .recordingFileMissing:
             return String(localized: "Recording stopped, but the recording file was not saved.")
+        case .inputBacklogExceeded:
+            return String(localized: "Live transcription stopped because recognition could not keep up. The audio recording is preserved.")
         case .emptyTranscription:
             return String(localized: "Transcription finished, but no text was produced.")
         }
@@ -148,7 +151,7 @@ final class SystemLiveAnalyzerInputConverter: LiveAnalyzerInputConverting {
 }
 
 @available(iOS 26.0, *)
-final class LiveTranscriptionService {
+final class LiveTranscriptionService: RecordingLiveRecognizing {
     typealias SnapshotHandler = @MainActor (LiveTranscriptionSnapshot) -> Void
 
     private let locale: AppleSpeechLocale
@@ -169,10 +172,13 @@ final class LiveTranscriptionService {
     private var segmentID = 0
     private let lifecycleLock = NSLock()
     private var isStopping = false
+    private var queuedAudioDuration: TimeInterval = 0
+    private let processingQueueKey = DispatchSpecificKey<Bool>()
     private let processingQueue = DispatchQueue(label: "com.porarrirr.live-transcription-processing", qos: .userInitiated)
 
     init(locale: AppleSpeechLocale, onSnapshot: @escaping SnapshotHandler) {
         self.locale = locale
+        processingQueue.setSpecific(key: processingQueueKey, value: true)
         self.onSnapshot = onSnapshot
         snapshot.language = locale.locale.language.languageCode?.identifier
     }
@@ -193,17 +199,20 @@ final class LiveTranscriptionService {
                 throw LiveTranscriptionError.unsupportedLocale
             }
 
+            try Task.checkCancellation()
             let transcriber = AppleSpeechModuleFactory.liveTranscriber(locale: supportedLocale)
             let detector = AppleSpeechModuleFactory.speechDetector()
             let modules: [any SpeechModule] = [transcriber, detector]
             try await ensureAssetsInstalled(for: transcriber)
 
+            try Task.checkCancellation()
             let inputConverter = try await makeInputConverter(
                 inputFormat: inputFormat,
                 modules: modules
             )
 
-            let (inputSequence, inputContinuation) = AsyncStream.makeStream(of: AnalyzerInput.self)
+            try Task.checkCancellation()
+            let (inputSequence, inputContinuation) = AsyncStream.makeStream(of: AnalyzerInput.self, bufferingPolicy: .bufferingOldest(64))
             let analyzer = SpeechAnalyzer(modules: modules)
             self.transcriber = transcriber
             self.analyzer = analyzer
@@ -251,7 +260,7 @@ final class LiveTranscriptionService {
                     throw LiveTranscriptionError.audioFormatUnavailable
                 }
                 for input in try inputConverter.flush() {
-                    inputContinuation?.yield(input)
+                    try enqueueInput(input)
                 }
                 inputContinuation?.finish()
                 inputContinuation = nil
@@ -291,8 +300,10 @@ final class LiveTranscriptionService {
 
     func cancel() async {
         markStopping()
-        inputContinuation?.finish()
-        inputContinuation = nil
+        onProcessingQueue {
+            inputContinuation?.finish()
+            inputContinuation = nil
+        }
         stopTimer()
         await analyzer?.cancelAndFinishNow()
         analysisTask?.cancel()
@@ -305,10 +316,17 @@ final class LiveTranscriptionService {
 
         updateAudioLevel(from: buffer)
 
+        let duration = Double(buffer.frameLength) / buffer.format.sampleRate
+        guard reserveQueuedAudio(duration) else {
+            stopSpeechProcessing(for: LiveTranscriptionError.inputBacklogExceeded)
+            return
+        }
         do {
             let copiedBuffer = try copyBuffer(buffer)
             processingQueue.async { [weak self, copiedBuffer, audioTime] in
-                guard let self, !self.isStoppingNow() else { return }
+                guard let self else { return }
+                defer { self.releaseQueuedAudio(duration) }
+                guard !self.isStoppingNow() else { return }
                 do {
                     guard let inputConverter = self.inputConverter else {
                         throw LiveTranscriptionError.audioFormatUnavailable
@@ -316,15 +334,42 @@ final class LiveTranscriptionService {
                     let inputs = try inputConverter.convert(copiedBuffer, at: audioTime)
                     guard !self.isStoppingNow() else { return }
                     for input in inputs {
-                        self.inputContinuation?.yield(input)
+                        try self.enqueueInput(input)
                     }
                 } catch {
                     self.stopSpeechProcessing(for: error)
                 }
             }
         } catch {
+            releaseQueuedAudio(duration)
             stopSpeechProcessing(for: error)
         }
+    }
+
+    private func onProcessingQueue(_ body: () -> Void) {
+        if DispatchQueue.getSpecific(key: processingQueueKey) == true { body() }
+        else { processingQueue.sync(execute: body) }
+    }
+
+    private func enqueueInput(_ input: AnalyzerInput) throws {
+        if case .dropped = inputContinuation?.yield(input) {
+            throw LiveTranscriptionError.inputBacklogExceeded
+        }
+    }
+
+    func reserveQueuedAudio(_ duration: TimeInterval) -> Bool {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+        guard !isStopping, duration.isFinite, duration >= 0,
+              queuedAudioDuration + duration <= 5 else { return false }
+        queuedAudioDuration += duration
+        return true
+    }
+
+    func releaseQueuedAudio(_ duration: TimeInterval) {
+        lifecycleLock.lock()
+        queuedAudioDuration = max(0, queuedAudioDuration - duration)
+        lifecycleLock.unlock()
     }
 
     private func copyBuffer(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
@@ -459,8 +504,10 @@ final class LiveTranscriptionService {
 
     private func stopSpeechProcessing(for error: Error) {
         markStopping()
-        inputContinuation?.finish()
-        inputContinuation = nil
+        onProcessingQueue {
+            inputContinuation?.finish()
+            inputContinuation = nil
+        }
         AppLogger.error(
             "Live Apple Speech processing stopped",
             context: "LiveTranscriptionService",
@@ -468,7 +515,7 @@ final class LiveTranscriptionService {
         )
         updateSnapshot { snapshot in
             snapshot.state = .failed
-            snapshot.errorMessage = String(localized: "Live transcription stopped because Apple Speech processing failed.")
+            snapshot.errorMessage = error.localizedDescription
         }
         Task { [weak self] in
             await self?.analyzer?.cancelAndFinishNow()

@@ -293,6 +293,7 @@ class AudioConverter {
             context: "AudioConverter"
         )
 
+        var streamConverter: AVAudioConverter?
         while reader.status == .reading {
             try Task.checkCancellation()
             guard let sampleBuffer = output.copyNextSampleBuffer() else {
@@ -301,9 +302,20 @@ class AudioConverter {
             guard let inputBuffer = try makePCMBuffer(from: sampleBuffer) else {
                 continue
             }
+            if streamConverter == nil {
+                guard let converter = AVAudioConverter(from: inputBuffer.format, to: whisperOutputFormat) else {
+                    throw AudioConverterError.converterCreationFailed
+                }
+                converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
+                converter.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
+                streamConverter = converter
+            }
+            guard let streamConverter, streamConverter.inputFormat == inputBuffer.format else {
+                throw AudioConverterError.unsupportedPCMFormat
+            }
             try appendConvertedSamples(
                 from: inputBuffer,
-                outputFormat: whisperOutputFormat,
+                converter: streamConverter,
                 to: &pendingSamples
             )
             try await emitReadyChunks(
@@ -322,6 +334,9 @@ class AudioConverter {
 
         switch reader.status {
         case .completed:
+            if let streamConverter {
+                try appendConvertedSamples(from: nil, converter: streamConverter, to: &pendingSamples)
+            }
             try await emitFinalChunkOrFail(
                 from: &pendingSamples,
                 chunkOverlapSampleCount: chunkOverlapSampleCount,
@@ -450,23 +465,13 @@ class AudioConverter {
         return pcmBuffer
     }
 
-    private func appendConvertedSamples(
-        from inputBuffer: AVAudioPCMBuffer,
-        outputFormat: AVAudioFormat,
+    func appendConvertedSamples(
+        from inputBuffer: AVAudioPCMBuffer?,
+        converter: AVAudioConverter,
         to samples: inout [Float]
     ) throws {
-        guard let converter = AVAudioConverter(from: inputBuffer.format, to: outputFormat) else {
-            throw AudioConverterError.converterCreationFailed
-        }
-        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
-        converter.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
-
-        let outputCapacity = AVAudioFrameCount(
-            max(
-                1024,
-                ceil(Double(inputBuffer.frameLength) * outputFormat.sampleRate / inputBuffer.format.sampleRate) + 16
-            )
-        )
+        let outputFormat = converter.outputFormat
+        let outputCapacity = AVAudioFrameCount(4096)
         var hasProvidedInput = false
 
         while true {
@@ -476,8 +481,8 @@ class AudioConverter {
 
             var error: NSError?
             let status = converter.convert(to: outputBuffer, error: &error) { _, outStatus in
-                if hasProvidedInput {
-                    outStatus.pointee = .endOfStream
+                if inputBuffer == nil || hasProvidedInput {
+                    outStatus.pointee = inputBuffer == nil ? .endOfStream : .noDataNow
                     return nil
                 }
 

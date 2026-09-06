@@ -127,7 +127,7 @@ struct TranscriptionCard: View, Equatable {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(textChunks) { chunk in
                             Text(chunk.text)
-                                .font(Theme.sans(16))
+                                .font(.body)
                                 .foregroundColor(Theme.textPrimary)
                                 .lineSpacing(7)
                                 .textSelection(.enabled)
@@ -301,7 +301,7 @@ private struct TranscriptionSegmentRow: View {
         VStack(alignment: .leading, spacing: 4) {
             if showTimestamp {
                 Text(segment.formattedTimestamp)
-                    .font(Theme.mono(12, weight: .semibold))
+                    .font(.caption.monospaced().weight(.semibold))
                     .foregroundColor(Theme.amber)
             }
 
@@ -318,13 +318,13 @@ private struct TranscriptionSegmentRow: View {
     private var segmentText: some View {
         if isInteractive {
             Text(segment.text)
-                .font(Theme.sans(16))
+                .font(.body)
                 .foregroundColor(Theme.textPrimary)
                 .lineSpacing(7)
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
             Text(segment.text)
-                .font(Theme.sans(16))
+                .font(.body)
                 .foregroundColor(Theme.textPrimary)
                 .lineSpacing(7)
                 .textSelection(.enabled)

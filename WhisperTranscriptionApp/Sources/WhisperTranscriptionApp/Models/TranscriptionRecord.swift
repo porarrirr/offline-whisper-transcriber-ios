@@ -90,6 +90,20 @@ class TranscriptionRecord: Identifiable {
         text.contains { !$0.isWhitespace }
     }
 
+    var transcriptionRevision: TranscriptionRevision {
+        TranscriptionRevision(text: text, segmentsJSON: segmentsJSON)
+    }
+
+    func updateTranscription(
+        text: String, duration: Double, segments: [TranscriptionSegment], language: String?,
+        ifUnchangedSince revision: TranscriptionRevision
+    ) throws {
+        guard !isDeleted, transcriptionRevision == revision else {
+            throw TranscriptionEditConflict()
+        }
+        updateTranscription(text: text, duration: duration, segments: segments, language: language)
+    }
+
     func updateTranscription(text: String, duration: Double, segments: [TranscriptionSegment], language: String?) {
         self.text = text
         self.duration = duration
@@ -179,4 +193,15 @@ class TranscriptionRecord: Identifiable {
         formatter.timeStyle = .short
         return formatter
     }()
+}
+
+struct TranscriptionRevision: Equatable {
+    let text: String
+    let segmentsJSON: String?
+}
+
+struct TranscriptionEditConflict: LocalizedError {
+    var errorDescription: String? {
+        String(localized: "This transcription was edited or deleted while recognition was running. Your saved changes were preserved.")
+    }
 }

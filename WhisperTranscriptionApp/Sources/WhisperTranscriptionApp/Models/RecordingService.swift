@@ -1,7 +1,39 @@
+import AVFoundation
 import Combine
 import Speech
 import SwiftUI
 import UIKit
+
+protocol RecordingAudioCapturing: AnyObject {
+    var recordingPublisher: AnyPublisher<Bool, Never> { get }
+    var timePublisher: AnyPublisher<TimeInterval, Never> { get }
+    var levelPublisher: AnyPublisher<Float, Never> { get }
+    var interruptionPublisher: AnyPublisher<String?, Never> { get }
+    var interruptedURLPublisher: AnyPublisher<URL?, Never> { get }
+    var errorPublisher: AnyPublisher<String?, Never> { get }
+    var currentInputFormat: AVAudioFormat? { get }
+    var currentRecordingURL: URL? { get }
+    func requestPermission() async -> Bool
+    func startRecording(context: RecordingStartContext) async throws
+    func stopRecording() async throws -> URL
+    func setAudioBufferHandler(_ handler: AudioRecorder.AudioBufferHandler?)
+}
+
+extension AudioRecorder: RecordingAudioCapturing {
+    var recordingPublisher: AnyPublisher<Bool, Never> { $isRecording.eraseToAnyPublisher() }
+    var timePublisher: AnyPublisher<TimeInterval, Never> { $currentTime.eraseToAnyPublisher() }
+    var levelPublisher: AnyPublisher<Float, Never> { $audioLevel.eraseToAnyPublisher() }
+    var interruptionPublisher: AnyPublisher<String?, Never> { $interruptionMessage.eraseToAnyPublisher() }
+    var interruptedURLPublisher: AnyPublisher<URL?, Never> { $interruptedRecordingURL.eraseToAnyPublisher() }
+    var errorPublisher: AnyPublisher<String?, Never> { $recordingError.eraseToAnyPublisher() }
+}
+
+protocol RecordingLiveRecognizing: AnyObject {
+    func start(inputFormat: AVAudioFormat, recordingURL: URL?) async throws
+    func stop(recordingURL: URL?) async throws -> LiveTranscriptionSnapshot
+    func cancel() async
+    func handleAudioBuffer(_ buffer: AVAudioPCMBuffer, at audioTime: AVAudioTime)
+}
 
 @MainActor
 final class RecordingService: ObservableObject {
@@ -24,12 +56,16 @@ final class RecordingService: ObservableObject {
     @Published var isStartingRecording = false
     @Published var isStoppingRecording = false
 
-    private let audioRecorder = AudioRecorder()
+    private let audioRecorder: any RecordingAudioCapturing
     private let settings = AppSettings.shared
     private var cancellables = Set<AnyCancellable>()
-    private var liveService: AnyObject?
+    private var liveService: (any RecordingLiveRecognizing)?
+    private var liveGeneration: UInt64 = 0
     private var liveTask: Task<Void, Never>?
     private var recordingStartedAt: Date?
+    private let liveServiceFactory: (AppleSpeechLocale, @escaping @MainActor (LiveTranscriptionSnapshot) -> Void) -> any RecordingLiveRecognizing
+    private let supportsLiveRecognition: () -> Bool
+    private let resolveLiveLocale: () async -> AppleSpeechLocale?
 
     var hasInterruptedRecording: Bool {
         interruptedRecordingURL != nil
@@ -60,33 +96,51 @@ final class RecordingService: ObservableObject {
         return String(localized: "Live transcription requires iOS 26 and a device that supports SpeechTranscriber.")
     }
 
-    init() {
-        audioRecorder.$isRecording
+    init(
+        audioRecorder: any RecordingAudioCapturing = AudioRecorder(),
+        supportsLiveRecognition: @escaping () -> Bool = {
+            if #available(iOS 26.0, *) { return SpeechTranscriber.isAvailable }
+            return false
+        },
+        resolveLiveLocale: @escaping () async -> AppleSpeechLocale? = {
+            if let locale = AppSettings.shared.selectedTranscriptionModel.appleSpeechLocale { return locale }
+            return await AppSettings.preferredAppleSpeechLocaleForDevice()
+        },
+        liveServiceFactory: @escaping (AppleSpeechLocale, @escaping @MainActor (LiveTranscriptionSnapshot) -> Void) -> any RecordingLiveRecognizing = { locale, handler in
+            guard #available(iOS 26.0, *) else { preconditionFailure("Live transcription requires iOS 26") }
+            return LiveTranscriptionService(locale: locale, onSnapshot: handler)
+        }
+    ) {
+        self.audioRecorder = audioRecorder
+        self.supportsLiveRecognition = supportsLiveRecognition
+        self.resolveLiveLocale = resolveLiveLocale
+        self.liveServiceFactory = liveServiceFactory
+        audioRecorder.recordingPublisher
             .receive(on: DispatchQueue.main)
             .assign(to: &$isRecording)
-        audioRecorder.$isRecording
+        audioRecorder.recordingPublisher
             .removeDuplicates()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] isRecording in
-                guard let self, !isRecording, self.liveService != nil else { return }
+                guard let self, !isRecording, !self.isStoppingRecording, self.liveTask != nil || self.liveService != nil else { return }
                 Task {
                     await self.cancelLiveTranscription(message: String(localized: "Live transcription stopped because recording was interrupted. The saved part is available for transcription."))
                 }
             }
             .store(in: &cancellables)
-        audioRecorder.$currentTime
+        audioRecorder.timePublisher
             .receive(on: DispatchQueue.main)
             .assign(to: &$currentTime)
-        audioRecorder.$audioLevel
+        audioRecorder.levelPublisher
             .receive(on: DispatchQueue.main)
             .assign(to: &$audioLevel)
-        audioRecorder.$interruptionMessage
+        audioRecorder.interruptionPublisher
             .receive(on: DispatchQueue.main)
             .assign(to: &$interruptionMessage)
-        audioRecorder.$interruptedRecordingURL
+        audioRecorder.interruptedURLPublisher
             .receive(on: DispatchQueue.main)
             .assign(to: &$interruptedRecordingURL)
-        audioRecorder.$recordingError
+        audioRecorder.errorPublisher
             .compactMap { $0 }
             .receive(on: DispatchQueue.main)
             .sink { [weak self] message in
@@ -128,9 +182,9 @@ final class RecordingService: ObservableObject {
         isStoppingRecording = true
         defer { isStoppingRecording = false }
         do {
-            await stopLiveTranscription()
             let url = try await audioRecorder.stopRecording()
             isRecording = false
+            await stopLiveTranscription(recordingURL: url)
             UIApplication.shared.isIdleTimerDisabled = false
             await RecordingLiveActivityManager.shared.endRecordingActivity()
             recordingStartedAt = nil
@@ -223,12 +277,12 @@ final class RecordingService: ObservableObject {
     }
 
     func startLiveTranscription() {
-        guard isRecording, !isLiveTranscriptionActive else { return }
+        guard isRecording, !isStoppingRecording, !isLiveTranscriptionActive else { return }
         guard #available(iOS 26.0, *) else {
             setLiveFailure(String(localized: "Live transcription requires iOS 26 and a device that supports SpeechTranscriber."))
             return
         }
-        guard SpeechTranscriber.isAvailable else {
+        guard supportsLiveRecognition() else {
             setLiveFailure(String(localized: "Speech transcription is not available on this device."))
             return
         }
@@ -238,25 +292,30 @@ final class RecordingService: ObservableObject {
         }
 
         resetLiveSnapshot()
+        liveState = .preparing
         liveTask?.cancel()
+        liveGeneration &+= 1
+        let generation = liveGeneration
         liveTask = Task { @MainActor in
             do {
-                let locale: AppleSpeechLocale
-                if let selectedLocale = settings.selectedTranscriptionModel.appleSpeechLocale {
-                    locale = selectedLocale
-                } else if let deviceLocale = await AppSettings.preferredAppleSpeechLocaleForDevice() {
-                    locale = deviceLocale
-                } else {
+                guard let locale = await resolveLiveLocale() else {
                     throw LiveTranscriptionError.unsupportedLocale
                 }
 
-                let service = self.makeLiveTranscriptionService(locale: locale)
+                try Task.checkCancellation()
+                guard generation == liveGeneration, isRecording, !isStoppingRecording else { return }
+                let service = self.makeLiveTranscriptionService(locale: locale, generation: generation)
                 liveService = service
                 try await service.start(inputFormat: inputFormat, recordingURL: audioRecorder.currentRecordingURL)
+                guard generation == liveGeneration, isRecording, !isStoppingRecording, !Task.isCancelled else {
+                    await service.cancel()
+                    return
+                }
                 audioRecorder.setAudioBufferHandler { [weak service] buffer, audioTime, _ in
                     service?.handleAudioBuffer(buffer, at: audioTime)
                 }
             } catch {
+                guard generation == liveGeneration else { return }
                 self.audioRecorder.setAudioBufferHandler(nil)
                 self.setLiveFailure(error.localizedDescription)
                 self.liveService = nil
@@ -264,36 +323,46 @@ final class RecordingService: ObservableObject {
         }
     }
 
-    func stopLiveTranscription() async {
+    func stopLiveTranscription(recordingURL: URL? = nil) async {
+        liveGeneration &+= 1
+        let generation = liveGeneration
+        liveTask?.cancel()
+        let startingTask = liveTask
+        liveTask = nil
         audioRecorder.setAudioBufferHandler(nil)
-        guard #available(iOS 26.0, *),
-              let service = liveService as? LiveTranscriptionService else {
+        guard let service = liveService else {
+            resetLiveSnapshot(keepingText: true)
             return
         }
 
-        liveTask?.cancel()
+        liveService = nil
+        await startingTask?.value
+        guard generation == liveGeneration else { return }
         do {
-            let snapshot = try await service.stop(recordingURL: audioRecorder.currentRecordingURL)
+            let snapshot = try await service.stop(recordingURL: recordingURL ?? audioRecorder.currentRecordingURL)
+            guard generation == liveGeneration else { return }
             applyLiveSnapshot(snapshot)
         } catch {
+            guard generation == liveGeneration else { return }
             setLiveFailure(error.localizedDescription)
         }
-        liveService = nil
     }
 
     func cancelLiveTranscription(message: String? = nil) async {
+        liveGeneration &+= 1
+        let generation = liveGeneration
+        liveTask?.cancel()
+        liveTask = nil
         audioRecorder.setAudioBufferHandler(nil)
-        guard #available(iOS 26.0, *),
-              let service = liveService as? LiveTranscriptionService else {
-            if let message {
-                liveMessage = message
-            }
+        guard let service = liveService else {
+            resetLiveSnapshot(keepingText: true)
+            if let message { liveMessage = message }
             return
         }
 
-        liveTask?.cancel()
-        await service.cancel()
         liveService = nil
+        await service.cancel()
+        guard generation == liveGeneration else { return }
         resetLiveSnapshot(keepingText: true)
         if let message {
             liveMessage = message
@@ -426,10 +495,11 @@ final class RecordingService: ObservableObject {
     }
 
     @available(iOS 26.0, *)
-    private func makeLiveTranscriptionService(locale: AppleSpeechLocale) -> LiveTranscriptionService {
-        LiveTranscriptionService(locale: locale) { [weak self] snapshot in
-            self?.applyLiveSnapshot(snapshot)
-        }
+    private func makeLiveTranscriptionService(locale: AppleSpeechLocale, generation: UInt64) -> any RecordingLiveRecognizing {
+        liveServiceFactory(locale, { [weak self] snapshot in
+            guard let self, self.liveGeneration == generation else { return }
+            self.applyLiveSnapshot(snapshot)
+        })
     }
 
     private func resetLiveSnapshot(keepingText: Bool = false) {

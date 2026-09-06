@@ -12,6 +12,7 @@ struct HistoryDetailView: View {
     // 再生位置は0.1秒ごとに更新される。この画面のbodyでは`audioPlayer`の観測対象プロパティを
     // 一切読まないこと(読むとその都度この長大なbody全体が無効化され、文字起こしリストの
     // 再レイアウトでスクロール位置が飛ぶ)。再生状態の参照は`AudioPlaybackPanel`内に閉じる。
+    @StateObject private var recordingService = RecordingService.shared
     @State private var audioPlayer = AudioPlayer()
     @StateObject private var transcribeViewModel = TranscribeViewModel()
     // 表示スタイルはユーザー操作時しか更新されないので、bodyで観測しても再生位置のような
@@ -193,6 +194,11 @@ struct HistoryDetailView: View {
 
                 if let audioURL = cachedAudioURL {
                     AudioPlaybackPanel(audioURL: audioURL, player: audioPlayer)
+                        .disabled(recordingService.isRecording || recordingService.isChangingRecordingState)
+                    if recordingService.isRecording || recordingService.isChangingRecordingState {
+                        Text("Audio playback is unavailable while recording.")
+                            .font(.body)
+                    }
                 }
 
                 transcriptionProcessingStatus
@@ -210,6 +216,7 @@ struct HistoryDetailView: View {
                             showsDisplayStyleControl: false,
                             onSegmentTap: handleSegmentTap,
                             onSegmentLongPress: { segment in
+                                guard !transcribeViewModel.isProcessing else { return }
                                 editingSegment = segment
                             }
                         )
@@ -429,6 +436,9 @@ struct HistoryDetailView: View {
         Menu {
             if cachedAudioURL != nil {
                 Button {
+                    editingSegment = nil
+                    undoDismissTask?.cancel()
+                    pendingUndo = nil
                     transcribeViewModel.transcribeRecord(record, modelContext: modelContext)
                 } label: {
                     Label(
@@ -511,6 +521,7 @@ struct HistoryDetailView: View {
     }
 
     private func handleSegmentTap(_ segment: TranscriptionSegment) {
+        guard !recordingService.isRecording, !recordingService.isChangingRecordingState else { return }
         guard cachedAudioURL != nil else {
             showPlaybackAudioError = true
             return
@@ -523,6 +534,7 @@ struct HistoryDetailView: View {
         replacement: String,
         offersUndo: Bool
     ) {
+        guard !transcribeViewModel.isProcessing else { return }
         let trimmedReplacement = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedReplacement.isEmpty, trimmedReplacement != segment.text else { return }
 
@@ -791,7 +803,7 @@ private struct TranscriptionSegmentEditor: View {
         NavigationStack {
             TextEditor(text: $text)
                 .accessibilityIdentifier("transcriptionSegmentEditor")
-                .font(Theme.sans(16))
+                .font(.body)
                 .foregroundColor(Theme.textPrimary)
                 .scrollContentBackground(.hidden)
                 .padding(12)
@@ -886,7 +898,7 @@ private struct TagEditorSheetView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack(spacing: 12) {
                             TextField("Tags", text: $newTagText, axis: .vertical)
-                                .font(Theme.sans(15))
+                                .font(.body)
                                 .textInputAutocapitalization(.never)
                                 .autocorrectionDisabled()
                                 .submitLabel(.done)

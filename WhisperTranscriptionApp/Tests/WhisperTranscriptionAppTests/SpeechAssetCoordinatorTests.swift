@@ -435,6 +435,44 @@ final class SpeechAssetCoordinatorTests: XCTestCase {
         return snapshot
     }
 
+    func testOldLocaleNormalizationFailureCannotReplaceNewRecheck() async {
+        let client = FakeSpeechAssetClient(maximumReservedLocales: 2)
+        let gate = FakeGate()
+        client.normalizationGate = gate
+        client.delayedLanguage = "en"
+        client.failDelayedNormalization = true
+        client.statuses["ja-jp"] = .installed
+        let coordinator = makeCoordinator(client: client)
+        coordinator.recheck(locale: .enUS)
+        await waitUntil { client.delayedNormalizationStarted }
+        coordinator.recheck(locale: .jaJP)
+        await waitUntil { coordinator.snapshot.normalizedLocaleIdentifier == "ja-JP" }
+        gate.open()
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(coordinator.snapshot.normalizedLocaleIdentifier, "ja-JP")
+        XCTAssertEqual(coordinator.snapshot.state, .installed)
+        coordinator.cancel()
+    }
+
+    func testOldPrepareFailureCannotReplaceNewLanguage() async {
+        let client = FakeSpeechAssetClient(maximumReservedLocales: 2)
+        let gate = FakeGate()
+        client.normalizationGate = gate
+        client.delayedLanguage = "en"
+        client.failDelayedNormalization = true
+        client.statuses["ja-jp"] = .installed
+        let coordinator = makeCoordinator(client: client)
+        coordinator.prepare(locale: .enUS)
+        await waitUntil { client.delayedNormalizationStarted }
+        coordinator.prepare(locale: .jaJP)
+        await waitUntil { coordinator.snapshot.state == .installed }
+        gate.open()
+        try? await Task.sleep(for: .milliseconds(50))
+        XCTAssertEqual(coordinator.snapshot.normalizedLocaleIdentifier, "ja-JP")
+        XCTAssertEqual(coordinator.snapshot.state, .installed)
+        coordinator.cancel()
+    }
+
     private func makeCoordinator(client: FakeSpeechAssetClient) -> SpeechAssetCoordinator {
         let suiteName = "SpeechAssetCoordinatorTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -509,6 +547,10 @@ private final class FakeSpeechAssetClient: SpeechAssetClient {
     var statusCallCount = 0
     var installationError: Error?
     var pendingInstallationGate: FakeGate?
+    var normalizationGate: FakeGate?
+    var delayedLanguage: String?
+    var failDelayedNormalization = false
+    var delayedNormalizationStarted = false
 
     init(maximumReservedLocales: Int) {
         self.maximumReservedLocales = maximumReservedLocales
@@ -520,6 +562,11 @@ private final class FakeSpeechAssetClient: SpeechAssetClient {
 
     func normalizedLocale(equivalentTo locale: Locale) async -> Locale? {
         let language = locale.language.languageCode?.identifier
+        if language == delayedLanguage, let normalizationGate {
+            delayedNormalizationStarted = true
+            await normalizationGate.wait()
+            if failDelayedNormalization { return nil }
+        }
         return supported.first { $0.language.languageCode?.identifier == language }
     }
 

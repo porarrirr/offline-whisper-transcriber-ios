@@ -11,24 +11,64 @@ private struct WhisperContextPointer: @unchecked Sendable {
     let value: OpaquePointer
 }
 
-final class WhisperContext: @unchecked Sendable {
-    private(set) var isModelLoaded = false
-    private(set) var errorMessage: String?
+protocol WhisperContextManaging: Sendable {
+    func isLoaded(path: String, useFlashAttention: Bool, useCoreML: Bool) -> Bool
+    func loadModel(path: String, useFlashAttention: Bool, useCoreML: Bool) async throws
+    func unloadModel()
+    func unloadModelAndWait() async
+    func transcribeChunk(samples: [Float], startOffset: TimeInterval, segmentIDOffset: Int,
+                         language: String, translate: Bool, prompt: String, useVAD: Bool,
+                         vadModelPath: String?, cancellationToken: WhisperCancellationToken?,
+                         onProgress: ((Double) -> Void)?) async throws -> TranscriptionResult
+}
+
+final class WhisperContext: WhisperContextManaging, @unchecked Sendable {
+    private var _isModelLoaded: Bool = false
+    private(set) var isModelLoaded: Bool {
+        get { onWorkQueue { _isModelLoaded } }
+        set { onWorkQueue { _isModelLoaded = newValue } }
+    }
+    private var _errorMessage: String? = nil
+    private(set) var errorMessage: String? {
+        get { onWorkQueue { _errorMessage } }
+        set { onWorkQueue { _errorMessage = newValue } }
+    }
 
     private let workQueue = DispatchQueue(label: "com.porarrirr.whisper-context", qos: .userInitiated)
     private var whisperContext: OpaquePointer?
-    private(set) var loadedModelPath: String?
-    private(set) var loadedUseFlashAttention = false
-    private(set) var loadedUseCoreML = false
+    private var _loadedModelPath: String? = nil
+    private(set) var loadedModelPath: String? {
+        get { onWorkQueue { _loadedModelPath } }
+        set { onWorkQueue { _loadedModelPath = newValue } }
+    }
+    private var _loadedUseFlashAttention: Bool = false
+    private(set) var loadedUseFlashAttention: Bool {
+        get { onWorkQueue { _loadedUseFlashAttention } }
+        set { onWorkQueue { _loadedUseFlashAttention = newValue } }
+    }
+    private var _loadedUseCoreML: Bool = false
+    private(set) var loadedUseCoreML: Bool {
+        get { onWorkQueue { _loadedUseCoreML } }
+        set { onWorkQueue { _loadedUseCoreML = newValue } }
+    }
+
+    private let queueKey = DispatchSpecificKey<Bool>()
+
+    init() { workQueue.setSpecific(key: queueKey, value: true) }
+
+    private func onWorkQueue<T>(_ body: () -> T) -> T {
+        if DispatchQueue.getSpecific(key: queueKey) == true { return body() }
+        return workQueue.sync(execute: body)
+    }
 
     func isLoaded(path: String, useFlashAttention: Bool, useCoreML: Bool) -> Bool {
         let effectiveUseFlashAttention = Self.effectiveUseFlashAttention(useFlashAttention)
         let effectiveUseCoreML = Self.effectiveUseCoreML(useCoreML)
 
-        return isModelLoaded
+        return onWorkQueue { isModelLoaded
             && loadedModelPath == path
             && loadedUseFlashAttention == effectiveUseFlashAttention
-            && loadedUseCoreML == effectiveUseCoreML
+            && loadedUseCoreML == effectiveUseCoreML }
     }
 
     func loadModel(path: String, useFlashAttention: Bool, useCoreML: Bool) async throws {
@@ -40,23 +80,14 @@ final class WhisperContext: @unchecked Sendable {
         let effectiveUseFlashAttention = Self.effectiveUseFlashAttention(useFlashAttention)
         let effectiveUseCoreML = Self.effectiveUseCoreML(useCoreML)
 
-        if isLoaded(path: path, useFlashAttention: useFlashAttention, useCoreML: useCoreML) {
-            return
-        }
-
-        let contextToFree = detachLoadedContext()
-        errorMessage = nil
-
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-            workQueue.async { [weak self, contextToFree] in
-                if let contextToFree {
-                    whisper_free(contextToFree.value)
-                }
-
-                guard let self else {
-                    continuation.resume(throwing: WhisperModelServiceError.modelLoadFailed)
+            workQueue.async { [self] in
+                if isLoaded(path: path, useFlashAttention: useFlashAttention, useCoreML: useCoreML) {
+                    continuation.resume()
                     return
                 }
+                if let old = detachLoadedContext() { whisper_free(old.value) }
+                errorMessage = nil
 
                 var params = whisper_context_default_params()
                 params.use_gpu = Self.supportsGPUAcceleration
@@ -114,24 +145,15 @@ final class WhisperContext: @unchecked Sendable {
         cancellationToken: WhisperCancellationToken? = nil,
         onProgress: ((Double) -> Void)? = nil
     ) async -> TranscriptionResult? {
-        guard let context = whisperContext else {
-            await MainActor.run {
-                errorMessage = "モデルが読み込まれていません"
-                AppLogger.error("モデルが読み込まれていません", context: "WhisperContext")
-            }
-            return nil
-        }
-        let contextPointer = WhisperContextPointer(value: context)
-        
         return await withCheckedContinuation { continuation in
-            workQueue.async { [weak self, contextPointer] in
-                guard let self = self else {
+            workQueue.async { [self] in
+                guard let context = whisperContext else {
+                    setError("モデルが読み込まれていません")
                     continuation.resume(returning: nil)
                     return
                 }
-                
                 let result = self.performTranscription(
-                    context: contextPointer.value,
+                    context: context,
                     audioPath: audioPath,
                     language: language,
                     translate: translate,
@@ -157,31 +179,17 @@ final class WhisperContext: @unchecked Sendable {
         cancellationToken: WhisperCancellationToken? = nil,
         onProgress: ((Double) -> Void)? = nil
     ) async throws -> TranscriptionResult {
-        guard let context = whisperContext else {
-            let message = "モデルが読み込まれていません"
-            setError(message)
-            throw WhisperContextError.transcriptionFailed(message)
-        }
-
-        guard !samples.isEmpty else {
-            let error = WhisperContextError.emptyAudioFile
-            setError(error.localizedDescription)
-            throw error
-        }
-        let contextPointer = WhisperContextPointer(value: context)
-
         return try await withCheckedThrowingContinuation { continuation in
-            workQueue.async { [weak self, contextPointer] in
-                guard let self = self else {
-                    continuation.resume(throwing: WhisperContextError.transcriptionFailed(
-                        String(localized: "Transcription failed")
-                    ))
+            workQueue.async { [self] in
+                guard let context = whisperContext else {
+                    let message = "モデルが読み込まれていません"
+                    setError(message)
+                    continuation.resume(throwing: WhisperContextError.transcriptionFailed(message))
                     return
                 }
-
                 do {
                     let result = try self.runWhisper(
-                        context: contextPointer.value,
+                        context: context,
                         samples: samples,
                         language: language,
                         translate: translate,
@@ -399,10 +407,10 @@ final class WhisperContext: @unchecked Sendable {
             }
         }
         
-        let progressPointer = UnsafeMutablePointer<WhisperProgressCallbackData>.allocate(capacity: 1)
-        progressPointer.pointee = WhisperProgressCallbackData(callback: onProgress)
-        defer { progressPointer.deallocate() }
-        
+        let progressStorage = WhisperProgressCallbackStorage(callback: onProgress)
+        defer { withExtendedLifetime(progressStorage) {} }
+        let progressPointer = progressStorage.pointer
+
         if onProgress != nil {
             params.progress_callback = whisperProgressCallback
             params.progress_callback_user_data = UnsafeMutableRawPointer(progressPointer)
@@ -462,7 +470,7 @@ final class WhisperContext: @unchecked Sendable {
     }
     
     private func detectLanguage(context: OpaquePointer) -> String? {
-        let langId = whisper_lang_auto_detect(context, 0, 4, nil)
+        let langId = whisper_full_lang_id(context)
         guard langId >= 0 else { return nil }
         if let langStr = whisper_lang_str(Int32(langId)) {
             return String(cString: langStr)
@@ -471,16 +479,15 @@ final class WhisperContext: @unchecked Sendable {
     }
     
     func unloadModel() {
-        if let context = detachLoadedContext() {
-            whisper_free(context.value)
+        onWorkQueue {
+            if let context = detachLoadedContext() { whisper_free(context.value) }
         }
     }
 
     func unloadModelAndWait() async {
-        guard let context = detachLoadedContext() else { return }
         await withCheckedContinuation { continuation in
-            workQueue.async { [context] in
-                whisper_free(context.value)
+            workQueue.async { [self] in
+                unloadModel()
                 continuation.resume()
             }
         }
@@ -530,7 +537,21 @@ final class WhisperCancellationToken: @unchecked Sendable {
     }
 }
 
-private struct WhisperProgressCallbackData {
+final class WhisperProgressCallbackStorage {
+    let pointer: UnsafeMutablePointer<WhisperProgressCallbackData>
+
+    init(callback: ((Double) -> Void)?) {
+        pointer = .allocate(capacity: 1)
+        pointer.initialize(to: WhisperProgressCallbackData(callback: callback))
+    }
+
+    deinit {
+        pointer.deinitialize(count: 1)
+        pointer.deallocate()
+    }
+}
+
+struct WhisperProgressCallbackData {
     var callback: ((Double) -> Void)?
 }
 

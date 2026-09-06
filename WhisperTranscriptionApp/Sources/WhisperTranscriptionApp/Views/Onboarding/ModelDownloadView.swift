@@ -46,6 +46,7 @@ struct ModelDownloadView: View {
                let selectedSize = settings.selectedTranscriptionModel.whisperModelSize {
                 managedWhisperSize = selectedSize
             }
+            if isWhisperManagement { viewModel.manageWhisper(managedWhisperSize) }
             viewModel.checkAvailability(autoPrepareAppleSpeech: includesSpeechModels)
         }
         .task {
@@ -166,7 +167,7 @@ struct ModelDownloadView: View {
                     }
                 }
 
-                if settings.usesWhisperBackend {
+                if isWhisperManagement || settings.usesWhisperBackend {
                     Button(action: {
                         viewModel.startDownload()
                     }) {
@@ -182,10 +183,10 @@ struct ModelDownloadView: View {
                     .buttonStyle(.recorderProminent)
                 }
 
-                if settings.usesWhisperBackend {
+                if isWhisperManagement || settings.usesWhisperBackend {
                     Text(ModelManager.shared.canDownloadCoreMLEncoder
-                         ? "Will download \(settings.selectedTranscriptionModel.approximateSize) and the Core ML encoder.\nWi-Fi connection is recommended."
-                         : "Will download \(settings.selectedTranscriptionModel.approximateSize).\nMetal acceleration will be used on this OS version.")
+                         ? "Will download \((isWhisperManagement ? TranscriptionModel.whisper(managedWhisperSize) : settings.selectedTranscriptionModel).approximateSize) and the Core ML encoder.\nWi-Fi connection is recommended."
+                         : "Will download \((isWhisperManagement ? TranscriptionModel.whisper(managedWhisperSize) : settings.selectedTranscriptionModel).approximateSize).\nMetal acceleration will be used on this OS version.")
                         .font(Theme.sans(12))
                         .foregroundColor(Theme.textSecondary)
                         .multilineTextAlignment(.center)
@@ -208,8 +209,7 @@ struct ModelDownloadView: View {
                 .pickerStyle(.menu)
                 .tint(Theme.amber)
                 .onChange(of: managedWhisperSize) { _, newSize in
-                    ModelManager.shared.switchModel(model: .whisper(newSize))
-                    viewModel.checkAvailability(autoPrepareAppleSpeech: false)
+                    viewModel.manageWhisper(newSize)
                 }
             } else {
                 Picker("Model", selection: $settings.selectedTranscriptionModel) {

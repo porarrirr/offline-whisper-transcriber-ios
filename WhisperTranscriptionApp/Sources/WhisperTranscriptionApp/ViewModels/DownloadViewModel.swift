@@ -13,10 +13,16 @@ class DownloadViewModel: ObservableObject {
     @Published var isWaitingForSpeechAsset = false
     @Published var speechAssetSnapshot = SpeechAssetSnapshot()
     
-    private var modelManager = ModelManager.shared
+    private var managedWhisperSize: WhisperModelSize?
+    private let modelManager: ModelManager
     private var cancellables = Set<AnyCancellable>()
     
-    init() {
+    convenience init() {
+        self.init(modelManager: .shared)
+    }
+
+    init(modelManager: ModelManager) {
+        self.modelManager = modelManager
         setupBindings()
     }
     
@@ -84,10 +90,36 @@ class DownloadViewModel: ObservableObject {
     
     func startDownload() {
         guard !isDownloading else { return }
-        modelManager.downloadModel()
+        if let managedWhisperSize {
+            modelManager.downloadWhisperModel(size: managedWhisperSize)
+        } else {
+            modelManager.downloadModel()
+        }
+    }
+
+    func manageWhisper(_ size: WhisperModelSize) {
+        managedWhisperSize = size
+        cancellables.removeAll()
+        modelManager.objectWillChange.sink { [weak self] in
+            Task { @MainActor in self?.refreshManagedWhisper() }
+        }.store(in: &cancellables)
+        refreshManagedWhisper()
+    }
+
+    private func refreshManagedWhisper() {
+        guard let size = managedWhisperSize else { return }
+        let isTarget = modelManager.activeWhisperDownloadSize == size
+        isModelAvailable = modelManager.whisperModelIsReady(size)
+        isComplete = isModelAvailable
+        isDownloading = isTarget && modelManager.isDownloading
+        progress = isTarget ? modelManager.downloadProgress : 0
+        errorMessage = modelManager.downloadError
+        isWaitingForSpeechAsset = false
+        statusText = isModelAvailable ? "Ready!" : (isTarget ? modelManager.downloadStatusText : "Preparing model...")
     }
     
     func checkAvailability(autoPrepareAppleSpeech: Bool = false) {
+        if managedWhisperSize != nil { refreshManagedWhisper(); return }
         modelManager.checkModelAvailability()
         if modelManager.isModelReady {
             isComplete = true

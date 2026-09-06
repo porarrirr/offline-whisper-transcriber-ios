@@ -641,8 +641,8 @@ final class SpeechAssetCoordinator: ObservableObject {
     }
 
     func configureSelectedLocale(_ locale: AppleSpeechLocale?) {
-        selectedLocaleIdentifier = locale?.localeIdentifier
         recheck(locale: locale)
+        selectedLocaleIdentifier = locale?.localeIdentifier
     }
 
     func prepare(locale: AppleSpeechLocale) {
@@ -709,6 +709,13 @@ final class SpeechAssetCoordinator: ObservableObject {
             return
         }
 
+        if (activeRequest != nil || installTask != nil),
+           SpeechAssetLocaleIdentifier.canonical(targetIdentifier) == SpeechAssetLocaleIdentifier.canonical(snapshot.normalizedLocaleIdentifier ?? snapshot.requestedLocaleIdentifier ?? "") {
+            return
+        }
+        generation &+= 1
+        let operationGeneration = generation
+        stopLocalMonitoring(cancelReportedProgress: false)
         selectedLocaleIdentifier = locale?.localeIdentifier ?? selectedLocaleIdentifier
         if activeRequest == nil, clearsCancellation {
             userCancelled = false
@@ -723,7 +730,8 @@ final class SpeechAssetCoordinator: ObservableObject {
         Task { [weak self] in
             await self?.performRecheck(
                 locale: Locale(identifier: targetIdentifier),
-                monitorsSystemWork: monitorsSystemWork
+                monitorsSystemWork: monitorsSystemWork,
+                generation: operationGeneration
             )
         }
     }
@@ -938,6 +946,7 @@ final class SpeechAssetCoordinator: ObservableObject {
     }
 
     private func performPrepare(locale: Locale, generation operationGeneration: UInt) async {
+        guard isCurrent(operationGeneration) else { return }
         guard let client, client.isSpeechTranscriberAvailable else {
             blockingIssue = .unsupported
             deriveState()
@@ -948,6 +957,7 @@ final class SpeechAssetCoordinator: ObservableObject {
         guard isCurrent(operationGeneration) else { return }
 
         guard let normalized = await client.normalizedLocale(equivalentTo: locale) else {
+            guard isCurrent(operationGeneration) else { return }
             blockingIssue = .unsupported
             deriveState()
             return
@@ -957,8 +967,11 @@ final class SpeechAssetCoordinator: ObservableObject {
         normalizedLocale = normalized
         updateSnapshot { $0.normalizedLocaleIdentifier = normalized.identifier(.bcp47) }
 
-        if await matchingReservedLocale(for: normalized, client: client) == nil {
+        let reservation = await matchingReservedLocale(for: normalized, client: client)
+        guard isCurrent(operationGeneration) else { return }
+        if reservation == nil {
             let reserved = await client.reservedLocales()
+            guard isCurrent(operationGeneration) else { return }
             guard reserved.count < client.maximumReservedLocales else {
                 let failure = SpeechAssetFailure(
                     domain: SFSpeechErrorDomain,
@@ -975,12 +988,14 @@ final class SpeechAssetCoordinator: ObservableObject {
             setState(.reserving)
             do {
                 _ = try await client.reserve(locale: normalized)
+                guard isCurrent(operationGeneration) else { return }
                 metadataStore.markReserved(normalized.identifier)
                 AppLogger.info(
                     "Speech asset locale reserved: locale=\(normalized.identifier)",
                     context: "SpeechAssetCoordinator"
                 )
             } catch {
+                guard isCurrent(operationGeneration) else { return }
                 handleError(error)
                 return
             }
@@ -1004,7 +1019,9 @@ final class SpeechAssetCoordinator: ObservableObject {
 
         do {
             guard let request = try await client.installationRequest(for: normalized) else {
+                guard isCurrent(operationGeneration) else { return }
                 let refreshed = await client.status(for: normalized)
+                guard isCurrent(operationGeneration) else { return }
                 updateSnapshot { $0.inventoryStatus = refreshed }
                 if refreshed == .installed {
                     await finishInstalled(locale: normalized)
@@ -1071,11 +1088,13 @@ final class SpeechAssetCoordinator: ObservableObject {
                 }
             }
         } catch {
+            guard isCurrent(operationGeneration) else { return }
             handleError(error)
         }
     }
 
-    private func performRecheck(locale: Locale, monitorsSystemWork: Bool) async {
+    private func performRecheck(locale: Locale, monitorsSystemWork: Bool, generation operationGeneration: UInt) async {
+        guard isCurrent(operationGeneration) else { return }
         guard let client, client.isSpeechTranscriberAvailable else {
             blockingIssue = .unsupported
             deriveState()
@@ -1083,12 +1102,15 @@ final class SpeechAssetCoordinator: ObservableObject {
         }
         await refreshInventory(selectedLocaleIdentifier: selectedLocaleIdentifier)
         guard let normalized = await client.normalizedLocale(equivalentTo: locale) else {
+            guard isCurrent(operationGeneration) else { return }
             blockingIssue = .unsupported
             deriveState()
             return
         }
+        guard isCurrent(operationGeneration) else { return }
         normalizedLocale = normalized
         let status = await client.status(for: normalized)
+        guard isCurrent(operationGeneration) else { return }
         updateSnapshot {
             $0.normalizedLocaleIdentifier = normalized.identifier(.bcp47)
             $0.inventoryStatus = status
@@ -1102,8 +1124,8 @@ final class SpeechAssetCoordinator: ObservableObject {
             updateSnapshot { $0.isOperationActive = false }
         }
         if status == .downloading, activeRequest == nil, monitorsSystemWork {
-            startStatusPolling(locale: normalized, generation: generation)
-            startExtendedWaitTimer(generation: generation)
+            startStatusPolling(locale: normalized, generation: operationGeneration)
+            startExtendedWaitTimer(generation: operationGeneration)
         }
     }
 
@@ -1272,6 +1294,7 @@ final class SpeechAssetCoordinator: ObservableObject {
     }
 
     private func refreshInventory(selectedLocaleIdentifier: String?) async {
+        let operationGeneration = generation
         guard let client else {
             updateSnapshot {
                 $0.maximumReservedLocales = 0
@@ -1281,13 +1304,17 @@ final class SpeechAssetCoordinator: ObservableObject {
         }
 
         let supported = await client.supportedLocales()
+        guard isCurrent(operationGeneration) else { return }
         let installed = await client.installedLocales()
+        guard isCurrent(operationGeneration) else { return }
         let reserved = await client.reservedLocales()
+        guard isCurrent(operationGeneration) else { return }
 
         var normalizedReserved: [String: Locale] = [:]
         var normalizedReservedLocales: [String: Locale] = [:]
         for locale in reserved {
             let normalized = await client.normalizedLocale(equivalentTo: locale) ?? locale
+            guard isCurrent(operationGeneration) else { return }
             let canonical = SpeechAssetLocaleIdentifier.canonical(normalized)
             normalizedReserved[canonical] = locale
             normalizedReservedLocales[canonical] = normalized
@@ -1297,6 +1324,7 @@ final class SpeechAssetCoordinator: ObservableObject {
         var normalizedInstalledLocales: [String: Locale] = [:]
         for locale in installed {
             let normalized = await client.normalizedLocale(equivalentTo: locale) ?? locale
+            guard isCurrent(operationGeneration) else { return }
             let canonical = SpeechAssetLocaleIdentifier.canonical(normalized)
             installedIdentifiers.insert(canonical)
             normalizedInstalledLocales[canonical] = normalized

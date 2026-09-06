@@ -200,6 +200,8 @@ struct TranscribeAudioIntent: AppIntent {
             throw IntentError.noAudioFile
         }
 
+        modelManager.beginTranscriptionOperation()
+        defer { modelManager.endTranscriptionOperation() }
         let transcriptionText = try await audioFile.withFile(contentType: .audiovisualContent, allowOpenInPlace: true) { audioURL, _ in
             switch settings.selectedTranscriptionModel.backend {
             case .whisper:
@@ -212,7 +214,8 @@ struct TranscribeAudioIntent: AppIntent {
             case .appleSpeech(let locale):
                 return try await transcribeWithAppleSpeechIntent(
                     inputURL: audioURL,
-                    locale: locale
+                    locale: locale,
+                    languageOverride: language
                 )
             }
         }
@@ -371,6 +374,8 @@ private func transcribeWithWhisperIntent(
 
     do {
         let result = try await WhisperModelService.shared.transcribe(
+            modelPath: modelManager.modelPath,
+            useFlashAttention: settings.useFlashAttention,
             inputURL: audioURL,
             language: selectedLanguage == "auto" ? "" : selectedLanguage,
             translate: settings.translateToEnglish,
@@ -392,7 +397,7 @@ private func transcribeWithWhisperIntent(
 
 @MainActor
 @available(iOS 18.0, *)
-private func transcribeWithAppleSpeechIntent(inputURL: URL, locale: AppleSpeechLocale) async throws -> String {
+private func transcribeWithAppleSpeechIntent(inputURL: URL, locale: AppleSpeechLocale, languageOverride: String? = nil) async throws -> String {
     guard #available(iOS 26.0, *) else {
         throw IntentError.speechUnavailable
     }
@@ -400,10 +405,15 @@ private func transcribeWithAppleSpeechIntent(inputURL: URL, locale: AppleSpeechL
         throw IntentError.speechUnavailable
     }
 
+    let effectiveLocale = try await IntentSpeechLanguage.resolve(
+        override: languageOverride, selected: locale,
+        normalize: { await SpeechTranscriber.supportedLocale(equivalentTo: $0) }
+    )
+
     do {
         let result = try await AppleSpeechTranscriptionService().transcribe(
             inputURL: inputURL,
-            locale: locale,
+            locale: effectiveLocale,
             includeTimestamps: false
         ) { _ in }
         return result.text
@@ -479,5 +489,20 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
         case .emptyTag:
             return "Enter at least one tag."
         }
+    }
+}
+
+enum IntentSpeechLanguage {
+    static func resolve(
+        override: String?, selected: AppleSpeechLocale,
+        normalize: (Locale) async -> Locale?
+    ) async throws -> AppleSpeechLocale {
+        guard let override else { return selected }
+        let identifier = override.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !identifier.isEmpty, identifier.lowercased() != "auto",
+              let normalized = await normalize(Locale(identifier: identifier)) else {
+            throw IntentError.speechLocaleNotSupported
+        }
+        return AppleSpeechLocale(locale: normalized)
     }
 }

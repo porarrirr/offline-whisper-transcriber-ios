@@ -92,7 +92,7 @@ struct TranscriptionSegment: Codable, Identifiable, Hashable {
         return String(format: "%02d:%02d:%02d,%03d", hours, minutes, seconds, milliseconds)
     }
 
-    private static func joinedPlainText(from parts: [String]) -> String {
+    static func joinedPlainText(from parts: [String]) -> String {
         let normalizedParts = parts
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -170,7 +170,7 @@ enum TranscriptionTimelineItem: Identifiable, Equatable {
         var nextMarker = markerInterval
 
         for segment in segments {
-            let segmentBoundary = max(segment.start, segment.end)
+            let segmentBoundary = segment.start
             while Double(nextMarker) <= segmentBoundary {
                 items.append(.marker(seconds: nextMarker))
                 nextMarker += markerInterval

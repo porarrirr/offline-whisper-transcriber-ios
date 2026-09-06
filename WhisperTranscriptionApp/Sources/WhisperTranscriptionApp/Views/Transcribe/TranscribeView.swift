@@ -330,10 +330,10 @@ struct TranscribeView: View {
     }
 
     private var recordingButtonDisabled: Bool {
-        viewModel.isProcessing
-            || recordingService.isChangingRecordingState
-            || recordingService.liveState == .preparing
-            || recordingService.liveState == .finalizing
+        recordingService.isChangingRecordingState
+            || (!recordingService.isRecording && (viewModel.isProcessing
+                || recordingService.liveState == .preparing
+                || recordingService.liveState == .finalizing))
     }
 
     private var inputSelectionDisabled: Bool {
