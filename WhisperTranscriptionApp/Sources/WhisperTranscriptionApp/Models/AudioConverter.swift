@@ -597,6 +597,25 @@ class AudioConverter {
         return audioFile
     }
 
+    /// Creates one pull-based conversion stream. The converter and level
+    /// conditioner retain their state until the real end of the asset.
+    func makeSpeechAudioConversionSession(
+        inputURL: URL,
+        compatibleFormat: AVAudioFormat,
+        preprocessAudio: Bool = true
+    ) async throws -> SpeechAudioConversionSession {
+        let asset = AVURLAsset(url: inputURL)
+        let tracks = try await asset.loadTracks(withMediaType: .audio)
+        guard let track = tracks.first else { throw AudioConverterError.missingAudioTrack }
+        let duration = try await asset.load(.duration).seconds
+        guard duration.isFinite, duration > 0 else { throw AudioConverterError.emptyAudioFile }
+        try Task.checkCancellation()
+        return try SpeechAudioConversionSession(
+            asset: asset, track: track, outputFormat: compatibleFormat,
+            preprocessAudio: preprocessAudio, duration: duration
+        )
+    }
+
     private func extractAssetAudioForSpeechTranscriber(
         asset: AVURLAsset,
         audioTrack: AVAssetTrack,
@@ -604,194 +623,193 @@ class AudioConverter {
         outputFormat: AVAudioFormat,
         preprocessAudio: Bool
     ) async throws -> PreparedSpeechAudioFile {
+        let duration = try await asset.load(.duration).seconds
+        let session = try SpeechAudioConversionSession(
+            asset: asset, track: audioTrack, outputFormat: outputFormat,
+            preprocessAudio: preprocessAudio, duration: duration
+        )
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("speech-audio-\(UUID().uuidString)")
             .appendingPathExtension("caf")
-        let outputFile = try AVAudioFile(
-            forWriting: outputURL,
-            settings: outputFormat.settings,
-            commonFormat: outputFormat.commonFormat,
-            interleaved: outputFormat.isInterleaved
-        )
-
-        let outputSettings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVLinearPCMBitDepthKey: 32,
-            AVLinearPCMIsFloatKey: true,
-            AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsNonInterleaved: true
-        ]
-
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: audioTrack, outputSettings: outputSettings)
-        output.alwaysCopiesSampleData = false
-        guard reader.canAdd(output) else {
-            throw AudioConverterError.readerOutputCreationFailed
-        }
-        reader.add(output)
-
-        guard reader.startReading() else {
-            throw AudioConverterError.readerFailed(reader.error)
-        }
-
-        var writtenFrameCount = 0
-        var signalSampleCount = 0
-        var signalSquareSum = 0.0
-        var signalPeak = 0.0
         do {
-            // Keep the resampler alive through the entire asset. Each decoded AAC
-            // buffer is part of one stream, not an independent end-of-stream.
-            writtenFrameCount = try Self.writeConverted(
-                outputFormat: outputFormat,
-                outputFile: outputFile,
-                preprocessor: preprocessAudio ? SpeechAudioPreprocessor() : nil
-            ) {
-                try Task.checkCancellation()
-                while reader.status == .reading {
-                    guard let sampleBuffer = output.copyNextSampleBuffer() else {
-                        return nil
-                    }
-                    guard let inputBuffer = try self.makePCMBuffer(from: sampleBuffer) else {
-                        continue
-                    }
-                    Self.accumulateSignalStatistics(
-                        from: inputBuffer,
-                        sampleCount: &signalSampleCount,
-                        squareSum: &signalSquareSum,
-                        peak: &signalPeak
-                    )
-                    return inputBuffer
-                }
-                return nil
+            let outputFile = try AVAudioFile(
+                forWriting: outputURL, settings: outputFormat.settings,
+                commonFormat: outputFormat.commonFormat,
+                interleaved: outputFormat.isInterleaved
+            )
+            while let buffer = try session.nextBuffer() {
+                try outputFile.write(from: buffer)
             }
-
-            switch reader.status {
-            case .completed:
-                break
-            case .failed:
-                throw AudioConverterError.readerFailed(reader.error)
-            case .cancelled:
-                throw AudioConverterError.readerCancelled
-            default:
-                throw AudioConverterError.conversionEndedUnexpectedly
-            }
+            guard session.writtenFrameCount > 0 else { throw AudioConverterError.emptyAudioFile }
         } catch {
             try? FileManager.default.removeItem(at: outputURL)
             throw error
         }
-
-        guard writtenFrameCount > 0 else {
-            try? FileManager.default.removeItem(at: outputURL)
-            throw AudioConverterError.emptyAudioFile
-        }
-
-        let preparedFile = try AVAudioFile(forReading: outputURL)
-        guard preparedFile.length > 0 else {
-            try? FileManager.default.removeItem(at: outputURL)
-            throw AudioConverterError.emptyAudioFile
-        }
-
-        let signalRMS = signalSampleCount > 0
-            ? sqrt(signalSquareSum / Double(signalSampleCount))
-            : 0
-        AppLogger.info(
-            "Apple SpeechTranscriber用音声を書き出しました: source=\(inputURL.lastPathComponent), output=\(outputURL.lastPathComponent), frames=\(preparedFile.length), format=\(Self.formatDescription(preparedFile.processingFormat)), signalSamples=\(signalSampleCount), rms=\(Self.decibelDescription(signalRMS))dBFS, peak=\(Self.decibelDescription(signalPeak))dBFS",
-            context: "AudioConverter"
-        )
-
-        if preprocessAudio {
-            AppLogger.info(
-                "Apple SpeechTranscriber preprocessing applied: highPass=60Hz, targetRMS=-24dBFS, maxGain=6, peakCeiling=0.95, frames=\(writtenFrameCount)",
-                context: "AudioConverter"
-            )
-        }
         return PreparedSpeechAudioFile(
             url: outputURL,
-            duration: durationForAudioFile(preparedFile, inputFormat: preparedFile.processingFormat),
+            duration: Double(session.writtenFrameCount) / outputFormat.sampleRate,
             requiresCleanup: true
         )
     }
 
-    /// Pulls consecutive decoded buffers into a single converter and drains it
-    /// once, at the real end of the asset. This preserves fractional resampling
-    /// phase and filter history across packet boundaries.
-    private static func writeConverted(
-        outputFormat: AVAudioFormat,
-        outputFile: AVAudioFile,
-        preprocessor: SpeechAudioPreprocessor?,
-        nextInputBuffer: () throws -> AVAudioPCMBuffer?
-    ) throws -> Int {
-        guard let firstBuffer = try nextInputBuffer() else { return 0 }
-        let inputFormat = firstBuffer.format
-        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
-            throw AudioConverterError.converterCreationFailed
-        }
-        converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
-        converter.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
+    /// Single-consumer stream with bounded storage. No background producer or
+    /// unbounded queue: decoding advances only when the analyzer requests audio.
+    final class SpeechAudioConversionSession {
+        let outputFormat: AVAudioFormat
+        let duration: TimeInterval
+        private(set) var writtenFrameCount = 0
+        private let reader: AVAssetReader
+        private let trackOutput: AVAssetReaderTrackOutput
+        private let converter: AVAudioConverter
+        private let inputFormat: AVAudioFormat
+        private let preprocessor: SpeechAudioPreprocessor?
+        private var pendingBuffer: AVAudioPCMBuffer?
+        private var reachedEnd = false
+        private var finished = false
+        private var signalSampleCount = 0
+        private var signalSquareSum = 0.0
+        private var signalPeak = 0.0
 
-        guard let outputBuffer = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: 8_192) else {
-            throw AudioConverterError.bufferCreationFailed
-        }
-        var pendingBuffer: AVAudioPCMBuffer? = firstBuffer
-        var reachedEnd = false
-        var inputError: Error?
-        var writtenFrameCount = 0
-
-        while true {
-            try Task.checkCancellation()
-            var error: NSError?
-            let status = converter.convert(to: outputBuffer, error: &error) { _, outStatus in
-                if reachedEnd {
-                    outStatus.pointee = .endOfStream
-                    return nil
+        init(
+            asset: AVAsset, track: AVAssetTrack, outputFormat: AVAudioFormat,
+            preprocessAudio: Bool, duration: TimeInterval
+        ) throws {
+            guard outputFormat.commonFormat != .otherFormat else {
+                throw AudioConverterError.outputFormatCreationFailed
+            }
+            self.outputFormat = outputFormat
+            self.duration = duration
+            preprocessor = preprocessAudio ? SpeechAudioPreprocessor() : nil
+            reader = try AVAssetReader(asset: asset)
+            trackOutput = AVAssetReaderTrackOutput(track: track, outputSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVLinearPCMBitDepthKey: 32,
+                AVLinearPCMIsFloatKey: true,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsNonInterleaved: true
+            ])
+            trackOutput.alwaysCopiesSampleData = false
+            guard reader.canAdd(trackOutput) else { throw AudioConverterError.readerOutputCreationFailed }
+            reader.add(trackOutput)
+            guard reader.startReading() else { throw AudioConverterError.readerFailed(reader.error) }
+            do {
+                var firstBuffer: AVAudioPCMBuffer?
+                while firstBuffer == nil, let sample = trackOutput.copyNextSampleBuffer() {
+                    try Task.checkCancellation()
+                    firstBuffer = try AudioConverter.shared.makePCMBuffer(from: sample)
                 }
-                do {
-                    let buffer: AVAudioPCMBuffer?
-                    if let pending = pendingBuffer {
-                        buffer = pending
-                        pendingBuffer = nil
-                    } else {
-                        buffer = try nextInputBuffer()
-                    }
-                    guard let buffer else {
-                        reachedEnd = true
+                guard let firstBuffer else {
+                    if reader.status == .failed { throw AudioConverterError.readerFailed(reader.error) }
+                    throw AudioConverterError.emptyAudioFile
+                }
+                inputFormat = firstBuffer.format
+                pendingBuffer = firstBuffer
+                guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
+                    throw AudioConverterError.converterCreationFailed
+                }
+                self.converter = converter
+                converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
+                converter.sampleRateConverterAlgorithm = AVSampleRateConverterAlgorithm_Mastering
+            } catch {
+                reader.cancelReading()
+                throw error
+            }
+        }
+
+        deinit { reader.cancelReading() }
+
+        func nextBuffer() throws -> AVAudioPCMBuffer? {
+            do {
+                return try readNextBuffer()
+            } catch {
+                finished = true
+                reader.cancelReading()
+                throw error
+            }
+        }
+
+        private func readNextBuffer() throws -> AVAudioPCMBuffer? {
+            try Task.checkCancellation()
+            guard !finished else { return nil }
+            while true {
+                // Each returned buffer owns its samples, even when the consumer
+                // retains an earlier input. Frame boundaries stay at 8192.
+                guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: 8_192) else {
+                    throw AudioConverterError.bufferCreationFailed
+                }
+                var inputError: Error?
+                var conversionError: NSError?
+                let status = converter.convert(to: output, error: &conversionError) { _, outStatus in
+                    if self.reachedEnd {
                         outStatus.pointee = .endOfStream
                         return nil
                     }
-                    guard buffer.format == inputFormat else {
-                        throw AudioConverterError.invalidAudioFile
+                    do {
+                        try Task.checkCancellation()
+                        let buffer: AVAudioPCMBuffer?
+                        if let pending = self.pendingBuffer {
+                            buffer = pending
+                            self.pendingBuffer = nil
+                        } else {
+                            buffer = try self.readInputBuffer()
+                        }
+                        guard let buffer else {
+                            self.reachedEnd = true
+                            outStatus.pointee = .endOfStream
+                            return nil
+                        }
+                        guard buffer.format == self.inputFormat else { throw AudioConverterError.invalidAudioFile }
+                        AudioConverter.accumulateSignalStatistics(
+                            from: buffer, sampleCount: &self.signalSampleCount,
+                            squareSum: &self.signalSquareSum, peak: &self.signalPeak
+                        )
+                        outStatus.pointee = .haveData
+                        return buffer
+                    } catch {
+                        inputError = error
+                        self.reachedEnd = true
+                        outStatus.pointee = .endOfStream
+                        return nil
                     }
-                    outStatus.pointee = .haveData
-                    return buffer
-                } catch {
-                    inputError = error
-                    reachedEnd = true
-                    outStatus.pointee = .endOfStream
-                    return nil
                 }
+                if let inputError { throw inputError }
+                switch status {
+                case .haveData: break
+                case .endOfStream:
+                    guard reader.status == .completed else {
+                        if reader.status == .failed { throw AudioConverterError.readerFailed(reader.error) }
+                        if reader.status == .cancelled { throw AudioConverterError.readerCancelled }
+                        throw AudioConverterError.conversionEndedUnexpectedly
+                    }
+                    finished = true
+                case .inputRanDry: throw AudioConverterError.conversionEndedUnexpectedly
+                case .error:
+                    throw AudioConverterError.conversionFailed(conversionError ?? AudioConverterError.conversionEndedUnexpectedly)
+                @unknown default: throw AudioConverterError.conversionEndedUnexpectedly
+                }
+                try Task.checkCancellation()
+                let prepared = output.frameLength > 0 ? try preprocessor.map { try $0.process(output) } ?? output : nil
+                writtenFrameCount += Int(prepared?.frameLength ?? 0)
+                if finished {
+                    guard writtenFrameCount > 0 else { throw AudioConverterError.emptyAudioFile }
+                    let rms = signalSampleCount > 0 ? sqrt(signalSquareSum / Double(signalSampleCount)) : 0
+                    AppLogger.info(
+                        "Apple SpeechTranscriber conversion completed: frames=\(writtenFrameCount), format=\(AudioConverter.formatDescription(outputFormat)), signalSamples=\(signalSampleCount), rms=\(AudioConverter.decibelDescription(rms))dBFS, peak=\(AudioConverter.decibelDescription(signalPeak))dBFS, preprocessed=\(preprocessor != nil)",
+                        context: "AudioConverter"
+                    )
+                }
+                if let prepared { return prepared }
+                if finished { return nil }
             }
-            if let inputError { throw inputError }
-            if status == .error {
-                throw AudioConverterError.conversionFailed(error ?? AudioConverterError.conversionEndedUnexpectedly)
+        }
+
+        private func readInputBuffer() throws -> AVAudioPCMBuffer? {
+            while reader.status == .reading {
+                try Task.checkCancellation()
+                guard let sample = trackOutput.copyNextSampleBuffer() else { return nil }
+                if let buffer = try AudioConverter.shared.makePCMBuffer(from: sample) { return buffer }
             }
-            if outputBuffer.frameLength > 0 {
-                let preparedBuffer = try preprocessor.map { try $0.process(outputBuffer) } ?? outputBuffer
-                try outputFile.write(from: preparedBuffer)
-                writtenFrameCount += Int(preparedBuffer.frameLength)
-            }
-            switch status {
-            case .haveData:
-                continue
-            case .endOfStream:
-                return writtenFrameCount
-            case .inputRanDry:
-                // This synchronous source either supplies data or its true EOF.
-                throw AudioConverterError.conversionEndedUnexpectedly
-            case .error:
-                throw AudioConverterError.conversionFailed(error ?? AudioConverterError.conversionEndedUnexpectedly)
-            @unknown default:
-                throw AudioConverterError.conversionEndedUnexpectedly
-            }
+            return nil
         }
     }
 

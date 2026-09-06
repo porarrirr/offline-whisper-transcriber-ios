@@ -278,6 +278,47 @@ final class AppleSpeechEnhancementTests: XCTestCase {
         XCTAssertThrowsError(try SpeechAudioPreprocessor().process(buffer))
     }
 
+    func testSpeechPreprocessingMatchesOriginalBitsForEveryPCMLayout() throws {
+        for commonFormat in [AVAudioCommonFormat.pcmFormatFloat32, .pcmFormatInt16] {
+            for interleaved in [false, true] {
+                for channels: AVAudioChannelCount in [1, 2] {
+                    let format = try XCTUnwrap(AVAudioFormat(
+                        commonFormat: commonFormat, sampleRate: 16_000,
+                        channels: channels, interleaved: interleaved
+                    ))
+                    let original = SpeechAudioPreprocessorReference()
+                    let updated = SpeechAudioPreprocessor()
+                    var position = 0
+                    for count in [1, 137, 8_192, 1_601, 8_192, 13] {
+                        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)))
+                        buffer.frameLength = AVAudioFrameCount(count)
+                        for frame in 0..<count {
+                            for channel in 0..<Int(channels) {
+                                let plane = interleaved ? 0 : channel
+                                let offset = interleaved ? frame * Int(channels) + channel : frame
+                                let value = Float(sin(Double(position + frame) * 0.17)) * (channel == 0 ? 0.01 : 0.3)
+                                if commonFormat == .pcmFormatFloat32 {
+                                    buffer.floatChannelData![plane][offset] = value
+                                } else {
+                                    buffer.int16ChannelData![plane][offset] = Int16(value * 32_768)
+                                }
+                            }
+                        }
+                        let expected = try original.process(buffer)
+                        let actual = try updated.process(buffer)
+                        let expectedPlanes = UnsafeMutableAudioBufferListPointer(expected.mutableAudioBufferList)
+                        let actualPlanes = UnsafeMutableAudioBufferListPointer(actual.mutableAudioBufferList)
+                        for plane in 0..<expectedPlanes.count {
+                            XCTAssertEqual(actualPlanes[plane].mDataByteSize, expectedPlanes[plane].mDataByteSize)
+                            XCTAssertEqual(memcmp(actualPlanes[plane].mData!, expectedPlanes[plane].mData!, Int(expectedPlanes[plane].mDataByteSize)), 0)
+                        }
+                        position += count
+                    }
+                }
+            }
+        }
+    }
+
     private func makeSilentM4A(at url: URL, duration: TimeInterval = 0.25) throws {
         let sampleRate = 44_100.0
         let settings: [String: Any] = [

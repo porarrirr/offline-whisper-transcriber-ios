@@ -1,10 +1,12 @@
+// Frozen scalar implementation for bit-exact regression tests.
 import AVFoundation
 import Foundation
+@testable import WhisperTranscriptionApp
 
 /// Stateful, bounded level conditioning for Apple's file transcription input.
 /// Process decoded PCM before speech detection; never gate or remove audio.
 /// One instance belongs to one conversion, so packet size cannot change the gain.
-final class SpeechAudioPreprocessor {
+final class SpeechAudioPreprocessorReference {
     private var format: AVAudioFormat?
     private var previousInput: [Double] = []
     private var previousOutput: [Double] = []
@@ -55,26 +57,6 @@ final class SpeechAudioPreprocessor {
         let gainFall = 1 - exp(-1 / (sampleRate * 0.1))
         let limiterRelease = 1 - exp(-1 / (sampleRate * 0.1))
         var filtered = [Double](repeating: 0, count: channels)
-
-        // Work on local state so the inner sample loop does not repeatedly
-        // perform dynamic exclusivity checks on class properties. Commit even
-        // on invalid input, preserving the original partial-consumption state.
-        var previousInput = self.previousInput
-        var previousOutput = self.previousOutput
-        var squareSum = self.squareSum
-        var measuredFrames = self.measuredFrames
-        var targetGain = self.targetGain
-        var gain = self.gain
-        var limiterGain = self.limiterGain
-        defer {
-            self.previousInput = previousInput
-            self.previousOutput = previousOutput
-            self.squareSum = squareSum
-            self.measuredFrames = measuredFrames
-            self.targetGain = targetGain
-            self.gain = gain
-            self.limiterGain = limiterGain
-        }
 
         for frame in 0..<Int(input.frameLength) {
             var framePower = 0.0

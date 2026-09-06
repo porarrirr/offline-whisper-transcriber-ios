@@ -1,3 +1,5 @@
+// Frozen pre-optimization implementation for bit-exact regression tests.
+// Keep independent of production helpers so numerical changes are detected.
 import Accelerate
 import Foundation
 
@@ -5,7 +7,7 @@ import Foundation
 /// ファイル 1 本の文字起こしにつき 1 インスタンスを生成して使い回す(正規化ゲインを共有するため)。
 /// 正規化ゲインは最初に有声フレームを検出したチャンクで確定する(無音チャンクでは確定しない)。
 /// スレッド安全ではない。呼び出しは直列であること(チャンクコールバックは直列なので満たされる)。
-final class AudioPreprocessor {
+final class AudioPreprocessorReference {
     private static let sampleRate: Double = 16_000.0
     private static let highPassCutoffHz: Double = 80.0
     private static let highPassQ: Double = 0.70710678
@@ -144,11 +146,6 @@ final class AudioPreprocessor {
             powersByBin[bin].reserveCapacity(frameCount)
         }
 
-        // Scratch storage belongs to this call and is reused for every frame.
-        // Keep two FFT passes to avoid retaining a spectrum for every frame.
-        var workspace = FFTWorkspace()
-        var gains = [Float](repeating: 0, count: Self.binCount)
-        var smoothedGains = [Float](repeating: 0, count: Self.binCount)
         var frame = [Float](repeating: 0, count: Self.fftSize)
         for frameIndex in 0..<frameCount {
             let frameStart = frameIndex * Self.hopSize
@@ -156,10 +153,10 @@ final class AudioPreprocessor {
                 frame[sampleIndex] = padded[frameStart + sampleIndex] * window[sampleIndex]
             }
 
-            Self.forwardSpectrum(frame, using: fft, workspace: &workspace)
+            let spectrum = Self.forwardSpectrum(frame, using: fft)
             for bin in 0..<Self.binCount {
-                let real = workspace.real[bin]
-                let imaginary = workspace.imaginary[bin]
+                let real = spectrum.real[bin]
+                let imaginary = spectrum.imaginary[bin]
                 powersByBin[bin].append(real * real + imaginary * imaginary)
             }
         }
@@ -181,10 +178,11 @@ final class AudioPreprocessor {
                 frame[sampleIndex] = padded[frameStart + sampleIndex] * window[sampleIndex]
             }
 
-            Self.forwardSpectrum(frame, using: fft, workspace: &workspace)
+            let spectrum = Self.forwardSpectrum(frame, using: fft)
+            var gains = [Float](repeating: 0, count: Self.binCount)
             for bin in 0..<Self.binCount {
-                let real = workspace.real[bin]
-                let imaginary = workspace.imaginary[bin]
+                let real = spectrum.real[bin]
+                let imaginary = spectrum.imaginary[bin]
                 let power = real * real + imaginary * imaginary
                 let ratio = noiseFloor[bin] > 0
                     ? power / (Self.thresholdMultiplier * noiseFloor[bin])
@@ -192,6 +190,7 @@ final class AudioPreprocessor {
                 gains[bin] = min(max(ratio, Self.floorGain), 1.0)
             }
 
+            var smoothedGains = [Float](repeating: 0, count: Self.binCount)
             for bin in 0..<Self.binCount {
                 let previous = bin == 0 ? gains[0] : gains[bin - 1]
                 let next = bin == Self.binCount - 1 ? gains[bin] : gains[bin + 1]
@@ -204,18 +203,22 @@ final class AudioPreprocessor {
                     Self.temporalReleaseFactor * previousGain[bin]
                 )
             }
+            previousGain = gains
+
+            var filteredReal = spectrum.real
+            var filteredImaginary = spectrum.imaginary
             for bin in 0..<Self.binCount {
-                previousGain[bin] = gains[bin]
+                filteredReal[bin] *= gains[bin]
+                filteredImaginary[bin] *= gains[bin]
             }
 
-            for bin in 0..<Self.binCount {
-                workspace.real[bin] *= gains[bin]
-                workspace.imaginary[bin] *= gains[bin]
-            }
-
-            Self.inverseSamples(using: fft, workspace: &workspace)
+            let reconstructed = Self.inverseSamples(
+                real: filteredReal,
+                imaginary: filteredImaginary,
+                using: fft
+            )
             for sampleIndex in 0..<Self.fftSize {
-                overlapAdd[frameStart + sampleIndex] += workspace.reconstructed[sampleIndex] * window[sampleIndex]
+                overlapAdd[frameStart + sampleIndex] += reconstructed[sampleIndex] * window[sampleIndex]
             }
         }
 
@@ -317,31 +320,24 @@ final class AudioPreprocessor {
         return fft
     }
 
-    private struct FFTWorkspace {
-        var inputReal = [Float](repeating: 0, count: AudioPreprocessor.fftSize / 2)
-        var inputImaginary = [Float](repeating: 0, count: AudioPreprocessor.fftSize / 2)
-        var outputReal = [Float](repeating: 0, count: AudioPreprocessor.fftSize / 2)
-        var outputImaginary = [Float](repeating: 0, count: AudioPreprocessor.fftSize / 2)
-        var real = [Float](repeating: 0, count: AudioPreprocessor.binCount)
-        var imaginary = [Float](repeating: 0, count: AudioPreprocessor.binCount)
-        var reconstructed = [Float](repeating: 0, count: AudioPreprocessor.fftSize)
-    }
-
     private static func forwardSpectrum(
         _ frame: [Float],
-        using fft: vDSP.FFT<DSPSplitComplex>,
-        workspace: inout FFTWorkspace
-    ) {
+        using fft: vDSP.FFT<DSPSplitComplex>
+    ) -> (real: [Float], imaginary: [Float]) {
         let complexCount = Self.fftSize / 2
+        var inputReal = [Float](repeating: 0, count: complexCount)
+        var inputImaginary = [Float](repeating: 0, count: complexCount)
         for index in 0..<complexCount {
-            workspace.inputReal[index] = frame[2 * index]
-            workspace.inputImaginary[index] = frame[2 * index + 1]
+            inputReal[index] = frame[2 * index]
+            inputImaginary[index] = frame[2 * index + 1]
         }
+        var outputReal = [Float](repeating: 0, count: complexCount)
+        var outputImaginary = [Float](repeating: 0, count: complexCount)
 
-        workspace.inputReal.withUnsafeMutableBufferPointer { inputRealBuffer in
-            workspace.inputImaginary.withUnsafeMutableBufferPointer { inputImaginaryBuffer in
-                workspace.outputReal.withUnsafeMutableBufferPointer { outputRealBuffer in
-                    workspace.outputImaginary.withUnsafeMutableBufferPointer { outputImaginaryBuffer in
+        inputReal.withUnsafeMutableBufferPointer { inputRealBuffer in
+            inputImaginary.withUnsafeMutableBufferPointer { inputImaginaryBuffer in
+                outputReal.withUnsafeMutableBufferPointer { outputRealBuffer in
+                    outputImaginary.withUnsafeMutableBufferPointer { outputImaginaryBuffer in
                         let input = DSPSplitComplex(
                             realp: inputRealBuffer.baseAddress!,
                             imagp: inputImaginaryBuffer.baseAddress!
@@ -356,33 +352,38 @@ final class AudioPreprocessor {
             }
         }
 
-        workspace.real[0] = workspace.outputReal[0]
-        workspace.real[Self.fftSize / 2] = workspace.outputImaginary[0]
-        // These bins are purely real; reset them when reusing the spectrum.
-        workspace.imaginary[0] = 0
-        workspace.imaginary[Self.fftSize / 2] = 0
+        var real = [Float](repeating: 0, count: Self.binCount)
+        var imaginary = [Float](repeating: 0, count: Self.binCount)
+        real[0] = outputReal[0]
+        real[Self.fftSize / 2] = outputImaginary[0]
         for bin in 1..<(Self.fftSize / 2) {
-            workspace.real[bin] = workspace.outputReal[bin]
-            workspace.imaginary[bin] = workspace.outputImaginary[bin]
+            real[bin] = outputReal[bin]
+            imaginary[bin] = outputImaginary[bin]
         }
+        return (real, imaginary)
     }
 
     private static func inverseSamples(
-        using fft: vDSP.FFT<DSPSplitComplex>,
-        workspace: inout FFTWorkspace
-    ) {
+        real: [Float],
+        imaginary: [Float],
+        using fft: vDSP.FFT<DSPSplitComplex>
+    ) -> [Float] {
         let complexCount = Self.fftSize / 2
-        workspace.inputReal[0] = workspace.real[0]
-        workspace.inputImaginary[0] = workspace.real[Self.fftSize / 2]
+        var inputReal = [Float](repeating: 0, count: complexCount)
+        var inputImaginary = [Float](repeating: 0, count: complexCount)
+        inputReal[0] = real[0]
+        inputImaginary[0] = real[Self.fftSize / 2]
         for bin in 1..<complexCount {
-            workspace.inputReal[bin] = workspace.real[bin]
-            workspace.inputImaginary[bin] = workspace.imaginary[bin]
+            inputReal[bin] = real[bin]
+            inputImaginary[bin] = imaginary[bin]
         }
+        var outputReal = [Float](repeating: 0, count: complexCount)
+        var outputImaginary = [Float](repeating: 0, count: complexCount)
 
-        workspace.inputReal.withUnsafeMutableBufferPointer { inputRealBuffer in
-            workspace.inputImaginary.withUnsafeMutableBufferPointer { inputImaginaryBuffer in
-                workspace.outputReal.withUnsafeMutableBufferPointer { outputRealBuffer in
-                    workspace.outputImaginary.withUnsafeMutableBufferPointer { outputImaginaryBuffer in
+        inputReal.withUnsafeMutableBufferPointer { inputRealBuffer in
+            inputImaginary.withUnsafeMutableBufferPointer { inputImaginaryBuffer in
+                outputReal.withUnsafeMutableBufferPointer { outputRealBuffer in
+                    outputImaginary.withUnsafeMutableBufferPointer { outputImaginaryBuffer in
                         let input = DSPSplitComplex(
                             realp: inputRealBuffer.baseAddress!,
                             imagp: inputImaginaryBuffer.baseAddress!
@@ -398,9 +399,11 @@ final class AudioPreprocessor {
         }
 
         let scale = 1.0 / (2.0 * Float(Self.fftSize))
+        var reconstructed = [Float](repeating: 0, count: Self.fftSize)
         for index in 0..<complexCount {
-            workspace.reconstructed[2 * index] = workspace.outputReal[index] * scale
-            workspace.reconstructed[2 * index + 1] = workspace.outputImaginary[index] * scale
+            reconstructed[2 * index] = outputReal[index] * scale
+            reconstructed[2 * index + 1] = outputImaginary[index] * scale
         }
+        return reconstructed
     }
 }

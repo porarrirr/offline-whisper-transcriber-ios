@@ -5872,6 +5872,7 @@
       }
     },
     "On-device speech recognition is processing." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -6575,6 +6576,7 @@
       }
     },
     "Processing will continue while this screen is open." : {
+      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -9560,6 +9562,7 @@
       }
     },
     "Transcription in progress" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {

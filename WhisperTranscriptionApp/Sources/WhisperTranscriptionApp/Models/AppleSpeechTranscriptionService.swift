@@ -141,44 +141,6 @@ struct AppleSpeechTranscriptionService {
         )
     }
 
-    @available(iOS 27.0, *)
-    private func transcribeAsset(
-        at inputURL: URL,
-        modules: [any SpeechModule],
-        transcriber: SpeechTranscriber,
-        onProgress: @escaping @MainActor (Double) -> Void
-    ) async throws -> SpeechFileAnalysis {
-        let asset = AVURLAsset(url: inputURL)
-        let duration = try await Self.duration(of: asset)
-
-        await MainActor.run { onProgress(0.4) }
-        let provider = try await AssetInputSequenceProvider.provider(
-            from: asset,
-            compatibleWith: modules,
-            priority: .userInitiated
-        )
-        AppLogger.info(
-            "Apple SpeechTranscriber input prepared: source=\(inputURL.lastPathComponent), input=AssetInputSequenceProvider, duration=\(String(format: "%.2f", duration))s",
-            context: "AppleSpeechTranscriptionService"
-        )
-
-        let collected = try await analyze(
-            provider.analyzerInputs,
-            modules: modules,
-            transcriber: transcriber,
-            preparationFormat: nil,
-            sourceName: inputURL.lastPathComponent,
-            inputPath: "AssetInputSequenceProvider",
-            expectedDuration: duration,
-            onProgress: onProgress
-        )
-        return SpeechFileAnalysis(
-            collected: collected,
-            duration: duration,
-            inputPath: "AssetInputSequenceProvider"
-        )
-    }
-
     private func transcribeAudioFile(
         at inputURL: URL,
         modules: [any SpeechModule],
@@ -198,52 +160,37 @@ struct AppleSpeechTranscriptionService {
         )
 
         await MainActor.run { onProgress(0.22) }
-        let preparedAudio = try await AudioConverter.shared.prepareAudioFileForSpeechTranscriber(
-            inputURL: inputURL,
-            compatibleFormat: compatibleFormat,
-            preprocessAudio: true
+        let session = try await AudioConverter.shared.makeSpeechAudioConversionSession(
+            inputURL: inputURL, compatibleFormat: compatibleFormat, preprocessAudio: true
         )
-        defer {
-            if preparedAudio.requiresCleanup {
-                try? FileManager.default.removeItem(at: preparedAudio.url)
-            }
+        let startedAt = Date()
+        let expectedDuration = session.duration
+        let inputSequence = SpeechConvertedAudioInputSequence(session: session) { consumedDuration in
+            let fraction = min(1, consumedDuration / expectedDuration)
+            await onProgress(0.5 + fraction * 0.4)
         }
-        // iOS 27's asset provider exposes opaque AnalyzerInput storage, not
-        // editable PCM. Condition the decoded audio first, then use its native
-        // provider on the prepared file. Both OS versions receive the same PCM.
-        if #available(iOS 27.0, *) {
-            return try await transcribeAsset(
-                at: preparedAudio.url,
-                modules: modules,
-                transcriber: transcriber,
-                onProgress: onProgress
-            )
-        }
-        let audioFile = try AudioConverter.shared.openAudioFileForSpeechTranscriber(
-            at: preparedAudio.url,
-            compatibleFormat: compatibleFormat
-        )
-        let duration = preparedAudio.duration
         AppLogger.info(
-            "Apple SpeechTranscriber audio prepared: source=\(inputURL.lastPathComponent), audio=\(preparedAudio.url.lastPathComponent), duration=\(String(format: "%.2f", duration))s, temporary=\(preparedAudio.requiresCleanup)",
+            "Apple SpeechTranscriber streaming preparation started: source=\(inputURL.lastPathComponent), format=\(Self.formatDescription(compatibleFormat)), duration=\(session.duration)s",
             context: "AppleSpeechTranscriptionService"
         )
-
-        await MainActor.run { onProgress(0.4) }
         let collected = try await analyze(
-            SpeechAudioFileInputSequence(audioFile: audioFile),
+            inputSequence,
             modules: modules,
             transcriber: transcriber,
-            preparationFormat: audioFile.processingFormat,
-            sourceName: preparedAudio.url.lastPathComponent,
-            inputPath: "SpeechAudioFileInputSequence",
-            expectedDuration: duration,
+            preparationFormat: compatibleFormat,
+            sourceName: inputURL.lastPathComponent,
+            inputPath: "SpeechConvertedAudioInputSequence",
+            expectedDuration: session.duration,
             onProgress: onProgress
+        )
+        AppLogger.info(
+            "Apple SpeechTranscriber streaming analysis completed: elapsed=\(Date().timeIntervalSince(startedAt))s, frames=\(session.writtenFrameCount)",
+            context: "AppleSpeechTranscriptionService"
         )
         return SpeechFileAnalysis(
             collected: collected,
-            duration: duration,
-            inputPath: "SpeechAudioFileInputSequence"
+            duration: Double(session.writtenFrameCount) / compatibleFormat.sampleRate,
+            inputPath: "SpeechConvertedAudioInputSequence"
         )
     }
 
@@ -311,14 +258,6 @@ struct AppleSpeechTranscriptionService {
         return try await resultsTask.value
     }
 
-    private static func duration(of asset: AVAsset) async throws -> TimeInterval {
-        let duration = try await asset.load(.duration).seconds
-        guard duration.isFinite, duration > 0 else {
-            throw AudioConverter.AudioConverterError.emptyAudioFile
-        }
-        return duration
-    }
-
     private func makeTranscriber(locale: AppleSpeechLocale) async throws -> SpeechTranscriber {
         guard SpeechTranscriber.isAvailable else {
             throw AppleSpeechTranscriptionError.transcriptionUnavailable
@@ -337,6 +276,54 @@ struct AppleSpeechTranscriptionService {
     private static func timeDescription(_ time: CMTime) -> String {
         let seconds = CMTimeGetSeconds(time)
         return seconds.isFinite ? "\(String(format: "%.3f", seconds))s" : "invalid"
+    }
+}
+
+/// Pull conversion only as fast as SpeechAnalyzer consumes it. The sequence
+/// owns one continuous resampler and conditioner, and never drops audio.
+@available(iOS 26.0, *)
+struct SpeechConvertedAudioInputSequence: AsyncSequence, @unchecked Sendable {
+    typealias Element = AnalyzerInput
+
+    struct AsyncIterator: AsyncIteratorProtocol {
+        let session: AudioConverter.SpeechAudioConversionSession
+        let onProgress: @Sendable (TimeInterval) async -> Void
+        private var lastProgressSecond = -1
+
+        init(session: AudioConverter.SpeechAudioConversionSession,
+             onProgress: @escaping @Sendable (TimeInterval) async -> Void) {
+            self.session = session
+            self.onProgress = onProgress
+        }
+
+        mutating func next() async throws -> AnalyzerInput? {
+            try Task.checkCancellation()
+            let startFrame = session.writtenFrameCount
+            guard let buffer = try session.nextBuffer() else { return nil }
+            let duration = Double(session.writtenFrameCount) / session.outputFormat.sampleRate
+            if Int(duration) != lastProgressSecond {
+                lastProgressSecond = Int(duration)
+                await onProgress(duration)
+            }
+            let startTime = CMTime(
+                value: Int64(startFrame),
+                timescale: CMTimeScale(session.outputFormat.sampleRate.rounded())
+            )
+            return AnalyzerInput(buffer: buffer, bufferStartTime: startTime)
+        }
+    }
+
+    let session: AudioConverter.SpeechAudioConversionSession
+    let onProgress: @Sendable (TimeInterval) async -> Void
+
+    init(session: AudioConverter.SpeechAudioConversionSession,
+         onProgress: @escaping @Sendable (TimeInterval) async -> Void = { _ in }) {
+        self.session = session
+        self.onProgress = onProgress
+    }
+
+    func makeAsyncIterator() -> AsyncIterator {
+        AsyncIterator(session: session, onProgress: onProgress)
     }
 }
 

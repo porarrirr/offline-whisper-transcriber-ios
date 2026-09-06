@@ -163,6 +163,79 @@ final class AudioConverterTests: XCTestCase {
         XCTAssertLessThan(sqrt(tailPower / 16_000), 0.05)
     }
 
+    func testStreamingSpeechInputIsLazyAndPreservesPCMAndTimestamps() async throws {
+        guard #available(iOS 26.0, *) else { throw XCTSkip("Requires SpeechAnalyzer") }
+        for rate in [44_100.0, 48_000.0] {
+            for commonFormat in [AVAudioCommonFormat.pcmFormatFloat32, .pcmFormatInt16] {
+                let source = try makeAudioFile(duration: 3.73, sampleRate: rate)
+                let format = try XCTUnwrap(AVAudioFormat(
+                    commonFormat: commonFormat, sampleRate: 16_000, channels: 1, interleaved: true
+                ))
+                let prepared = try await AudioConverter.shared.prepareAudioFileForSpeechTranscriber(
+                    inputURL: source, compatibleFormat: format, preprocessAudio: true
+                )
+                defer { try? FileManager.default.removeItem(at: prepared.url) }
+                let referenceFile = try AudioConverter.shared.openAudioFileForSpeechTranscriber(at: prepared.url, compatibleFormat: format)
+                let session = try await AudioConverter.shared.makeSpeechAudioConversionSession(inputURL: source, compatibleFormat: format)
+                XCTAssertEqual(session.writtenFrameCount, 0)
+                var iterator = SpeechConvertedAudioInputSequence(session: session).makeAsyncIterator()
+                var frameCount = 0
+                var retainedFirst: AVAudioPCMBuffer?
+                var retainedBytes: Data?
+                while true {
+                    let actual: AVAudioPCMBuffer
+                    if commonFormat == .pcmFormatInt16 {
+                        guard let input = try await iterator.next() else { break }
+                        actual = input.buffer
+                        XCTAssertEqual(input.bufferStartTime?.seconds ?? -1, Double(frameCount) / 16_000, accuracy: 0.000001)
+                    } else {
+                        // SpeechAnalyzer's input is Int16; verify the general
+                        // converter's Float32 support before wrapping in Speech.
+                        guard let buffer = try session.nextBuffer() else { break }
+                        actual = buffer
+                    }
+                    XCTAssertEqual(actual.format, format)
+                    let reference = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: actual.frameLength))
+                    try referenceFile.read(into: reference)
+                    XCTAssertEqual(actual.frameLength, reference.frameLength)
+                    let a = actual.audioBufferList.pointee.mBuffers
+                    let b = reference.audioBufferList.pointee.mBuffers
+                    XCTAssertEqual(Data(bytes: a.mData!, count: Int(a.mDataByteSize)), Data(bytes: b.mData!, count: Int(b.mDataByteSize)))
+                    if frameCount == 0 {
+                        XCTAssertEqual(session.writtenFrameCount, 8_192)
+                        retainedFirst = actual
+                        retainedBytes = Data(bytes: a.mData!, count: Int(a.mDataByteSize))
+                    }
+                    frameCount += Int(actual.frameLength)
+                }
+                XCTAssertEqual(frameCount, Int(referenceFile.length))
+                XCTAssertEqual(session.writtenFrameCount, frameCount)
+                let afterEnd = try await iterator.next()
+                XCTAssertNil(afterEnd)
+                let first = try XCTUnwrap(retainedFirst).audioBufferList.pointee.mBuffers
+                XCTAssertEqual(Data(bytes: first.mData!, count: Int(first.mDataByteSize)), retainedBytes)
+            }
+        }
+    }
+
+    func testStreamingSpeechConversionHonorsCancellation() async throws {
+        let source = try makeAudioFile(duration: 3, sampleRate: 48_000)
+        let format = try XCTUnwrap(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let session = try await AudioConverter.shared.makeSpeechAudioConversionSession(inputURL: source, compatibleFormat: format)
+        let task = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                _ = try session.nextBuffer()
+                XCTFail("Cancelled conversion must not produce audio")
+            } catch is CancellationError {
+                // Expected: the reader is stopped by nextBuffer's error path.
+            }
+        }
+        try await task.value
+        XCTAssertEqual(session.writtenFrameCount, 0)
+        XCTAssertNil(try session.nextBuffer())
+    }
+
     private func makeAudioFile(duration: Double, sampleRate: Double) throws -> URL {
         let format = try XCTUnwrap(AVAudioFormat(
             commonFormat: .pcmFormatFloat32,
