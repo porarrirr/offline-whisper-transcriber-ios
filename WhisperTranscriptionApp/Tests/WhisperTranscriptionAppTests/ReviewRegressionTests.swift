@@ -250,7 +250,14 @@ extension ReviewRegressionTests {
 private final class ReviewRecorder: RecordingAudioCapturing {
     var microphoneInputsPublisher: AnyPublisher<[RecordingMicrophone], Never> { Just([]).eraseToAnyPublisher() }
     var selectedMicrophonePublisher: AnyPublisher<String?, Never> { Just(nil).eraseToAnyPublisher() }
-    func switchMicrophone(to id: String) async throws {}
+    var switchGate: ReviewGate?
+    var selectedInput: String?
+    var switchError: Error?
+    func switchMicrophone(to id: String) async throws {
+        selectedInput = id
+        if let switchGate { await switchGate.wait() }
+        if let switchError { throw switchError }
+    }
     let recording = CurrentValueSubject<Bool, Never>(true)
     var recordingPublisher: AnyPublisher<Bool, Never> { recording.eraseToAnyPublisher() }
     var timePublisher: AnyPublisher<TimeInterval, Never> { Just(0).eraseToAnyPublisher() }
@@ -294,6 +301,42 @@ private final class ReviewLiveRecognizer: RecordingLiveRecognizing {
 }
 
 extension ReviewRegressionTests {
+    @MainActor
+    func testMicrophoneSwitchBlocksDuplicateSwitchAndStop() async throws {
+        let recorder = ReviewRecorder()
+        let gate = ReviewGate()
+        recorder.switchGate = gate
+        let service = RecordingService(audioRecorder: recorder)
+        service.isRecording = true
+        let switching = Task { await service.switchMicrophone(to: "built-in") }
+        try await eventually { recorder.selectedInput != nil }
+        XCTAssertTrue(service.isChangingRecordingState)
+        await service.switchMicrophone(to: "bluetooth")
+        XCTAssertEqual(recorder.selectedInput, "built-in")
+        do {
+            _ = try await service.stopRecording()
+            XCTFail("Stop must not race microphone reconfiguration")
+        } catch {
+            XCTAssertFalse(recorder.didStop)
+        }
+        await gate.open()
+        await switching.value
+        XCTAssertFalse(service.isSwitchingMicrophone)
+        XCTAssertTrue(service.isRecording)
+        XCTAssertFalse(recorder.didStop)
+    }
+
+    @MainActor
+    func testMicrophoneSwitchFailureIsVisibleAndClearsBusyState() async {
+        let recorder = ReviewRecorder()
+        recorder.switchError = AudioRecorderError.microphoneSwitchFailed("Disconnected")
+        let service = RecordingService(audioRecorder: recorder)
+        service.isRecording = true
+        await service.switchMicrophone(to: "bluetooth")
+        XCTAssertTrue(service.errorMessage?.contains("Disconnected") == true)
+        XCTAssertFalse(service.isSwitchingMicrophone)
+    }
+
     @MainActor
     func testRecordingStopsBeforeRecognitionFinalization() async throws {
         let recorder = ReviewRecorder()

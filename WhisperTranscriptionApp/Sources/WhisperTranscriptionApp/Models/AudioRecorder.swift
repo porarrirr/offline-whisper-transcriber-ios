@@ -178,6 +178,9 @@ final class AudioRecorder: NSObject, ObservableObject {
         do {
             audioEngine.stop()
             audioEngine.inputNode.removeTap(onBus: 0)
+            let usesBluetoothHFP = port.portType == .bluetoothHFP
+            try session.setMode(usesBluetoothHFP ? .voiceChat : .default)
+            try session.setPreferredSampleRate(preferredRecordingSampleRate(usesBluetoothHFP: usesBluetoothHFP))
             try session.setPreferredInput(port)
             var routeReady = false
             for _ in 0..<40 {
