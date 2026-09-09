@@ -5,6 +5,9 @@ import SwiftUI
 import UIKit
 
 protocol RecordingAudioCapturing: AnyObject {
+    var microphoneInputsPublisher: AnyPublisher<[RecordingMicrophone], Never> { get }
+    var selectedMicrophonePublisher: AnyPublisher<String?, Never> { get }
+    @MainActor func switchMicrophone(to id: String) async throws
     var recordingPublisher: AnyPublisher<Bool, Never> { get }
     var timePublisher: AnyPublisher<TimeInterval, Never> { get }
     var levelPublisher: AnyPublisher<Float, Never> { get }
@@ -20,6 +23,8 @@ protocol RecordingAudioCapturing: AnyObject {
 }
 
 extension AudioRecorder: RecordingAudioCapturing {
+    var microphoneInputsPublisher: AnyPublisher<[RecordingMicrophone], Never> { $microphoneInputs.eraseToAnyPublisher() }
+    var selectedMicrophonePublisher: AnyPublisher<String?, Never> { $selectedMicrophoneID.eraseToAnyPublisher() }
     var recordingPublisher: AnyPublisher<Bool, Never> { $isRecording.eraseToAnyPublisher() }
     var timePublisher: AnyPublisher<TimeInterval, Never> { $currentTime.eraseToAnyPublisher() }
     var levelPublisher: AnyPublisher<Float, Never> { $audioLevel.eraseToAnyPublisher() }
@@ -39,6 +44,9 @@ protocol RecordingLiveRecognizing: AnyObject {
 final class RecordingService: ObservableObject {
     static let shared = RecordingService()
 
+    @Published var microphoneInputs: [RecordingMicrophone] = []
+    @Published var selectedMicrophoneID: String?
+    @Published var isSwitchingMicrophone = false
     @Published var isRecording = false
     @Published var currentTime: TimeInterval = 0
     @Published var audioLevel: Float = 0
@@ -76,7 +84,7 @@ final class RecordingService: ObservableObject {
     }
 
     var isChangingRecordingState: Bool {
-        isStartingRecording || isStoppingRecording
+        isStartingRecording || isStoppingRecording || isSwitchingMicrophone
     }
 
     var canStartLiveTranscription: Bool {
@@ -115,6 +123,8 @@ final class RecordingService: ObservableObject {
         self.supportsLiveRecognition = supportsLiveRecognition
         self.resolveLiveLocale = resolveLiveLocale
         self.liveServiceFactory = liveServiceFactory
+        audioRecorder.microphoneInputsPublisher.receive(on: DispatchQueue.main).assign(to: &$microphoneInputs)
+        audioRecorder.selectedMicrophonePublisher.receive(on: DispatchQueue.main).assign(to: &$selectedMicrophoneID)
         audioRecorder.recordingPublisher
             .receive(on: DispatchQueue.main)
             .assign(to: &$isRecording)
@@ -157,6 +167,17 @@ final class RecordingService: ObservableObject {
             .store(in: &cancellables)
     }
 
+    func switchMicrophone(to id: String) async {
+        guard isRecording, !isChangingRecordingState else { return }
+        isSwitchingMicrophone = true
+        defer { isSwitchingMicrophone = false }
+        do {
+            try await audioRecorder.switchMicrophone(to: id)
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
     func startRecording() {
         Task {
             do {
@@ -176,7 +197,7 @@ final class RecordingService: ObservableObject {
     }
 
     func stopRecording() async throws -> URL {
-        guard !isStoppingRecording else {
+        guard !isStoppingRecording, !isSwitchingMicrophone else {
             throw AudioRecorderError.stopInProgress
         }
         isStoppingRecording = true

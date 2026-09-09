@@ -248,6 +248,9 @@ extension ReviewRegressionTests {
 }
 
 private final class ReviewRecorder: RecordingAudioCapturing {
+    var microphoneInputsPublisher: AnyPublisher<[RecordingMicrophone], Never> { Just([]).eraseToAnyPublisher() }
+    var selectedMicrophonePublisher: AnyPublisher<String?, Never> { Just(nil).eraseToAnyPublisher() }
+    func switchMicrophone(to id: String) async throws {}
     let recording = CurrentValueSubject<Bool, Never>(true)
     var recordingPublisher: AnyPublisher<Bool, Never> { recording.eraseToAnyPublisher() }
     var timePublisher: AnyPublisher<TimeInterval, Never> { Just(0).eraseToAnyPublisher() }

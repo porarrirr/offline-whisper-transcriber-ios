@@ -52,6 +52,46 @@ final class AudioRecorderStartTests: XCTestCase {
         XCTAssertEqual(monoSamples[1], 0.5, accuracy: 0.000_001)
     }
 
+    func testMicrophoneRouteFormatsAppendToOneRecording() throws {
+        // Both switching from HFP to built-in and the reverse must preserve
+        // one file format and duration, without treating upsampling as quality gain.
+        for recordingRate in [16_000.0, 48_000.0] {
+            let outputFormat = try XCTUnwrap(AVAudioFormat(
+                commonFormat: .pcmFormatFloat32, sampleRate: recordingRate,
+                channels: 1, interleaved: false
+            ))
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".caf")
+            defer { try? FileManager.default.removeItem(at: url) }
+            var file: AVAudioFile? = try AVAudioFile(forWriting: url, settings: outputFormat.settings)
+            var totalFrames: AVAudioFramePosition = 0
+            for (rate, channels) in [(48_000.0, AVAudioChannelCount(2)), (16_000.0, 1), (48_000.0, 1)] {
+                let inputFormat = try XCTUnwrap(AVAudioFormat(
+                    commonFormat: .pcmFormatFloat32, sampleRate: rate,
+                    channels: channels, interleaved: false
+                ))
+                let converter = try RecordingInputConverter(from: inputFormat, to: outputFormat)
+                let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: 1_024))
+                buffer.frameLength = 1_024
+                for channel in 0..<Int(channels) {
+                    for frame in 0..<1_024 { buffer.floatChannelData![channel][frame] = 0.25 }
+                }
+                for _ in 0..<10 {
+                    let converted = try converter.convert(buffer)
+                    XCTAssertEqual(converted.format, outputFormat)
+                    XCTAssertGreaterThan(converted.frameLength, 0)
+                    XCTAssertTrue(converted.floatChannelData![0][Int(converted.frameLength) - 1].isFinite)
+                    try file?.write(from: converted)
+                    totalFrames += AVAudioFramePosition(converted.frameLength)
+                }
+            }
+            file = nil
+            let saved = try AVAudioFile(forReading: url)
+            XCTAssertEqual(saved.length, totalFrames)
+            let expectedDuration = 10 * 1_024 * (2.0 / 48_000 + 1.0 / 16_000)
+            XCTAssertEqual(Double(saved.length) / recordingRate, expectedDuration, accuracy: 0.02)
+        }
+    }
+
     func testEngineStartSucceedsOnFirstAttemptWithoutRetryOrSleep() async throws {
         var startCount = 0
         var retryCount = 0
@@ -142,7 +182,7 @@ final class AudioRecorderStartTests: XCTestCase {
             usesBluetoothHFP: false,
             context: .backgroundIntent
         )
-        XCTAssertEqual(options, [.defaultToSpeaker])
+        XCTAssertEqual(options, [.defaultToSpeaker, .allowBluetoothHFP])
         XCTAssertFalse(options.contains(.mixWithOthers))
     }
 

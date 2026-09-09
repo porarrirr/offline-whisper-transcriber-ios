@@ -109,6 +109,44 @@ struct TranscribeView: View {
 
                 transport
 
+                if recordingService.isRecording {
+                    Menu {
+                        ForEach(recordingService.microphoneInputs) { input in
+                            Button {
+                                Task { await recordingService.switchMicrophone(to: input.id) }
+                            } label: {
+                                if input.id == recordingService.selectedMicrophoneID {
+                                    Label(input.name, systemImage: "checkmark")
+                                } else {
+                                    Text(input.name)
+                                }
+                            }
+                        }
+                    } label: {
+                        Label {
+                            if recordingService.isSwitchingMicrophone {
+                                Text("Switching microphone…")
+                            } else {
+                                Text(recordingService.microphoneInputs.first(where: {
+                                    $0.id == recordingService.selectedMicrophoneID
+                                })?.name ?? String(localized: "Microphone"))
+                            }
+                        } icon: {
+                            Image(systemName: "mic")
+                        }
+                    }
+                    .disabled(recordingService.isChangingRecordingState || recordingService.microphoneInputs.isEmpty)
+                    .accessibilityLabel(Text("Switch microphone"))
+
+                    if recordingService.microphoneInputs.first(where: {
+                        $0.id == recordingService.selectedMicrophoneID
+                    })?.isBluetooth == true {
+                        Text("Bluetooth microphones use call-quality audio (HFP). Choose the built-in microphone for higher-quality recording. Converting the audio format does not restore lost detail.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 LiveTranscriptionToggle(
                     isOn: liveTranscriptionBinding,
                     isAvailable: recordingService.canStartLiveTranscription,

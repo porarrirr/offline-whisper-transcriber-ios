@@ -13,6 +13,8 @@ final class AudioRecorder: NSObject, ObservableObject {
     private static let bluetoothHFPRecordingSampleRate = 16_000.0
     private static let recordingBitRate = 96_000
 
+    @Published var microphoneInputs: [RecordingMicrophone] = []
+    @Published var selectedMicrophoneID: String?
     @Published var isRecording = false
     @Published var currentTime: TimeInterval = 0
     @Published var audioLevel: Float = 0.0
@@ -85,7 +87,16 @@ final class AudioRecorder: NSObject, ObservableObject {
             try await setupSession(context: context)
             let url = try makeRecordingURL()
             let inputNode = audioEngine.inputNode
-            let format = try await waitForStableInputTapFormat(on: inputNode)
+            let hardwareFormat = try await waitForStableInputTapFormat(on: inputNode)
+            // A fixed 48 kHz timeline preserves built-in microphone bandwidth
+            // even when recording started on HFP. Upsampling HFP adds no detail.
+            guard let format = AVAudioFormat(
+                commonFormat: .pcmFormatFloat32,
+                sampleRate: Self.recordingSampleRate,
+                channels: 1,
+                interleaved: false
+            ) else { throw AudioRecorderError.recordingStartFailed("Invalid recording format") }
+            let converter = try RecordingInputConverter(from: hardwareFormat, to: format)
 
             let settings = Self.recordingFileSettings(sampleRate: format.sampleRate)
             let file: AVAudioFile
@@ -106,8 +117,13 @@ final class AudioRecorder: NSObject, ObservableObject {
                 "Installing audio input tap: sampleRate=\(format.sampleRate), channels=\(format.channelCount)",
                 context: "AudioRecorder"
             )
-            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: format) { [weak self] buffer, time in
-                self?.handleAudioBuffer(buffer, time: time, format: format)
+            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: hardwareFormat) { [weak self] buffer, time in
+                do {
+                    let converted = try converter.convert(buffer)
+                    self?.handleAudioBuffer(converted, time: time, format: format)
+                } catch {
+                    self?.reportEncodingFailure(error)
+                }
             }
 
             audioEngine.prepare()
@@ -137,6 +153,107 @@ final class AudioRecorder: NSObject, ObservableObject {
             cleanupFailedStart()
             throw error
         }
+    }
+
+    private func refreshMicrophones() {
+        let session = AVAudioSession.sharedInstance()
+        let inputs = (session.availableInputs ?? []).map {
+            RecordingMicrophone(id: $0.uid, name: $0.portName, isBluetooth: $0.portType == .bluetoothHFP)
+        }
+        let selected = session.currentRoute.inputs.first?.uid
+        DispatchQueue.main.async {
+            self.microphoneInputs = inputs
+            self.selectedMicrophoneID = selected
+        }
+    }
+
+    @MainActor
+    func switchMicrophone(to id: String) async throws {
+        let session = AVAudioSession.sharedInstance()
+        guard let port = session.availableInputs?.first(where: { $0.uid == id }) else {
+            throw AudioRecorderError.microphoneSwitchFailed("The selected microphone is no longer available.")
+        }
+        guard session.currentRoute.inputs.first?.uid != id else { return }
+        try beginMicrophoneSwitch()
+        do {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+            try session.setPreferredInput(port)
+            var routeReady = false
+            for _ in 0..<40 {
+                try ensureMicrophoneSwitchActive()
+                if session.currentRoute.inputs.contains(where: { $0.uid == id }) {
+                    routeReady = true
+                    break
+                }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            guard routeReady else {
+                throw AudioRecorderError.microphoneSwitchFailed("The selected microphone did not become active.")
+            }
+            let node = audioEngine.inputNode
+            let hardwareFormat = try await waitForStableInputTapFormat(on: node)
+            try ensureMicrophoneSwitchActive()
+            guard let format = currentInputFormat else { throw AudioRecorderError.noActiveRecording }
+            let converter = try RecordingInputConverter(from: hardwareFormat, to: format)
+            node.installTap(onBus: 0, bufferSize: 1_024, format: hardwareFormat) { [weak self] buffer, time in
+                do {
+                    let converted = try converter.convert(buffer)
+                    self?.handleAudioBuffer(converted, time: time, format: format)
+                } catch {
+                    self?.reportEncodingFailure(error)
+                }
+            }
+            audioEngine.prepare()
+            try audioEngine.start()
+            let initialFrames = recordedFrameCount()
+            var receivedAudio = false
+            for _ in 0..<100 {
+                try ensureMicrophoneSwitchActive()
+                if recordedFrameCount() > initialFrames, audioEngine.isRunning {
+                    receivedAudio = true
+                    break
+                }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            guard receivedAudio else {
+                throw AudioRecorderError.microphoneSwitchFailed("No audio was received from the selected microphone.")
+            }
+            try completeMicrophoneSwitch()
+            refreshMicrophones()
+            AppLogger.info("Recording microphone switched to \(port.portName)", context: "AudioRecorder")
+        } catch {
+            stopRecordingAfterUnexpectedAudioChange(
+                message: String(localized: "Microphone switching failed. The saved part is available for transcription.") + " " + error.localizedDescription
+            )
+            throw error
+        }
+    }
+
+    private func beginMicrophoneSwitch() throws {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard recordingState == .recording else { throw AudioRecorderError.noActiveRecording }
+        recordingState = .switchingMicrophone
+    }
+
+    private func ensureMicrophoneSwitchActive() throws {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard recordingState == .switchingMicrophone else { throw AudioRecorderError.noActiveRecording }
+    }
+
+    private func completeMicrophoneSwitch() throws {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard recordingState == .switchingMicrophone else { throw AudioRecorderError.noActiveRecording }
+        recordingState = .recording
+    }
+
+    private func recordedFrameCount() -> AVAudioFramePosition {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return recordedFrames
     }
 
     static func recordingFileSettings(sampleRate: Double) -> [String: Any] {
@@ -265,6 +382,7 @@ final class AudioRecorder: NSObject, ObservableObject {
             self.currentTime = 0
             self.audioLevel = 0
             self.isRecording = true
+            self.refreshMicrophones()
         }
     }
 
@@ -435,11 +553,11 @@ final class AudioRecorder: NSObject, ObservableObject {
         case .foreground:
             return usesBluetoothHFP
                 ? [.allowBluetoothHFP]
-                : [.defaultToSpeaker, .mixWithOthers]
+                : [.defaultToSpeaker, .mixWithOthers, .allowBluetoothHFP]
         case .backgroundIntent:
             return usesBluetoothHFP
                 ? [.allowBluetoothHFP]
-                : [.defaultToSpeaker]
+                : [.defaultToSpeaker, .allowBluetoothHFP]
         }
     }
 
@@ -544,7 +662,8 @@ final class AudioRecorder: NSObject, ObservableObject {
             handlerLock.lock()
             let handler = audioBufferHandler
             handlerLock.unlock()
-            handler?(buffer, time, format)
+            let sampleTime = AVAudioFramePosition((elapsedTime * format.sampleRate).rounded()) - AVAudioFramePosition(buffer.frameLength)
+            handler?(buffer, AVAudioTime(sampleTime: sampleTime, atRate: format.sampleRate), format)
         }
     }
 
@@ -558,7 +677,7 @@ final class AudioRecorder: NSObject, ObservableObject {
 
         stateLock.lock()
         file = recordingFile
-        let shouldRecord = recordingState == .starting || recordingState == .recording
+        let shouldRecord = recordingState == .starting || recordingState == .recording || recordingState == .switchingMicrophone
         stateLock.unlock()
 
         guard shouldRecord else { return .ignored }
@@ -817,6 +936,10 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     @objc private func handleAudioEngineConfigurationChange(_ notification: Notification) {
+        stateLock.lock()
+        let switching = recordingState == .switchingMicrophone
+        stateLock.unlock()
+        guard !switching else { return }
         let message = String(localized: "Recording stopped because the audio input changed. The saved part is available for transcription.")
         stopRecordingAfterUnexpectedAudioChange(message: message)
     }
@@ -852,7 +975,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     private func transitionActiveRecordingToStopping(includingStarting: Bool) -> URL? {
         stateLock.lock()
         defer { stateLock.unlock() }
-        let canStop = recordingState == .recording
+        let canStop = recordingState == .recording || recordingState == .switchingMicrophone
             || (includingStarting && recordingState == .starting)
         guard canStop, let recordingURL else { return nil }
         recordingState = .stopping
@@ -860,6 +983,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     @objc private func handleAudioRouteChange(_ notification: Notification) {
+        refreshMicrophones()
         guard isRecording else { return }
         let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
         AppLogger.info("Audio route changed while recording: reason=\(reasonValue)", context: "AudioRecorder")
@@ -908,9 +1032,12 @@ enum AudioRecorderError: LocalizedError {
     case recordingEncodingFailed(String)
     case microphonePermissionRequired
     case backgroundSessionActivationDenied
+    case microphoneSwitchFailed(String)
 
     var errorDescription: String? {
         switch self {
+        case .microphoneSwitchFailed(let detail):
+            return String(localized: "Microphone switching failed.") + " " + detail
         case .documentsDirectoryUnavailable:
             return String(localized: "Could not retrieve document directory for saving recording.")
         case .noActiveRecording:
@@ -933,7 +1060,14 @@ enum AudioRecorderError: LocalizedError {
     }
 }
 
+struct RecordingMicrophone: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let isBluetooth: Bool
+}
+
 private enum RecordingState {
+    case switchingMicrophone
     case idle
     case starting
     case recording
@@ -944,4 +1078,41 @@ private enum AudioBufferWriteResult {
     case ignored
     case written(TimeInterval)
     case failed(Error)
+}
+
+/// Keeps the recording and live recognizer format unchanged across hardware routes.
+final class RecordingInputConverter {
+    private let converter: AVAudioConverter
+    private let outputFormat: AVAudioFormat
+
+    init(from inputFormat: AVAudioFormat, to outputFormat: AVAudioFormat) throws {
+        guard let converter = AVAudioConverter(from: inputFormat, to: outputFormat) else {
+            throw AudioRecorderError.microphoneSwitchFailed("Unsupported microphone audio format.")
+        }
+        self.converter = converter
+        self.outputFormat = outputFormat
+    }
+
+    func convert(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+        let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * outputFormat.sampleRate / buffer.format.sampleRate)) + 32
+        guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
+            throw AudioRecorderError.microphoneSwitchFailed("Could not allocate an audio conversion buffer.")
+        }
+        var supplied = false
+        var error: NSError?
+        let status = converter.convert(to: output, error: &error) { _, inputStatus in
+            guard !supplied else {
+                inputStatus.pointee = .noDataNow
+                return nil
+            }
+            supplied = true
+            inputStatus.pointee = .haveData
+            return buffer
+        }
+        if let error { throw error }
+        guard status != .error else {
+            throw AudioRecorderError.microphoneSwitchFailed("Microphone audio conversion failed.")
+        }
+        return output
+    }
 }

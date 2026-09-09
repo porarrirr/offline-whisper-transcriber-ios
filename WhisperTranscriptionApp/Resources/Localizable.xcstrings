@@ -1,6 +1,72 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+"Microphone": {
+  "extractionState": "manual",
+  "localizations": {
+    "ja": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "マイク"
+      }
+    }
+  }
+},
+"Switch microphone": {
+  "extractionState": "manual",
+  "localizations": {
+    "ja": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "マイクを切り替える"
+      }
+    }
+  }
+},
+"Switching microphone…": {
+  "extractionState": "manual",
+  "localizations": {
+    "ja": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "マイクを切り替え中…"
+      }
+    }
+  }
+},
+"Microphone switching failed.": {
+  "extractionState": "manual",
+  "localizations": {
+    "ja": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "マイクの切り替えに失敗しました。"
+      }
+    }
+  }
+},
+"Microphone switching failed. The saved part is available for transcription.": {
+  "extractionState": "manual",
+  "localizations": {
+    "ja": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "マイクの切り替えに失敗しました。保存済みの音声は文字起こしできます。"
+      }
+    }
+  }
+},
+"Bluetooth microphones use call-quality audio (HFP). Choose the built-in microphone for higher-quality recording. Converting the audio format does not restore lost detail.": {
+  "extractionState": "manual",
+  "localizations": {
+    "ja": {
+      "stringUnit": {
+        "state": "translated",
+        "value": "Bluetoothマイクは通話用の音質（HFP）になります。音質を優先する場合は内蔵マイクを選んでください。音声形式を変換しても、失われた音の情報は復元されません。"
+      }
+    }
+  }
+},
     "Live transcription stopped because recognition could not keep up. The audio recording is preserved.": {
       "extractionState": "manual",
       "localizations": {
