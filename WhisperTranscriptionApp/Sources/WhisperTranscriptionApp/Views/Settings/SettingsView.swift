@@ -16,11 +16,192 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section {
+                NavigationLink {
+                    modelSettings
+                } label: {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Label("Model & Downloads", systemImage: "cpu")
+                            .font(.headline)
+                        Text(settings.selectedTranscriptionModel.displayName)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Label {
+                            Text(modelStatusText)
+                        } icon: {
+                            Image(systemName: modelManager.isModelReady ? "checkmark.circle" : "exclamationmark.circle")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(modelManager.isModelReady ? Theme.textSecondary : Theme.rec)
+                    }
+                    .padding(.vertical, 4)
+                }
+            } footer: {
+                Text("The model determines transcription speed, accuracy, and available languages.")
+            }
+
+            if settings.usesWhisperBackend {
+                Section {
+                    Button(action: { showLanguagePicker = true }) {
+                        HStack {
+                            Text("Transcription Language")
+                                .foregroundColor(Theme.textPrimary)
+                            Spacer()
+                            if let language = AppSettings.supportedLanguages.first(where: { $0.code == settings.selectedLanguage }) {
+                                Text(LocalizedStringKey(language.name))
+                                    .foregroundColor(Theme.textSecondary)
+                            }
+                        }
+                    }
+
+                    Toggle(isOn: $settings.translateToEnglish) {
+                        VStack(alignment: .leading) {
+                            Text("Translate to English")
+                            Text("Translate transcription results to English")
+                                .font(.subheadline)
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                    }
+                    .tint(Theme.amberFill)
+
+                    Toggle(isOn: $settings.includeTimestamps) {
+                        VStack(alignment: .leading) {
+                            Text("Include Timestamps")
+                            Text("Include timestamps in the transcription result")
+                                .font(.subheadline)
+                                .foregroundColor(Theme.textSecondary)
+                        }
+                    }
+                    .tint(Theme.amberFill)
+                } header: {
+                    Text("Language & Output")
+                }
+
+                Section {
+                    NavigationLink {
+                        advancedSettings
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Label("Advanced Transcription Settings", systemImage: "slider.horizontal.3")
+                            Text("Audio cleanup, silence detection, processing speed, and vocabulary hints")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+
+            Section {
+                Toggle(isOn: $settings.keepScreenOn) {
+                    VStack(alignment: .leading) {
+                        Text("Keep Screen On")
+                        Text("Keep the screen on during transcription")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                }
+                .tint(Theme.amberFill)
+
+                Toggle(isOn: $settings.autoDeleteRecordings) {
+                    VStack(alignment: .leading) {
+                        Text("Auto-Delete Recordings")
+                        Text("Automatically delete recording files after 7 days")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textSecondary)
+                    }
+                }
+                .tint(Theme.amberFill)
+            } header: {
+                Text("Recording & Storage")
+            }
+            .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
+
+            Section {
+                Picker("Theme", selection: $settings.appAppearance) {
+                    ForEach(AppAppearance.allCases) { appearance in
+                        Text(LocalizedStringKey(appearance.displayName)).tag(appearance)
+                    }
+                }
+                .pickerStyle(.navigationLink)
+            } header: {
+                Text("Appearance")
+            }
+            .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
+
+            Section {
+                Link("About App", destination: AppLegalURLs.marketing)
+                Link("Support", destination: AppLegalURLs.support)
+                Link("Privacy Policy", destination: AppLegalURLs.privacyPolicy)
+                Link("Disclaimer & Terms", destination: AppLegalURLs.disclaimer)
+
+                if !logger.entries.isEmpty {
+                    NavigationLink("View Logs") {
+                        ScrollView {
+                            Text(logger.latestPreview)
+                                .font(Theme.mono(11))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding()
+                                .textSelection(.enabled)
+                        }
+                        .background(Color(uiColor: .systemGroupedBackground))
+                        .navigationTitle("Logs")
+                        .navigationBarTitleDisplayMode(.inline)
+                        .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button("Copy") {
+                                    UIPasteboard.general.string = logger.exportText
+                                    showLogCopiedConfirmation = true
+                                }
+                            }
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button(role: .destructive, action: { logger.clear() }) {
+                                    Image(systemName: "trash")
+                                }
+                            }
+                        }
+                    }
+                }
+            } header: {
+                Text("Support & Policies")
+            } footer: {
+                LegalDisclaimerFootnote()
+            }
+            .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color(uiColor: .systemGroupedBackground))
+        .tint(Theme.amber)
+        .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            modelManager.ensureModelAvailability()
+        }
+        .sheet(isPresented: $showModelDownload) {
+            ModelDownloadView(isPresentedAsSheet: true, includesSpeechModels: false)
+        }
+        .alert("Delete Model", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete", role: .destructive) {
+                modelManager.deleteCurrentModel()
+            }
+        } message: {
+            Text("Are you sure you want to delete the current model?")
+        }
+        .alert("Logs Copied", isPresented: $showLogCopiedConfirmation) {
+            Button("OK", role: .cancel) {}
+        }
+        .sheet(isPresented: $showLanguagePicker) {
+            LanguagePickerView(selectedLanguage: $settings.selectedLanguage, isPresented: $showLanguagePicker)
+        }
+    }
+
+    private var modelSettings: some View {
+        Form {
+            Section {
                 modelSelectionMenu
 
                 if modelManager.isTranscriptionInProgress {
                     Label("Model changes are disabled while transcription is running.", systemImage: "lock.fill")
-                        .font(Theme.sans(12))
+                        .font(.subheadline)
                         .foregroundColor(Theme.textSecondary)
                 }
 
@@ -40,7 +221,7 @@ struct SettingsView: View {
 
                 if let accelerationWarning = modelManager.whisperAccelerationWarningMessage() {
                     Label(accelerationWarning, systemImage: "speedometer")
-                        .font(Theme.sans(12))
+                        .font(.subheadline)
                         .foregroundColor(Theme.textSecondary)
                     if !modelManager.isDownloading && modelManager.canDownloadCoreMLEncoder {
                         Button(action: { modelManager.downloadModel() }) {
@@ -52,7 +233,7 @@ struct SettingsView: View {
 
                 if settings.usesWhisperBackend {
                     Label(runtimeStatus.accelerationMode.description, systemImage: "cpu")
-                        .font(Theme.sans(12))
+                        .font(.subheadline)
                         .foregroundColor(Theme.textSecondary)
                         .accessibilityIdentifier("whisperAccelerationStatus")
                 }
@@ -63,7 +244,7 @@ struct SettingsView: View {
                     ProgressBar(progress: modelManager.downloadProgress)
                         .frame(height: 6)
                     Text(LocalizedStringKey(modelManager.downloadStatusText))
-                        .font(Theme.sans(12))
+                        .font(.subheadline)
                         .foregroundColor(Theme.textSecondary)
                     Button(action: { modelManager.cancelDownload() }) {
                         Label("Cancel Download", systemImage: "xmark.circle.fill")
@@ -82,7 +263,7 @@ struct SettingsView: View {
                 if let error = modelManager.downloadError {
                     if !settings.usesAppleSpeechBackend {
                         Text(error)
-                            .font(Theme.sans(12))
+                            .font(.subheadline)
                             .foregroundColor(Theme.rec)
                     }
                 }
@@ -92,7 +273,7 @@ struct SettingsView: View {
                         Label("Delete Model", systemImage: "trash.fill")
                             .foregroundColor(Theme.rec)
                     }
-                    .disabled(modelManager.isTranscriptionInProgress)
+                    .disabled(modelManager.isTranscriptionInProgress || modelManager.isDownloading || !modelManager.isModelReady)
 
                     Button(action: { showModelDownload = true }) {
                         Label("Add or Manage Whisper Models", systemImage: "externaldrive.badge.plus")
@@ -108,219 +289,112 @@ struct SettingsView: View {
                 }
                 .disabled(modelManager.isTranscriptionInProgress)
 
-                if settings.usesWhisperBackend {
-                    Button(action: { showLanguagePicker = true }) {
-                        HStack {
-                            Text("Transcription Language")
-                                .foregroundColor(Theme.textPrimary)
-                            Spacer()
-                            if let language = AppSettings.supportedLanguages.first(where: { $0.code == settings.selectedLanguage }) {
-                                Text(LocalizedStringKey(language.name))
-                                    .foregroundColor(Theme.textSecondary)
-                            }
-                        }
-                    }
-
-                    Toggle(isOn: $settings.translateToEnglish) {
-                        VStack(alignment: .leading) {
-                            Text("Translate to English")
-                            Text("Translate transcription results to English")
-                                .font(Theme.sans(12))
-                                .foregroundColor(Theme.textSecondary)
-                        }
-                    }
-                    .tint(Theme.amberFill)
-                }
             } header: {
-                TechLabel(text: "Transcription")
+                Text("Model & Downloads")
+            } footer: {
+                Text("Choose a prepared model, or download a model to use on this device.")
             }
-            .listRowBackground(Theme.panel)
+        }
+        .navigationTitle("Model & Downloads")
+        .navigationBarTitleDisplayMode(.inline)
+        .tint(Theme.amber)
+    }
 
-            if settings.usesWhisperBackend {
-                Section {
-                    TextEditor(text: $settings.promptText)
-                        .frame(minHeight: 80)
-                        .focused($isPromptEditorFocused)
-                } header: {
-                    TechLabel(text: "Prompt")
-                } footer: {
-                    Text("Example: \"Hello, today we will talk about technology.\"")
+    private var advancedSettings: some View {
+        Form {
+
+            Section {
+                TextEditor(text: $settings.promptText)
+                    .frame(minHeight: 120)
+                    .accessibilityLabel(Text("Vocabulary Hints"))
+                    .focused($isPromptEditorFocused)
+            } header: {
+                Text("Vocabulary Hints")
+            } footer: {
+                Text("Add names or technical terms that may appear in the recording. This is a recognition hint, not an instruction to the AI.")
+            }
+            .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
+
+            Section {
+                Toggle(isOn: $settings.useFlashAttention) {
+                    VStack(alignment: .leading) {
+                        Text("Efficient Processing")
+                        Text("Use Flash Attention to reduce memory use and speed up Whisper processing")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textSecondary)
+                    }
                 }
-                .listRowBackground(Theme.panel)
-            }
+                .tint(Theme.amberFill)
+                .disabled(modelManager.isTranscriptionInProgress)
 
-            if settings.usesWhisperBackend {
-                Section {
-                    Toggle(isOn: $settings.useFlashAttention) {
-                        VStack(alignment: .leading) {
-                            Text("Flash Attention")
-                            Text("Optimize processing speed and memory usage")
-                                .font(Theme.sans(12))
-                                .foregroundColor(Theme.textSecondary)
-                        }
+                Toggle(isOn: $settings.useAudioPreprocessing) {
+                    VStack(alignment: .leading) {
+                        Text("Clean Up Audio")
+                        Text("Reduce noise and normalize volume before transcription")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textSecondary)
                     }
-                    .tint(Theme.amberFill)
-                    .disabled(modelManager.isTranscriptionInProgress)
+                }
+                .tint(Theme.amberFill)
+                .disabled(modelManager.isTranscriptionInProgress)
 
-                    Toggle(isOn: $settings.useAudioPreprocessing) {
-                        VStack(alignment: .leading) {
-                            Text("Audio Preprocessing")
-                            Text("Reduce noise and normalize volume before transcription")
-                                .font(Theme.sans(12))
-                                .foregroundColor(Theme.textSecondary)
-                        }
+                Toggle(isOn: $settings.useVAD) {
+                    VStack(alignment: .leading) {
+                        Text("Skip Silent Sections")
+                        Text("Automatically skip portions with no audio")
+                            .font(.subheadline)
+                            .foregroundColor(Theme.textSecondary)
                     }
-                    .tint(Theme.amberFill)
-                    .disabled(modelManager.isTranscriptionInProgress)
+                }
+                .tint(Theme.amberFill)
+                .disabled(modelManager.isTranscriptionInProgress)
 
-                    Toggle(isOn: $settings.useVAD) {
-                        VStack(alignment: .leading) {
-                            Text("Skip Silence (VAD)")
-                            Text("Automatically skip portions with no audio")
-                                .font(Theme.sans(12))
-                                .foregroundColor(Theme.textSecondary)
-                        }
+                if settings.useVAD {
+                    HStack {
+                        LEDDot(
+                            isOn: true,
+                            onColor: modelManager.isVADModelReady ? Theme.amber : Theme.rec
+                        )
+                        Text(modelManager.isVADModelReady ? LocalizedStringKey("VAD Model Ready") : LocalizedStringKey("Please download VAD model"))
                     }
-                    .tint(Theme.amberFill)
-                    .disabled(modelManager.isTranscriptionInProgress)
 
-                    if settings.useVAD {
+                    if modelManager.isVADDownloading {
                         HStack {
-                            LEDDot(
-                                isOn: true,
-                                onColor: modelManager.isVADModelReady ? Theme.amber : Theme.rec
-                            )
-                            Text(modelManager.isVADModelReady ? LocalizedStringKey("VAD Model Ready") : LocalizedStringKey("Please download VAD model"))
-                        }
-
-                        if modelManager.isVADDownloading {
-                            HStack {
-                                ProgressBar(progress: modelManager.vadDownloadProgress)
-                                    .frame(height: 6)
-                                Button(action: { modelManager.cancelVADDownload() }) {
-                                    Image(systemName: "xmark.circle.fill")
-                                        .foregroundColor(Theme.rec)
-                                }
-                            }
-                        } else if !modelManager.isVADModelReady {
-                            Button(action: { modelManager.downloadVADModel() }) {
-                                Label("Download VAD Model", systemImage: "arrow.down.circle.fill")
-                                    .foregroundColor(Theme.amber)
-                            }
-                        } else {
-                            Button(action: { modelManager.deleteVADModel() }) {
-                                Label("Delete VAD Model", systemImage: "trash")
+                            ProgressBar(progress: modelManager.vadDownloadProgress)
+                                .frame(height: 6)
+                            Button(action: { modelManager.cancelVADDownload() }) {
+                                Image(systemName: "xmark.circle.fill")
                                     .foregroundColor(Theme.rec)
+                                    .accessibilityLabel(Text("Cancel Download"))
                             }
-                            .disabled(modelManager.isTranscriptionInProgress)
                         }
-
-                        if let error = modelManager.vadDownloadError {
-                            Text(error)
-                                .font(Theme.sans(12))
+                    } else if !modelManager.isVADModelReady {
+                        Button(action: { modelManager.downloadVADModel() }) {
+                            Label("Download VAD Model", systemImage: "arrow.down.circle.fill")
+                                .foregroundColor(Theme.amber)
+                        }
+                    } else {
+                        Button(action: { modelManager.deleteVADModel() }) {
+                            Label("Delete VAD Model", systemImage: "trash")
                                 .foregroundColor(Theme.rec)
                         }
+                        .disabled(modelManager.isTranscriptionInProgress)
                     }
-                    Toggle(isOn: $settings.includeTimestamps) {
-                        VStack(alignment: .leading) {
-                            Text("Include Timestamps")
-                            Text("Include timestamps in the transcription result")
-                                .font(Theme.sans(12))
-                                .foregroundColor(Theme.textSecondary)
-                        }
-                    }
-                    .tint(Theme.amberFill)
-                } header: {
-                    TechLabel(text: "Processing")
-                }
-                .listRowBackground(Theme.panel)
-            }
 
-            Section {
-                Toggle(isOn: $settings.keepScreenOn) {
-                    VStack(alignment: .leading) {
-                        Text("Keep Screen On")
-                        Text("Keep the screen on during transcription")
-                            .font(Theme.sans(12))
-                            .foregroundColor(Theme.textSecondary)
-                    }
-                }
-                .tint(Theme.amberFill)
-
-                Toggle(isOn: $settings.autoDeleteRecordings) {
-                    VStack(alignment: .leading) {
-                        Text("Auto-Delete Recordings")
-                        Text("Automatically delete recording files after 7 days")
-                            .font(Theme.sans(12))
-                            .foregroundColor(Theme.textSecondary)
-                    }
-                }
-                .tint(Theme.amberFill)
-            } header: {
-                TechLabel(text: "Recording & Storage")
-            }
-            .listRowBackground(Theme.panel)
-
-            Section {
-                Picker("Theme", selection: $settings.appAppearance) {
-                    ForEach(AppAppearance.allCases) { appearance in
-                        Text(LocalizedStringKey(appearance.displayName)).tag(appearance)
-                    }
-                }
-                .pickerStyle(.segmented)
-            } header: {
-                TechLabel(text: "Appearance")
-            }
-            .listRowBackground(Theme.panel)
-
-            Section {
-                Link("About App", destination: AppLegalURLs.marketing)
-                Link("Support", destination: AppLegalURLs.support)
-                Link("Privacy Policy", destination: AppLegalURLs.privacyPolicy)
-                Link("Disclaimer & Terms", destination: AppLegalURLs.disclaimer)
-
-                if !logger.entries.isEmpty {
-                    NavigationLink("View Logs") {
-                        ScrollView {
-                            Text(logger.latestPreview)
-                                .font(Theme.mono(11))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding()
-                                .textSelection(.enabled)
-                        }
-                        .background(Theme.background)
-                        .navigationTitle("Logs")
-                        .navigationBarTitleDisplayMode(.inline)
-                        .toolbar {
-                            ToolbarItem(placement: .navigationBarTrailing) {
-                                Button("Copy") {
-                                    UIPasteboard.general.string = logger.exportText
-                                    showLogCopiedConfirmation = true
-                                }
-                            }
-                            ToolbarItem(placement: .navigationBarTrailing) {
-                                Button(role: .destructive, action: { logger.clear() }) {
-                                    Image(systemName: "trash")
-                                }
-                            }
-                        }
+                    if let error = modelManager.vadDownloadError {
+                        Text(error)
+                            .font(.subheadline)
+                            .foregroundColor(Theme.rec)
                     }
                 }
             } header: {
-                TechLabel(text: "Support & Policies")
-            } footer: {
-                LegalDisclaimerFootnote()
+                Text("Processing")
             }
-            .listRowBackground(Theme.panel)
+            .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
         }
-        .scrollContentBackground(.hidden)
-        .background(Theme.background)
-        .tint(Theme.amber)
-        .navigationTitle("Settings")
+        .navigationTitle("Advanced Transcription Settings")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear {
-            modelManager.ensureModelAvailability()
-        }
+        .tint(Theme.amber)
         .toolbar {
             ToolbarItemGroup(placement: .keyboard) {
                 Spacer()
@@ -328,23 +402,6 @@ struct SettingsView: View {
                     isPromptEditorFocused = false
                 }
             }
-        }
-        .sheet(isPresented: $showModelDownload) {
-            ModelDownloadView(isPresentedAsSheet: true, includesSpeechModels: false)
-        }
-        .alert("Delete Model", isPresented: $showDeleteConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
-                modelManager.deleteCurrentModel()
-            }
-        } message: {
-            Text("Are you sure you want to delete the current model?")
-        }
-        .alert("Logs Copied", isPresented: $showLogCopiedConfirmation) {
-            Button("OK", role: .cancel) {}
-        }
-        .sheet(isPresented: $showLanguagePicker) {
-            LanguagePickerView(selectedLanguage: $settings.selectedLanguage, isPresented: $showLanguagePicker)
         }
     }
 
@@ -431,11 +488,11 @@ struct LanguagePickerView: View {
                             }
                         }
                     }
-                    .listRowBackground(Theme.panel)
+                    .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
                 }
             }
             .scrollContentBackground(.hidden)
-            .background(Theme.background)
+            .background(Color(uiColor: .systemGroupedBackground))
             .navigationTitle("Select Language")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

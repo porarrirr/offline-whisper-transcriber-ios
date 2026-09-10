@@ -16,12 +16,14 @@ struct RecordingButton: View {
 
                 Text(isRecording ? LocalizedStringKey("Stop Recording") : LocalizedStringKey("Start Recording"))
             }
-            .font(Theme.sans(18, weight: .bold))
+            .font(.headline)
             .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 64)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 18)
+            .frame(maxWidth: .infinity, minHeight: 58)
             .background(Theme.rec)
-            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
         .accessibilityLabel(isRecording ? Text("Tap to Stop") : Text("Tap to Start Recording"))

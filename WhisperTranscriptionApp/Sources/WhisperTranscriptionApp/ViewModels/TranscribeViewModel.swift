@@ -92,7 +92,6 @@ class TranscribeViewModel: ObservableObject {
     }
 
     private func stopRecordingAndTranscribeAsync(recordingService: RecordingService, modelContext: ModelContext) async {
-        let recordingDuration = recordingService.currentTime
         let recordingURL: URL
         do {
             recordingURL = try await recordingService.stopRecording()
@@ -103,6 +102,9 @@ class TranscribeViewModel: ObservableObject {
 
         let record: TranscriptionRecord
         do {
+            // Display time is throttled and suspended in the background.
+            // Persist the duration of the finalized recording itself.
+            let recordingDuration = try await AudioConverter.shared.getAudioDuration(url: recordingURL)
             record = try saveRecordingRecord(url: recordingURL, duration: recordingDuration, modelContext: modelContext)
         } catch {
             setError(error.localizedDescription)
@@ -113,7 +115,6 @@ class TranscribeViewModel: ObservableObject {
     }
 
     private func transcribeInterruptedRecordingAsync(recordingService: RecordingService, modelContext: ModelContext) async {
-        let recordingDuration = recordingService.currentTime
         let recordingURL: URL
         do {
             recordingURL = try await recordingService.consumeInterruptedRecording()
@@ -124,6 +125,9 @@ class TranscribeViewModel: ObservableObject {
 
         let record: TranscriptionRecord
         do {
+            // Display time is throttled and suspended in the background.
+            // Persist the duration of the finalized recording itself.
+            let recordingDuration = try await AudioConverter.shared.getAudioDuration(url: recordingURL)
             record = try saveRecordingRecord(url: recordingURL, duration: recordingDuration, modelContext: modelContext)
         } catch {
             setError(error.localizedDescription)

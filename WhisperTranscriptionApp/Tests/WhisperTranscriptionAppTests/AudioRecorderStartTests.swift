@@ -3,6 +3,44 @@ import XCTest
 @testable import WhisperTranscriptionApp
 
 final class AudioRecorderStartTests: XCTestCase {
+    func testMatchingRecordingFormatUsesOriginalBufferWithoutChangingSamples() throws {
+        let format = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: 48_000,
+            channels: 1, interleaved: false
+        ))
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 1_024))
+        buffer.frameLength = 1_024
+        for frame in 0..<1_024 { buffer.floatChannelData![0][frame] = Float(frame) / 1_024 }
+        let converter = try RecordingInputConverter(from: format, to: format)
+        let result = try converter.convert(buffer)
+        XCTAssertTrue(result === buffer)
+        XCTAssertEqual(result.frameLength, 1_024)
+        XCTAssertEqual(result.floatChannelData![0][1_023], Float(1_023) / 1_024)
+    }
+
+    func testDisplayUpdatesAreLimitedToTenPerSecondOfRecordedAudio() {
+        var policy = RecordingDisplayUpdatePolicy()
+        policy.isActive = true
+        let updates = (0..<48_000).filter { policy.shouldPublish(at: Double($0) / 48_000) }
+        XCTAssertEqual(updates.count, 10)
+    }
+
+    func testDisplayUpdatesStopWhileInactiveAndResumeAtCurrentRecordingTime() {
+        var policy = RecordingDisplayUpdatePolicy()
+        XCTAssertFalse(policy.shouldPublish(at: 0))
+        policy.isActive = true
+        XCTAssertTrue(policy.shouldPublish(at: 0))
+        XCTAssertFalse(policy.shouldPublish(at: 0.02))
+        policy.isActive = false
+        XCTAssertFalse(policy.shouldPublish(at: 600))
+        policy.isActive = true
+        policy.reset()
+        XCTAssertTrue(policy.shouldPublish(at: 600.02))
+        XCTAssertFalse(policy.shouldPublish(at: 600.04))
+        policy.reset()
+        XCTAssertTrue(policy.shouldPublish(at: 0), "A new recording starts its own display timeline")
+    }
+
     func testRecordingFileSettingsUseMono96KbpsHighQualityAAC() {
         let settings = AudioRecorder.recordingFileSettings(sampleRate: 48_000)
 

@@ -19,7 +19,7 @@ struct TranscribeView: View {
 
     var body: some View {
         ZStack {
-            Color(uiColor: .systemBackground).ignoresSafeArea()
+            Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
 
             if isImportingVideo || viewModel.isProcessing {
                 TranscriptionProcessingScreen(
@@ -91,7 +91,12 @@ struct TranscribeView: View {
             VStack(spacing: 20) {
                 header
 
-                recorderDisplay
+                VStack(spacing: 20) {
+                    recorderDisplay
+                    transport
+                }
+                .padding(20)
+                .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 24))
 
                 if let readinessError = visibleModelReadinessError {
                     WarningStrip(
@@ -106,8 +111,6 @@ struct TranscribeView: View {
                         action: modelAccelerationAction
                     )
                 }
-
-                transport
 
                 if recordingService.isRecording {
                     Menu {
@@ -177,8 +180,10 @@ struct TranscribeView: View {
 
                 Spacer(minLength: 12)
             }
+            .frame(maxWidth: 640)
             .padding(.horizontal, 20)
             .padding(.top, 20)
+            .frame(maxWidth: .infinity)
         }
     }
 
@@ -188,12 +193,12 @@ struct TranscribeView: View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading, spacing: 7) {
                 Text("Transcribe")
-                    .font(Theme.sans(34, weight: .bold))
+                    .font(.largeTitle.bold())
                     .foregroundStyle(Theme.textPrimary)
 
-                Label("Processed Offline", systemImage: "checkmark.circle.fill")
-                    .font(Theme.sans(13, weight: .semibold))
-                    .foregroundStyle(Theme.amber)
+                Label("Processed Offline", systemImage: "lock.shield")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
             }
 
             Spacer(minLength: 8)
@@ -215,25 +220,33 @@ struct TranscribeView: View {
 
     /// 波形とタイムコードだけを主役にした、フラットな録音表示。
     private var recorderDisplay: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 12) {
+            Label {
+                Text(recordingService.isRecording ? "Recording in progress" : "Ready to record")
+            } icon: {
+                Image(systemName: recordingService.isRecording ? "record.circle" : "mic")
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(recordingService.isRecording ? Theme.rec : Theme.textSecondary)
+
+            Text(formatTimecode(recordingService.isRecording ? recordingService.currentTime : 0))
+                .font(.system(size: 52, weight: .light, design: .rounded))
+                .foregroundStyle(Theme.textPrimary)
+                .monospacedDigit()
+                .contentTransition(.numericText())
+                .minimumScaleFactor(0.5)
+                .lineLimit(1)
+                .accessibilityLabel(Text("Recording duration"))
+                .accessibilityValue(formatTimecode(recordingService.isRecording ? recordingService.currentTime : 0))
+
             WaveformView(
                 audioLevel: recordingService.audioLevel,
                 isActive: recordingService.isRecording
             )
-            .frame(height: 92)
-
-            Text(formatTimecode(recordingService.isRecording ? recordingService.currentTime : 0))
-                .font(.system(size: 58, weight: .medium))
-                .foregroundStyle(Theme.textPrimary)
-                .monospacedDigit()
-                .contentTransition(.numericText())
-                .minimumScaleFactor(0.7)
-                .lineLimit(1)
+            .frame(height: 48)
         }
-        .padding(.vertical, 16)
+        .padding(.top, 4)
         .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text(recordingService.isRecording ? "Tap to Stop" : "Tap to Start Recording"))
     }
 
     /// 録音トランスポート
@@ -255,7 +268,7 @@ struct TranscribeView: View {
     /// ファイル入力ソース
     private var inputSection: some View {
         VStack(spacing: 12) {
-            HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 10) {
                 Button {
                     if let modelReadinessError {
                         viewModel.setError(modelReadinessError)
@@ -526,10 +539,10 @@ private struct LiveTranscriptionToggle: View {
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Live Transcribe")
-                            .font(Theme.sans(15, weight: .semibold))
+                            .font(.subheadline.weight(.semibold))
                             .foregroundColor(Theme.textPrimary)
                         Text(isRecording ? "Toggle live transcription while recording" : "Start recording with live transcription")
-                            .font(Theme.sans(12))
+                            .font(.caption)
                             .foregroundColor(Theme.textSecondary)
                     }
                 }
@@ -541,7 +554,7 @@ private struct LiveTranscriptionToggle: View {
 
             if let unavailableMessage {
                 Text(LocalizedStringKey(unavailableMessage))
-                    .font(Theme.sans(12))
+                    .font(.caption)
                     .foregroundColor(Theme.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -556,34 +569,35 @@ private struct ImportActionTile: View {
     let subtitle: LocalizedStringKey
 
     var body: some View {
-        VStack(spacing: 12) {
+        HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 30, weight: .medium))
+                .font(.system(size: 21, weight: .medium))
                 .foregroundStyle(Theme.amber)
-                .frame(height: 36)
+                .frame(width: 46, height: 46)
+                .background(Theme.amber.opacity(0.09), in: RoundedRectangle(cornerRadius: 12))
+                .accessibilityHidden(true)
 
-            Text(title)
-                .font(Theme.sans(15, weight: .semibold))
-                .foregroundStyle(Theme.textPrimary)
-                .multilineTextAlignment(.center)
-                .lineLimit(2)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(Theme.textPrimary)
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.textSecondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text(subtitle)
-                .font(Theme.sans(12))
-                .foregroundStyle(Theme.textSecondary)
-                .multilineTextAlignment(.center)
-                .lineLimit(3)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.tertiary)
+                .accessibilityHidden(true)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 18)
-        .frame(maxWidth: .infinity, minHeight: 164, alignment: .top)
-        .background(Theme.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Theme.stroke, lineWidth: 1)
-        }
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .multilineTextAlignment(.leading)
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(uiColor: .secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18))
+        .contentShape(RoundedRectangle(cornerRadius: 18))
     }
 }
 

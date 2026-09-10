@@ -1,6 +1,171 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "Model & Downloads": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "文字起こしモデル"
+        }
+      }
+    }
+  },
+  "Choose a prepared model, or download a model to use on this device.": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "準備済みのモデルを選択するか、この端末で使うモデルをダウンロードします。"
+        }
+      }
+    }
+  },
+  "The model determines transcription speed, accuracy, and available languages.": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "モデルによって文字起こしの速度・精度・対応言語が変わります。"
+        }
+      }
+    }
+  },
+  "Language & Output": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "言語と文字起こし結果"
+        }
+      }
+    }
+  },
+  "Advanced Transcription Settings": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "文字起こしの詳細設定"
+        }
+      }
+    }
+  },
+  "Audio cleanup, silence detection, processing speed, and vocabulary hints": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "音声の調整、無音のスキップ、処理速度、認識のヒント"
+        }
+      }
+    }
+  },
+  "Vocabulary Hints": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "認識させたい単語・固有名詞"
+        }
+      }
+    }
+  },
+  "Add names or technical terms that may appear in the recording. This is a recognition hint, not an instruction to the AI.": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "録音に出てくる人名や専門用語を入力します。例：田中、SwiftUI、音声認識。AIへの指示ではなく、認識を助けるヒントとして使われます。"
+        }
+      }
+    }
+  },
+  "Efficient Processing": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "メモリ使用量を抑えて処理"
+        }
+      }
+    }
+  },
+  "Use Flash Attention to reduce memory use and speed up Whisper processing": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Flash AttentionでWhisperのメモリ使用量を減らし、処理を高速化します"
+        }
+      }
+    }
+  },
+  "Clean Up Audio": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "ノイズと音量を調整"
+        }
+      }
+    }
+  },
+  "Skip Silent Sections": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "無音の区間をスキップ"
+        }
+      }
+    }
+  },
+  "Recording in progress": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "録音中"
+        }
+      }
+    }
+  },
+  "Ready to record": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "録音できます"
+        }
+      }
+    }
+  },
+  "Recording duration": {
+    "extractionState": "manual",
+    "localizations": {
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "録音時間"
+        }
+      }
+    }
+  },
 "Microphone": {
   "extractionState": "manual",
   "localizations": {

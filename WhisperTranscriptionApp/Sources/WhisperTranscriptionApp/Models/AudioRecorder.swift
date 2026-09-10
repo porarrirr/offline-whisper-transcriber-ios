@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import UIKit
 
 enum RecordingStartContext {
     case foreground
@@ -33,6 +34,7 @@ final class AudioRecorder: NSObject, ObservableObject {
     private var recordingFile: AVAudioFile?
     private var recordingURL: URL?
     private var inputFormat: AVAudioFormat?
+    private var displayUpdates = RecordingDisplayUpdatePolicy()
     private var recordedFrames: AVAudioFramePosition = 0
     private var recordingState: RecordingState = .idle
     private var audioBufferHandler: AudioBufferHandler?
@@ -84,6 +86,9 @@ final class AudioRecorder: NSObject, ObservableObject {
         try beginStartingState()
 
         do {
+            await MainActor.run {
+                self.setDisplayUpdatesActive(UIApplication.shared.applicationState == .active)
+            }
             try await setupSession(context: context)
             let url = try makeRecordingURL()
             let inputNode = audioEngine.inputNode
@@ -314,6 +319,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         recordingURL = url
         inputFormat = format
         recordedFrames = 0
+        displayUpdates.reset()
         stateLock.unlock()
     }
 
@@ -656,17 +662,28 @@ final class AudioRecorder: NSObject, ObservableObject {
             reportEncodingFailure(error)
             return
         case .written(let elapsedTime):
-            let level = averagePower(from: buffer)
-            DispatchQueue.main.async {
-                self.currentTime = elapsedTime
-                self.audioLevel = level
+            stateLock.lock()
+            let shouldUpdateDisplay = displayUpdates.shouldPublish(at: elapsedTime)
+            let url = recordingURL
+            stateLock.unlock()
+            if shouldUpdateDisplay {
+                let level = averagePower(from: buffer)
+                DispatchQueue.main.async {
+                    // Discard queued display work after stopping or starting another recording.
+                    guard self.isRecording, self.currentRecordingURL == url,
+                          UIApplication.shared.applicationState == .active else { return }
+                    self.currentTime = elapsedTime
+                    if self.audioLevel != level { self.audioLevel = level }
+                }
             }
 
             handlerLock.lock()
             let handler = audioBufferHandler
             handlerLock.unlock()
-            let sampleTime = AVAudioFramePosition((elapsedTime * format.sampleRate).rounded()) - AVAudioFramePosition(buffer.frameLength)
-            handler?(buffer, AVAudioTime(sampleTime: sampleTime, atRate: format.sampleRate), format)
+            if let handler {
+                let sampleTime = AVAudioFramePosition((elapsedTime * format.sampleRate).rounded()) - AVAudioFramePosition(buffer.frameLength)
+                handler(buffer, AVAudioTime(sampleTime: sampleTime, atRate: format.sampleRate), format)
+            }
         }
     }
 
@@ -890,7 +907,30 @@ final class AudioRecorder: NSObject, ObservableObject {
         return recordingsDirectory.appendingPathComponent("recording_\(timestamp).m4a")
     }
 
+    private func setDisplayUpdatesActive(_ active: Bool) {
+        stateLock.lock()
+        displayUpdates.isActive = active
+        displayUpdates.reset()
+        stateLock.unlock()
+    }
+
+    @objc private func handleApplicationDidBecomeActive(_ notification: Notification) {
+        setDisplayUpdatesActive(true)
+    }
+
+    @objc private func handleApplicationWillResignActive(_ notification: Notification) {
+        setDisplayUpdatesActive(false)
+    }
+
     private func observeAudioSessionNotifications() {
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleApplicationDidBecomeActive),
+            name: UIApplication.didBecomeActiveNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(handleApplicationWillResignActive),
+            name: UIApplication.willResignActiveNotification, object: nil
+        )
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleAudioSessionInterruption),
@@ -1097,6 +1137,10 @@ final class RecordingInputConverter {
     }
 
     func convert(_ buffer: AVAudioPCMBuffer) throws -> AVAudioPCMBuffer {
+        // Identical PCM formats need no conversion or copy. Consumers finish
+        // reading the tap buffer synchronously before this callback returns.
+        if buffer.format == outputFormat { return buffer }
+
         let capacity = AVAudioFrameCount(ceil(Double(buffer.frameLength) * outputFormat.sampleRate / buffer.format.sampleRate)) + 32
         guard let output = AVAudioPCMBuffer(pcmFormat: outputFormat, frameCapacity: capacity) else {
             throw AudioRecorderError.microphoneSwitchFailed("Could not allocate an audio conversion buffer.")
@@ -1117,5 +1161,22 @@ final class RecordingInputConverter {
             throw AudioRecorderError.microphoneSwitchFailed("Microphone audio conversion failed.")
         }
         return output
+    }
+}
+
+/// Display work follows recorded audio time; no additional timer wakes the app.
+/// Access is serialized by AudioRecorder.stateLock, including lifecycle changes.
+struct RecordingDisplayUpdatePolicy {
+    var isActive = false
+    private var nextUpdateTime: TimeInterval = 0
+
+    mutating func reset() {
+        nextUpdateTime = 0
+    }
+
+    mutating func shouldPublish(at elapsedTime: TimeInterval) -> Bool {
+        guard isActive, elapsedTime >= nextUpdateTime else { return false }
+        nextUpdateTime = elapsedTime + 0.1
+        return true
     }
 }
