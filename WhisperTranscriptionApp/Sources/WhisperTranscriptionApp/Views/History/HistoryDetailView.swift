@@ -222,16 +222,6 @@ struct HistoryDetailView: View {
                         )
                         .equatable()
                         .accessibilityIdentifier("historyTranscriptionCard")
-                    } else {
-                        HStack(spacing: 10) {
-                            Image(systemName: "text.quote")
-                                .foregroundColor(Theme.textSecondary)
-                            Text("No transcription yet")
-                                .font(Theme.sans(14))
-                                .foregroundColor(Theme.textSecondary)
-                            Spacer()
-                        }
-                        .recorderPanel(padding: 14)
                     }
                 } header: {
                     transcriptionToolbar
@@ -436,10 +426,7 @@ struct HistoryDetailView: View {
         Menu {
             if cachedAudioURL != nil {
                 Button {
-                    editingSegment = nil
-                    undoDismissTask?.cancel()
-                    pendingUndo = nil
-                    transcribeViewModel.transcribeRecord(record, modelContext: modelContext)
+                    startTranscription()
                 } label: {
                     Label(
                         record.hasTranscriptionText ? "Transcribe Again" : "Transcribe from Audio",
@@ -480,30 +467,79 @@ struct HistoryDetailView: View {
         .accessibilityLabel(Text("More Actions"))
     }
 
+    private func startTranscription() {
+        guard !transcribeViewModel.isProcessing else { return }
+        editingSegment = nil
+        undoDismissTask?.cancel()
+        pendingUndo = nil
+        transcribeViewModel.transcribeRecord(record, modelContext: modelContext)
+    }
+
     @ViewBuilder
     private var transcriptionProcessingStatus: some View {
-        if transcribeViewModel.isProcessing || transcribeViewModel.errorMessage != nil {
-            VStack(alignment: .leading, spacing: 8) {
-                if transcribeViewModel.isProcessing {
-                    if transcribeViewModel.usesDeterminateProgress {
-                        ProgressBar(progress: transcribeViewModel.transcriptionProgress)
-                            .frame(height: 6)
-                    } else {
-                        ProgressView()
-                            .tint(Theme.amber)
+        if transcribeViewModel.isProcessing {
+            VStack(alignment: .leading, spacing: 16) {
+                HStack(alignment: .center, spacing: 12) {
+                    ProgressView()
+                        .tint(Theme.amber)
+                        .frame(width: 28, height: 28)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Transcribing...")
+                            .font(Theme.sans(17, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                        Text(transcribeViewModel.processingStatusText)
+                            .font(Theme.sans(13))
+                            .foregroundStyle(Theme.textSecondary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Text(transcribeViewModel.processingStatusText.isEmpty ? LocalizedStringKey("Preparing audio") : LocalizedStringKey(transcribeViewModel.processingStatusText))
-                        .font(Theme.sans(12))
-                        .foregroundColor(Theme.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-
-                if let error = transcribeViewModel.errorMessage {
-                    Label(error, systemImage: "exclamationmark.triangle.fill")
-                        .font(Theme.sans(12))
-                        .foregroundColor(Theme.rec)
+                if transcribeViewModel.usesDeterminateProgress {
+                    ProgressBar(progress: transcribeViewModel.transcriptionProgress)
+                        .frame(height: 6)
                 }
             }
-            .recorderPanel(padding: 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .recorderPanel(padding: 20)
+            .accessibilityIdentifier("historyTranscriptionProgress")
+        } else if !record.hasTranscriptionText || transcribeViewModel.errorMessage != nil {
+            VStack(alignment: .leading, spacing: 16) {
+                if let error = transcribeViewModel.errorMessage {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .font(Theme.sans(14))
+                        .foregroundStyle(Theme.rec)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("No transcription yet")
+                            .font(Theme.sans(17, weight: .semibold))
+                            .foregroundStyle(Theme.textPrimary)
+                        Text("Turn this recording into text.")
+                            .font(Theme.sans(14))
+                            .foregroundStyle(Theme.textSecondary)
+                    }
+                }
+
+                if cachedAudioURL != nil {
+                    Button(action: startTranscription) {
+                        Label("Start Transcription", systemImage: "waveform.badge.magnifyingglass")
+                            .font(Theme.sans(16, weight: .semibold))
+                            .frame(maxWidth: .infinity, minHeight: 24)
+                            .padding(.vertical, 15)
+                            .padding(.horizontal, 12)
+                            .foregroundStyle(Theme.onAmber)
+                            .background(Theme.amberFill, in: RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("historyStartTranscription")
+                } else {
+                    Label("The audio file for this history item could not be found.", systemImage: "exclamationmark.triangle")
+                        .font(Theme.sans(14))
+                        .foregroundStyle(Theme.textSecondary)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .recorderPanel(padding: 20)
         }
     }
 

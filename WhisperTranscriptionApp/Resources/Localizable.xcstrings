@@ -1,6 +1,38 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+  "Turn this recording into text.": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Turn this recording into text."
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "保存した音声を文字に変換します。"
+        }
+      }
+    }
+  },
+  "Start Transcription": {
+    "localizations": {
+      "en": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "Start Transcription"
+        }
+      },
+      "ja": {
+        "stringUnit": {
+          "state": "translated",
+          "value": "文字起こしを開始"
+        }
+      }
+    }
+  },
   "Model & Downloads": {
     "extractionState": "manual",
     "localizations": {
@@ -6016,7 +6048,10 @@
       }
     },
     "No transcription yet" : {
-
+      "localizations" : {
+        "en" : { "stringUnit" : { "state" : "translated", "value" : "No transcription yet" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "まだ文字起こしされていません" } }
+      }
     },
     "No transcriptions yet" : {
       "extractionState" : "manual",
