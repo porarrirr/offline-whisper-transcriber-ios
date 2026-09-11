@@ -300,7 +300,7 @@ class HistoryViewModel: ObservableObject {
         }
     }
 
-    func importUntrackedRecordings() {
+    func importUntrackedRecordings(excluding activeRecordingURL: URL? = nil) {
         guard let modelContext = modelContext else { return }
 
         do {
@@ -336,7 +336,8 @@ class HistoryViewModel: ObservableObject {
 
             var importedRecords = 0
             for url in recordingURLs where url.pathExtension.localizedCaseInsensitiveCompare("m4a") == .orderedSame {
-                guard !trackedAudioPaths.contains(url.path) else { continue }
+                guard url.standardizedFileURL != activeRecordingURL?.standardizedFileURL,
+                      !trackedAudioPaths.contains(url.standardizedFileURL.path) else { continue }
                 let resourceValues = try url.resourceValues(forKeys: [.creationDateKey, .fileSizeKey])
                 guard (resourceValues.fileSize ?? 0) > 0 else { continue }
                 let createdAt = resourceValues.creationDate ?? Date()

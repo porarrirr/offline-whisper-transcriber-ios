@@ -75,6 +75,11 @@ final class RecordingService: ObservableObject {
     private let supportsLiveRecognition: () -> Bool
     private let resolveLiveLocale: () async -> AppleSpeechLocale?
 
+    /// Audio owned by the recorder must not be imported by startup recovery.
+    var currentRecordingURL: URL? {
+        audioRecorder.currentRecordingURL
+    }
+
     var hasInterruptedRecording: Bool {
         interruptedRecordingURL != nil
     }

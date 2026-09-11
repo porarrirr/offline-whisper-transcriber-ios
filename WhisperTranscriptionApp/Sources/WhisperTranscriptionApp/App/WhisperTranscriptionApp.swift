@@ -69,7 +69,7 @@ struct WhisperTranscriptionApp: App {
         let context = ModelContext(modelContainer)
         let viewModel = HistoryViewModel()
         viewModel.setModelContext(context)
-        viewModel.importUntrackedRecordings()
+        viewModel.importUntrackedRecordings(excluding: recordingService.currentRecordingURL)
         if AppSettings.shared.autoDeleteRecordings {
             viewModel.cleanupOldRecordings()
         }

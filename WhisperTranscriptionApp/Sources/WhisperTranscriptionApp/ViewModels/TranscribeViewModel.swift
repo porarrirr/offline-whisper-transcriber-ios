@@ -275,6 +275,7 @@ class TranscribeViewModel: ObservableObject {
             transcriptionSegments = result.segments
             transcriptionLanguage = result.language
 
+            try Task.checkCancellation()
             let savedDuration = max(duration, result.processedDuration)
             let storedAudioPath = try RecordingFileReference.storedPath(for: transcriptionURL)
             let record = existingRecord ?? TranscriptionRecord(
@@ -521,7 +522,29 @@ class TranscribeViewModel: ObservableObject {
         }
     }
 
-    private func saveRecordingRecord(url: URL, duration: TimeInterval, modelContext: ModelContext) throws -> TranscriptionRecord {
+    func saveRecordingRecord(url: URL, duration: TimeInterval, modelContext: ModelContext) throws -> TranscriptionRecord {
+        let storedPath = try RecordingFileReference.storedPath(for: url)
+        // Recovery may already have registered this file before recording stopped.
+        // Resolve legacy absolute references as well as current relative references.
+        let records = try modelContext.fetch(FetchDescriptor<TranscriptionRecord>())
+        if let record = try records.first(where: { record in
+            guard let path = record.audioFilePath else { return false }
+            let migratedPath = try RecordingFileReference.migratedStoredPath(from: path) ?? path
+            return try RecordingFileReference.fileURL(for: migratedPath) == url.standardizedFileURL
+        }) {
+            let previousPath = record.audioFilePath
+            let previousDuration = record.duration
+            record.audioFilePath = storedPath
+            record.duration = duration
+            do {
+                try modelContext.save()
+                return record
+            } catch {
+                record.audioFilePath = previousPath
+                record.duration = previousDuration
+                throw TranscriptionPipelineError.historySaveFailed(error.localizedDescription)
+            }
+        }
         let createdAt = Date()
         let record = TranscriptionRecord(
             title: TranscriptionRecord.defaultTitle(for: createdAt),

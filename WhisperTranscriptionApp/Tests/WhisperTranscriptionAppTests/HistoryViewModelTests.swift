@@ -5,6 +5,70 @@ import XCTest
 
 @MainActor
 final class HistoryViewModelTests: XCTestCase {
+    func testRecoverySkipsActiveRecordingAndImportsItOnlyOnceAfterStop() throws {
+        let context = try makeModelContext()
+        let directory = try makeTemporaryDirectory()
+        let url = directory.appendingPathComponent("active.m4a")
+        try Data("audio".utf8).write(to: url)
+        let viewModel = HistoryViewModel(recordingsDirectory: directory)
+        viewModel.setModelContext(context)
+
+        viewModel.importUntrackedRecordings(excluding: url)
+        viewModel.importUntrackedRecordings(excluding: url)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TranscriptionRecord>()), 0)
+
+        viewModel.importUntrackedRecordings()
+        viewModel.importUntrackedRecordings()
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TranscriptionRecord>()), 1)
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    func testSavingRecoveredRecordingReusesHistoryAcrossRepeatedStops() throws {
+        let context = try makeModelContext()
+        let path = "Recordings/recovered-\(UUID().uuidString).m4a"
+        let url = try RecordingFileReference.fileURL(for: path)
+        let record = makeRecord(title: "Keep title", text: "Keep transcript", audioFilePath: path)
+        context.insert(record)
+        try context.save()
+        let viewModel = TranscribeViewModel()
+
+        for _ in 0..<3 {
+            let saved = try viewModel.saveRecordingRecord(url: url, duration: 5896, modelContext: context)
+            XCTAssertEqual(saved.id, record.id)
+        }
+
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TranscriptionRecord>()), 1)
+        XCTAssertEqual(record.duration, 5896)
+        XCTAssertEqual(record.title, "Keep title")
+        XCTAssertEqual(record.text, "Keep transcript")
+    }
+
+    func testNewRecordingRemainsSingleHistoryItemOnRepeatedSave() throws {
+        let context = try makeModelContext()
+        let url = try RecordingFileReference.fileURL(for: "Recordings/new-\(UUID().uuidString).m4a")
+        let viewModel = TranscribeViewModel()
+        let first = try viewModel.saveRecordingRecord(url: url, duration: 12, modelContext: context)
+        let second = try viewModel.saveRecordingRecord(url: url, duration: 12, modelContext: context)
+
+        XCTAssertEqual(first.id, second.id)
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TranscriptionRecord>()), 1)
+    }
+
+    func testSavingRecordingReusesLegacyAbsoluteReference() throws {
+        let context = try makeModelContext()
+        let name = "legacy-\(UUID().uuidString).m4a"
+        let record = makeRecord(title: "Recovered", text: "", audioFilePath: "/old/container/Documents/Recordings/\(name)")
+        context.insert(record)
+        try context.save()
+        let url = try RecordingFileReference.fileURL(for: "Recordings/\(name)")
+
+        let saved = try TranscribeViewModel().saveRecordingRecord(url: url, duration: 10, modelContext: context)
+
+        XCTAssertEqual(saved.id, record.id)
+        XCTAssertEqual(saved.audioFilePath, "Recordings/\(name)")
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TranscriptionRecord>()), 1)
+    }
+
     func testFetchRecordsBuildsAvailableTagsAndAppliesFilters() throws {
         let context = try makeModelContext()
         let oldRecord = makeRecord(
