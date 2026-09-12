@@ -1,313 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-  "Turn this recording into text.": {
-    "localizations": {
-      "en": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Turn this recording into text."
-        }
-      },
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "保存した音声を文字に変換します。"
-        }
-      }
-    }
-  },
-  "Start Transcription": {
-    "localizations": {
-      "en": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Start Transcription"
-        }
-      },
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "文字起こしを開始"
-        }
-      }
-    }
-  },
-  "Model & Downloads": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "文字起こしモデル"
-        }
-      }
-    }
-  },
-  "Choose a prepared model, or download a model to use on this device.": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "準備済みのモデルを選択するか、この端末で使うモデルをダウンロードします。"
-        }
-      }
-    }
-  },
-  "The model determines transcription speed, accuracy, and available languages.": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "モデルによって文字起こしの速度・精度・対応言語が変わります。"
-        }
-      }
-    }
-  },
-  "Language & Output": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "言語と文字起こし結果"
-        }
-      }
-    }
-  },
-  "Advanced Transcription Settings": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "文字起こしの詳細設定"
-        }
-      }
-    }
-  },
-  "Audio cleanup, silence detection, processing speed, and vocabulary hints": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "音声の調整、無音のスキップ、処理速度、認識のヒント"
-        }
-      }
-    }
-  },
-  "Vocabulary Hints": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "認識させたい単語・固有名詞"
-        }
-      }
-    }
-  },
-  "Add names or technical terms that may appear in the recording. This is a recognition hint, not an instruction to the AI.": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "録音に出てくる人名や専門用語を入力します。例：田中、SwiftUI、音声認識。AIへの指示ではなく、認識を助けるヒントとして使われます。"
-        }
-      }
-    }
-  },
-  "Efficient Processing": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "メモリ使用量を抑えて処理"
-        }
-      }
-    }
-  },
-  "Use Flash Attention to reduce memory use and speed up Whisper processing": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "Flash AttentionでWhisperのメモリ使用量を減らし、処理を高速化します"
-        }
-      }
-    }
-  },
-  "Clean Up Audio": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "ノイズと音量を調整"
-        }
-      }
-    }
-  },
-  "Skip Silent Sections": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "無音の区間をスキップ"
-        }
-      }
-    }
-  },
-  "Recording in progress": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "録音中"
-        }
-      }
-    }
-  },
-  "Ready to record": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "録音できます"
-        }
-      }
-    }
-  },
-  "Recording duration": {
-    "extractionState": "manual",
-    "localizations": {
-      "ja": {
-        "stringUnit": {
-          "state": "translated",
-          "value": "録音時間"
-        }
-      }
-    }
-  },
-"Microphone": {
-  "extractionState": "manual",
-  "localizations": {
-    "ja": {
-      "stringUnit": {
-        "state": "translated",
-        "value": "マイク"
-      }
-    }
-  }
-},
-"Switch microphone": {
-  "extractionState": "manual",
-  "localizations": {
-    "ja": {
-      "stringUnit": {
-        "state": "translated",
-        "value": "マイクを切り替える"
-      }
-    }
-  }
-},
-"Switching microphone…": {
-  "extractionState": "manual",
-  "localizations": {
-    "ja": {
-      "stringUnit": {
-        "state": "translated",
-        "value": "マイクを切り替え中…"
-      }
-    }
-  }
-},
-"Microphone switching failed.": {
-  "extractionState": "manual",
-  "localizations": {
-    "ja": {
-      "stringUnit": {
-        "state": "translated",
-        "value": "マイクの切り替えに失敗しました。"
-      }
-    }
-  }
-},
-"Microphone switching failed. The saved part is available for transcription.": {
-  "extractionState": "manual",
-  "localizations": {
-    "ja": {
-      "stringUnit": {
-        "state": "translated",
-        "value": "マイクの切り替えに失敗しました。保存済みの音声は文字起こしできます。"
-      }
-    }
-  }
-},
-"Bluetooth microphones use call-quality audio (HFP). Choose the built-in microphone for higher-quality recording. Converting the audio format does not restore lost detail.": {
-  "extractionState": "manual",
-  "localizations": {
-    "ja": {
-      "stringUnit": {
-        "state": "translated",
-        "value": "Bluetoothマイクは通話用の音質（HFP）になります。音質を優先する場合は内蔵マイクを選んでください。音声形式を変換しても、失われた音の情報は復元されません。"
-      }
-    }
-  }
-},
-    "Live transcription stopped because recognition could not keep up. The audio recording is preserved.": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "音声認識が追いつかないためライブ文字起こしを停止しました。録音データは保持されています。"
-          }
-        }
-      }
-    },
-    "This transcription was edited or deleted while recognition was running. Your saved changes were preserved.": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "音声認識中にこの履歴が編集または削除されました。保存済みの変更は上書きしていません。"
-          }
-        }
-      }
-    },
-    "The VAD model is invalid. Download the model again.": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "VADモデルが無効です。モデルを再ダウンロードしてください。"
-          }
-        }
-      }
-    },
-    "Audio playback is unavailable while recording.": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "録音中は音声を再生できません。"
-          }
-        }
-      }
-    },
     "" : {
 
     },
@@ -609,6 +302,17 @@
         }
       }
     },
+    "Add names or technical terms that may appear in the recording. This is a recognition hint, not an instruction to the AI." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音に出てくる人名や専門用語を入力します。例：田中、SwiftUI、音声認識。AIへの指示ではなく、認識を助けるヒントとして使われます。"
+          }
+        }
+      }
+    },
     "Add or Manage Whisper Models" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -719,6 +423,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "進階設定"
+          }
+        }
+      }
+    },
+    "Advanced Transcription Settings" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしの詳細設定"
           }
         }
       }
@@ -1259,6 +974,17 @@
         }
       }
     },
+    "Audio cleanup, silence detection, processing speed, and vocabulary hints" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声の調整、無音のスキップ、処理速度、認識のヒント"
+          }
+        }
+      }
+    },
     "Audio conversion error" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1408,8 +1134,16 @@
         }
       }
     },
-    "Audio Preprocessing" : {
-
+    "Audio playback is unavailable while recording." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音中は音声を再生できません。"
+          }
+        }
+      }
     },
     "Auto-Delete Recordings" : {
       "extractionState" : "manual",
@@ -1635,6 +1369,17 @@
         }
       }
     },
+    "Bluetooth microphones use call-quality audio (HFP). Choose the built-in microphone for higher-quality recording. Converting the audio format does not restore lost detail." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bluetoothマイクは通話用の音質（HFP）になります。音質を優先する場合は内蔵マイクを選んでください。音声形式を変換しても、失われた音の情報は復元されません。"
+          }
+        }
+      }
+    },
     "By using this app, you agree that transcription accuracy is not guaranteed, and verifying, recording, and sharing results are the user's responsibility. For details, please check the Disclaimer in settings." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1706,7 +1451,6 @@
       }
     },
     "Cancel Download" : {
-      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -1819,6 +1563,17 @@
         }
       }
     },
+    "Choose a prepared model, or download a model to use on this device." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "準備済みのモデルを選択するか、この端末で使うモデルをダウンロードします。"
+          }
+        }
+      }
+    },
     "Choose a retained language to release, then try again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1826,6 +1581,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "保持中の言語を1つ選んで解除してから、もう一度お試しください。"
+          }
+        }
+      }
+    },
+    "Clean Up Audio" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ノイズと音量を調整"
           }
         }
       }
@@ -2983,6 +2749,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "この発言を編集"
+          }
+        }
+      }
+    },
+    "Efficient Processing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メモリ使用量を抑えて処理"
           }
         }
       }
@@ -4964,6 +4741,17 @@
         }
       }
     },
+    "Language & Output" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "言語と文字起こし結果"
+          }
+        }
+      }
+    },
     "Language for transcription" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5300,6 +5088,17 @@
         }
       }
     },
+    "Live transcription stopped because recognition could not keep up. The audio recording is preserved." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声認識が追いつかないためライブ文字起こしを停止しました。録音データは保持されています。"
+          }
+        }
+      }
+    },
     "Live transcription stopped because recording was interrupted. The saved part is available for transcription." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5539,6 +5338,17 @@
         }
       }
     },
+    "Microphone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイク"
+          }
+        }
+      }
+    },
     "Microphone permission is required" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5574,6 +5384,28 @@
         }
       }
     },
+    "Microphone switching failed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクの切り替えに失敗しました。"
+          }
+        }
+      }
+    },
+    "Microphone switching failed. The saved part is available for transcription." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクの切り替えに失敗しました。保存済みの音声は文字起こしできます。"
+          }
+        }
+      }
+    },
     "Model" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -5605,6 +5437,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "模型"
+          }
+        }
+      }
+    },
+    "Model & Downloads" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしモデル"
           }
         }
       }
@@ -6049,8 +5892,18 @@
     },
     "No transcription yet" : {
       "localizations" : {
-        "en" : { "stringUnit" : { "state" : "translated", "value" : "No transcription yet" } },
-        "ja" : { "stringUnit" : { "state" : "translated", "value" : "まだ文字起こしされていません" } }
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No transcription yet"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "まだ文字起こしされていません"
+          }
+        }
       }
     },
     "No transcriptions yet" : {
@@ -6931,6 +6784,17 @@
         }
       }
     },
+    "Ready to record" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音できます"
+          }
+        }
+      }
+    },
     "Ready to Use" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7043,6 +6907,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "錄音與儲存"
+          }
+        }
+      }
+    },
+    "Recording duration" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音時間"
+          }
+        }
+      }
+    },
+    "Recording in progress" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "録音中"
           }
         }
       }
@@ -7968,6 +7854,17 @@
         }
       }
     },
+    "Skip Silent Sections" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無音の区間をスキップ"
+          }
+        }
+      }
+    },
     "Small (High Accuracy)" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8297,6 +8194,23 @@
         }
       }
     },
+    "Start Transcription" : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start Transcription"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしを開始"
+          }
+        }
+      }
+    },
     "Start transcription with %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8538,6 +8452,17 @@
         }
       }
     },
+    "Switch microphone" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクを切り替える"
+          }
+        }
+      }
+    },
     "Switch to Reading View" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8604,6 +8529,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "切換為時間軸檢視"
+          }
+        }
+      }
+    },
+    "Switching microphone…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクを切り替え中…"
           }
         }
       }
@@ -9033,6 +8969,17 @@
         }
       }
     },
+    "The model determines transcription speed, accuracy, and available languages." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "モデルによって文字起こしの速度・精度・対応言語が変わります。"
+          }
+        }
+      }
+    },
     "The model exists on this device, but this app has not retained the language. Prepare it before transcription." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9110,6 +9057,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "音声認識言語の予約上限に達しました。"
+          }
+        }
+      }
+    },
+    "The VAD model is invalid. Download the model again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VADモデルが無効です。モデルを再ダウンロードしてください。"
           }
         }
       }
@@ -9266,6 +9224,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "このアプリの言語予約を解除します。モデル本体の削除はiOSが管理するため、端末上に残る場合があります。"
+          }
+        }
+      }
+    },
+    "This transcription was edited or deleted while recognition was running. Your saved changes were preserved." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声認識中にこの履歴が編集または削除されました。保存済みの変更は上書きしていません。"
           }
         }
       }
@@ -9734,7 +9703,6 @@
       }
     },
     "Transcribing..." : {
-      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -10145,6 +10113,22 @@
         }
       }
     },
+    "Turn this recording into text." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn this recording into text."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保存した音声を文字に変換します。"
+          }
+        }
+      }
+    },
     "Unable to check available storage. Please try again later." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -10336,6 +10320,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "使用する"
+          }
+        }
+      }
+    },
+    "Use Flash Attention to reduce memory use and speed up Whisper processing" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Flash AttentionでWhisperのメモリ使用量を減らし、処理を高速化します"
           }
         }
       }
@@ -10592,6 +10587,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "檢視記錄"
+          }
+        }
+      }
+    },
+    "Vocabulary Hints" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "認識させたい単語・固有名詞"
           }
         }
       }
