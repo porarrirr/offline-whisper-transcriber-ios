@@ -56,6 +56,20 @@ final class LongTranscriptionLayoutTests: XCTestCase {
         XCTAssertTrue(scrollUntilVisible(marker, in: app))
     }
 
+    func testHistoryTitleEditorOffersGenerationForExistingTitle() throws {
+        guard #available(iOS 27.0, *) else { throw XCTSkip("Apple Intelligence title generation requires iOS 27") }
+
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-long-transcription", "--ui-test-history-detail"]
+        app.launch()
+
+        XCTAssertTrue(app.otherElements["historyTranscriptionCard"].waitForExistence(timeout: 10))
+        app.buttons["historyEditTitle"].tap()
+
+        XCTAssertTrue(app.alerts.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["generateTitleFromTitleEditor"].exists)
+    }
+
     private func exerciseLongTranscriptionScreen(
         extraArguments: [String],
         cardIdentifier: String,

@@ -123,6 +123,12 @@ struct HistoryDetailView: View {
         }
         .alert("Edit Title", isPresented: $showEditTitle) {
             TextField("Title", text: $editableTitle)
+            if #available(iOS 27.0, *), record.hasTranscriptionText {
+                Button("Generate Title with Apple Intelligence") {
+                    Task { await viewModel.generateTitleWithAppleIntelligence(record) }
+                }
+                .accessibilityIdentifier("generateTitleFromTitleEditor")
+            }
             Button("Cancel", role: .cancel) {}
             Button("Save") {
                 viewModel.updateTitle(record, title: editableTitle)
@@ -312,6 +318,7 @@ struct HistoryDetailView: View {
                         }
                 }
                 .accessibilityLabel(Text("Edit Title"))
+                .accessibilityIdentifier("historyEditTitle")
             }
 
             Text(metadataSummary)
