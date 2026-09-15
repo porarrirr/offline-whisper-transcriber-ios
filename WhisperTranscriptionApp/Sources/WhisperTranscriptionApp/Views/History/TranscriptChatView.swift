@@ -1,12 +1,21 @@
 import SwiftUI
+import SwiftData
 
 struct TranscriptChatView: View {
     let record: TranscriptionRecord
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var modelContext
     @State private var messages: [TranscriptChatMessage] = []
     @State private var question = ""
+    @State private var questionFieldID = UUID()
     @State private var isResponding = false
     @State private var errorMessage: String?
+    @FocusState private var isQuestionFocused: Bool
+
+    init(record: TranscriptionRecord) {
+        self.record = record
+        _messages = State(initialValue: record.chatMessages)
+    }
 
     var body: some View {
         NavigationStack {
@@ -36,6 +45,13 @@ struct TranscriptChatView: View {
                         }
                         .padding()
                     }
+                    .contentShape(Rectangle())
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            isQuestionFocused = false
+                        }
+                    )
+                    .scrollDismissesKeyboard(.interactively)
                     .onChange(of: messages.count) { _, _ in
                         if let id = messages.last?.id { proxy.scrollTo(id, anchor: .bottom) }
                     }
@@ -43,6 +59,8 @@ struct TranscriptChatView: View {
 
                 HStack(alignment: .bottom, spacing: 10) {
                     TextField("Ask a question…", text: $question, axis: .vertical)
+                        .id(questionFieldID)
+                        .focused($isQuestionFocused)
                         .lineLimit(1...5)
                         .textFieldStyle(.roundedBorder)
                         .submitLabel(.send)
@@ -77,21 +95,37 @@ struct TranscriptChatView: View {
     private func send() {
         let submitted = question.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !submitted.isEmpty, !isResponding else { return }
+
+        // 日本語IMEの確定イベントが送信後に古い文字列を書き戻すことがあるため、
+        // フォーカスを外したうえでTextField自体も新しいidentityで作り直す。
+        isQuestionFocused = false
         question = ""
+        questionFieldID = UUID()
         errorMessage = nil
         let priorConversation = messages
-        messages.append(TranscriptChatMessage(role: .user, text: submitted))
+        let conversationWithQuestion = priorConversation + [
+            TranscriptChatMessage(role: .user, text: submitted)
+        ]
+        guard persist(conversationWithQuestion) else { return }
+        messages = conversationWithQuestion
         isResponding = true
+        let transcript = record.text
+        let duration = record.duration
         Task {
             do {
                 let answer = try await AppleIntelligenceService.shared.answer(
                     question: submitted,
-                    transcript: record.text,
-                    duration: record.duration,
+                    transcript: transcript,
+                    duration: duration,
                     conversation: priorConversation
                 )
                 await MainActor.run {
-                    messages.append(TranscriptChatMessage(role: .assistant, text: answer))
+                    let conversationWithAnswer = messages + [
+                        TranscriptChatMessage(role: .assistant, text: answer)
+                    ]
+                    if persist(conversationWithAnswer) {
+                        messages = conversationWithAnswer
+                    }
                     isResponding = false
                 }
             } catch {
@@ -100,6 +134,20 @@ struct TranscriptChatView: View {
                     isResponding = false
                 }
             }
+        }
+    }
+
+    @MainActor
+    private func persist(_ updatedMessages: [TranscriptChatMessage]) -> Bool {
+        let previousJSON = record.chatMessagesJSON
+        do {
+            try record.updateChatMessages(updatedMessages)
+            try modelContext.save()
+            return true
+        } catch {
+            record.chatMessagesJSON = previousJSON
+            errorMessage = String(localized: "Failed to save chat history") + ": \(error.localizedDescription)"
+            return false
         }
     }
 }

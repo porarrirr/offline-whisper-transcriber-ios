@@ -14,6 +14,7 @@ class TranscriptionRecord: Identifiable {
     var segmentsJSON: String?
     var language: String?
     var tagsJSON: String?
+    var chatMessagesJSON: String?
     
     var segments: [TranscriptionSegment] {
         guard let segmentsJSON = segmentsJSON,
@@ -29,6 +30,12 @@ class TranscriptionRecord: Identifiable {
 
     var tagsInputText: String {
         tags.joined(separator: ", ")
+    }
+
+    var chatMessages: [TranscriptChatMessage] {
+        guard let chatMessagesJSON,
+              let data = chatMessagesJSON.data(using: .utf8) else { return [] }
+        return (try? JSONDecoder().decode([TranscriptChatMessage].self, from: data)) ?? []
     }
     
     init(
@@ -58,6 +65,7 @@ class TranscriptionRecord: Identifiable {
         }
         self.language = language
         self.tagsJSON = Self.encodedTags(tags)
+        self.chatMessagesJSON = nil
     }
     
     enum SourceType: String, Codable {
@@ -116,6 +124,14 @@ class TranscriptionRecord: Identifiable {
 
     func updateTags(_ tags: [String]) {
         self.tagsJSON = Self.encodedTags(tags)
+    }
+
+    func updateChatMessages(_ messages: [TranscriptChatMessage]) throws {
+        let data = try JSONEncoder().encode(messages)
+        guard let json = String(data: data, encoding: .utf8) else {
+            throw ChatHistoryEncodingError()
+        }
+        chatMessagesJSON = json
     }
 
     func matchesSearchText(_ searchText: String) -> Bool {
@@ -203,5 +219,11 @@ struct TranscriptionRevision: Equatable {
 struct TranscriptionEditConflict: LocalizedError {
     var errorDescription: String? {
         String(localized: "This transcription was edited or deleted while recognition was running. Your saved changes were preserved.")
+    }
+}
+
+struct ChatHistoryEncodingError: LocalizedError {
+    var errorDescription: String? {
+        String(localized: "The chat history could not be encoded.")
     }
 }

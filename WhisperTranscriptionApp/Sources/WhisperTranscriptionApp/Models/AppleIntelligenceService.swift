@@ -20,11 +20,17 @@ enum AppleIntelligenceError: LocalizedError {
     }
 }
 
-struct TranscriptChatMessage: Identifiable, Equatable, Sendable {
-    enum Role: Sendable { case user, assistant }
-    let id = UUID()
+struct TranscriptChatMessage: Identifiable, Equatable, Codable, Sendable {
+    enum Role: String, Codable, Sendable { case user, assistant }
+    let id: UUID
     let role: Role
     let text: String
+
+    init(id: UUID = UUID(), role: Role, text: String) {
+        self.id = id
+        self.role = role
+        self.text = text
+    }
 }
 
 actor AppleIntelligenceService {

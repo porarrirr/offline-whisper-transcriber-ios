@@ -1,4 +1,5 @@
 import XCTest
+import SwiftData
 @testable import WhisperTranscriptionApp
 
 final class TranscriptionRecordTests: XCTestCase {
@@ -112,5 +113,62 @@ final class TranscriptionRecordTests: XCTestCase {
 
         XCTAssertEqual(record.segments, [])
         XCTAssertEqual(record.tags, [])
+    }
+
+    func testRecordStoresChatMessagesForItsTranscription() throws {
+        let record = TranscriptionRecord(
+            title: "Interview",
+            text: "Transcript",
+            sourceType: .recording,
+            duration: 3
+        )
+        let messages = [
+            TranscriptChatMessage(id: UUID(), role: .user, text: "要約して"),
+            TranscriptChatMessage(id: UUID(), role: .assistant, text: "要約です")
+        ]
+
+        try record.updateChatMessages(messages)
+
+        XCTAssertEqual(record.chatMessages, messages)
+    }
+
+    func testCorruptChatHistoryJSONDecodesAsEmptyCollection() {
+        let record = TranscriptionRecord(
+            title: "Interview",
+            text: "Transcript",
+            sourceType: .recording,
+            duration: 3
+        )
+        record.chatMessagesJSON = "{"
+
+        XCTAssertEqual(record.chatMessages, [])
+    }
+
+    @MainActor
+    func testChatHistoryPersistsInSwiftDataStore() throws {
+        let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+        let container = try ModelContainer(
+            for: TranscriptionRecord.self,
+            configurations: configuration
+        )
+        let writer = ModelContext(container)
+        let record = TranscriptionRecord(
+            title: "Meeting",
+            text: "Transcript",
+            sourceType: .recording,
+            duration: 4
+        )
+        let messages = [
+            TranscriptChatMessage(role: .user, text: "決定事項は？"),
+            TranscriptChatMessage(role: .assistant, text: "決定事項です")
+        ]
+        try record.updateChatMessages(messages)
+        writer.insert(record)
+        try writer.save()
+
+        let reader = ModelContext(container)
+        let fetched = try XCTUnwrap(reader.fetch(FetchDescriptor<TranscriptionRecord>()).first)
+
+        XCTAssertEqual(fetched.chatMessages, messages)
     }
 }
