@@ -180,6 +180,15 @@ class HistoryViewModel: ObservableObject {
         fetchRecords()
     }
 
+    func generateTitleWithAppleIntelligence(_ record: TranscriptionRecord) async {
+        do {
+            let title = try await AppleIntelligenceService.shared.suggestedTitle(for: record.text)
+            updateTitle(record, title: title)
+        } catch {
+            setError(error.localizedDescription)
+        }
+    }
+
     @discardableResult
     func updateSegmentText(
         _ record: TranscriptionRecord,

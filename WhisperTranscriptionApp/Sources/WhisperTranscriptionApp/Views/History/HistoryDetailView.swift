@@ -23,6 +23,7 @@ struct HistoryDetailView: View {
     @State private var showExportSheet = false
     @State private var showEditTitle = false
     @State private var showEditTags = false
+    @State private var showTranscriptChat = false
     @State private var editableTitle = ""
     @State private var sharePayload: SharePayload?
     @State private var showExportAudioError = false
@@ -142,6 +143,9 @@ struct HistoryDetailView: View {
             ) { tags in
                 viewModel.updateTags(record, tags: tags)
             }
+        }
+        .sheet(isPresented: $showTranscriptChat) {
+            TranscriptChatView(record: record)
         }
         .sheet(item: $editingSegment) { segment in
             TranscriptionSegmentEditor(
@@ -347,6 +351,16 @@ struct HistoryDetailView: View {
                 Spacer(minLength: 0)
 
                 if record.hasTranscriptionText {
+                    if #available(iOS 27.0, *) {
+                        compactActionButton(
+                            title: "Chat",
+                            systemImage: "sparkles",
+                            accessibilityIdentifier: "historyTranscriptChat"
+                        ) {
+                            showTranscriptChat = true
+                        }
+                    }
+
                     compactActionButton(
                         title: "Copy",
                         systemImage: "doc.on.doc",
@@ -440,6 +454,14 @@ struct HistoryDetailView: View {
                 showEditTags = true
             } label: {
                 Label(record.tags.isEmpty ? "Add Tags" : "Edit Tags", systemImage: "tag")
+            }
+
+            if #available(iOS 27.0, *), record.hasTranscriptionText {
+                Button {
+                    Task { await viewModel.generateTitleWithAppleIntelligence(record) }
+                } label: {
+                    Label("Generate Title with Apple Intelligence", systemImage: "sparkles")
+                }
             }
 
             if !record.hasTranscriptionText && cachedAudioURL != nil {
