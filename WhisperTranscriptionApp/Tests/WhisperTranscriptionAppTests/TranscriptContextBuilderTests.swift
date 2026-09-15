@@ -2,24 +2,23 @@ import XCTest
 @testable import WhisperTranscriptionApp
 
 final class TranscriptContextBuilderTests: XCTestCase {
-    func testChunksNeverExceedConfiguredSize() {
-        let builder = TranscriptContextBuilder(maximumChunkCharacters: 10)
-        let chunks = builder.chunks(from: "abcdefghijk\nsecond paragraph")
-        XCTAssertFalse(chunks.isEmpty)
-        XCTAssertTrue(chunks.allSatisfy { $0.text.count <= 10 })
+    func testRepairsCJKWordsSplitByWhitespace() {
+        let builder = TranscriptContextBuilder(maximumChunkCharacters: 100, overlapCharacters: 10)
+        XCTAssertEqual(builder.normalizedTranscript("おはよ\nうございま\nす あなた"), "おはようございますあなた")
     }
 
-    func testRelevantChunksPreferQuestionTerms() {
-        let builder = TranscriptContextBuilder(maximumChunkCharacters: 30)
-        let chunks = builder.chunks(from: "apples and oranges\n\nrelease schedule Friday")
-        let result = builder.relevantChunks(for: "When is the release schedule?", in: chunks, limit: 1)
-        XCTAssertEqual(result.first?.text, "release schedule Friday")
+    func testChunksHaveOverlapAndStableCharacterLocations() {
+        let builder = TranscriptContextBuilder(maximumChunkCharacters: 10, overlapCharacters: 2)
+        let chunks = builder.chunks(from: "abcdefghijklmnopqrst")
+        XCTAssertEqual(chunks.map(\.text), ["abcdefghij", "ijklmnopqr", "qrst"])
+        XCTAssertEqual(chunks.map(\.startCharacter), [0, 8, 16])
+        XCTAssertEqual(chunks.map(\.endCharacter), [10, 18, 20])
     }
 
-    func testRelevantChunksSupportJapaneseQuestions() {
-        let builder = TranscriptContextBuilder(maximumChunkCharacters: 20)
-        let chunks = builder.chunks(from: "予算について説明します\n\n発売日は金曜日です")
-        let result = builder.relevantChunks(for: "発売日はいつですか", in: chunks, limit: 1)
-        XCTAssertEqual(result.first?.text, "発売日は金曜日です")
+    func testApproximateTimeRangeUsesCharacterPosition() {
+        let chunk = TranscriptContextBuilder.Chunk(id: 1, text: "text", startCharacter: 250, endCharacter: 500)
+        let range = chunk.approximateTimeRange(transcriptLength: 1_000, duration: 400)
+        XCTAssertEqual(range?.lowerBound, 100)
+        XCTAssertEqual(range?.upperBound, 200)
     }
 }

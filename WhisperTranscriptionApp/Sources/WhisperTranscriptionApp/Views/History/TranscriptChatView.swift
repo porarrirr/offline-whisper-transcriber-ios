@@ -87,6 +87,7 @@ struct TranscriptChatView: View {
                 let answer = try await AppleIntelligenceService.shared.answer(
                     question: submitted,
                     transcript: record.text,
+                    duration: record.duration,
                     conversation: priorConversation
                 )
                 await MainActor.run {
