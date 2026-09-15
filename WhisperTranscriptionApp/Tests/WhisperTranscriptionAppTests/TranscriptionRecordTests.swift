@@ -171,4 +171,42 @@ final class TranscriptionRecordTests: XCTestCase {
 
         XCTAssertEqual(fetched.chatMessages, messages)
     }
+
+    func testChatMarkdownParserPreservesBlockStructure() {
+        let markdown = """
+        # 概要
+
+        本文は **重要** です。
+
+        - 項目1
+          1. 入れ子
+        > 引用
+
+        ```swift
+        let answer = 42
+        ```
+        """
+
+        XCTAssertEqual(
+            ChatMarkdownParser.parse(markdown),
+            [
+                .heading(level: 1, text: "概要"),
+                .paragraph("本文は **重要** です。"),
+                .unorderedItem(indentation: 0, text: "項目1"),
+                .orderedItem(indentation: 1, number: "1", text: "入れ子"),
+                .quote("引用"),
+                .code(language: "swift", text: "let answer = 42")
+            ]
+        )
+    }
+
+    func testChatMarkdownParserPreservesPlainLineBreaksAndUnclosedCodeFence() {
+        XCTAssertEqual(
+            ChatMarkdownParser.parse("1行目\n2行目\n\n~~~\ncode"),
+            [
+                .paragraph("1行目\n2行目"),
+                .code(language: nil, text: "code")
+            ]
+        )
+    }
 }
