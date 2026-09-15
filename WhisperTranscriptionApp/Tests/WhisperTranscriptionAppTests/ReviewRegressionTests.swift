@@ -530,11 +530,7 @@ extension ReviewRegressionTests {
     func testLongChunkMergePreservesAllNonBoundarySegments() {
         let previous = (0..<10_000).map { TranscriptionSegment(id: $0, start: Double($0), end: Double($0 + 1), text: "previous \($0)") }
         let next = (0..<10_000).map { TranscriptionSegment(id: $0, start: 10_000 + Double($0), end: 10_001 + Double($0), text: "next \($0)") }
-        measure {
-            let merged = TranscriptionChunkProcessor.acceptedSegments(from: next, acceptedStart: 10_000, previousSegments: previous)
-            XCTAssertEqual(merged.count, next.count)
-            XCTAssertEqual(merged.first?.text, "next 0")
-            XCTAssertEqual(merged.last?.text, "next 9999")
-        }
+        let merged = TranscriptionChunkProcessor.acceptedSegments(from: next, acceptedStart: 10_000, previousSegments: previous)
+        XCTAssertEqual(merged, next)
     }
 }

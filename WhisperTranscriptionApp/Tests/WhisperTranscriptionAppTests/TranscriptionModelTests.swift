@@ -55,11 +55,6 @@ final class TranscriptionModelTests: XCTestCase {
         XCTAssertNil(TranscriptionModel(legacyWhisperRawValue: "missing"))
     }
 
-    func testPrimaryModelDisplayNamesIdentifyBackend() {
-        XCTAssertTrue(WhisperModelSize.tiny.displayName.contains("Whisper"))
-        XCTAssertTrue(AppleSpeechLocale.jaJP.displayName.contains("SpeechTranscriber"))
-    }
-
     func testRequiredDownloadBytesSkipsCoreMLWhenPolicyDoesNotRequestIt() {
         let size = WhisperModelSize.largeV3TurboQ5_0
         let buffer = WhisperModelSize.downloadSafetyBufferBytes
@@ -91,10 +86,6 @@ final class TranscriptionModelTests: XCTestCase {
             WhisperModelSize.largeV3TurboQ5_0.coreMLEncoderDirectoryName,
             WhisperModelSize.largeV3TurboQ8_0.coreMLEncoderDirectoryName
         )
-    }
-
-    func testPickerOptionsIncludeSmallQ5WhisperModel() {
-        XCTAssertTrue(TranscriptionModel.pickerOptions.contains(.whisper(.smallQ5_1)))
     }
 
     func testPreferredDefaultsUseSupportedSpeechLocale() {

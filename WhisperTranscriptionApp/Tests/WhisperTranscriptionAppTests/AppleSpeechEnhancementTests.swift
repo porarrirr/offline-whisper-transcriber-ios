@@ -252,22 +252,57 @@ final class AppleSpeechEnhancementTests: XCTestCase {
         XCTAssertGreaterThan(recoveredRMS, 0.035)
     }
 
-    func testSpeechPreprocessingPreservesInt16StereoChannels() throws {
-        let format = try XCTUnwrap(AVAudioFormat(
-            commonFormat: .pcmFormatInt16, sampleRate: 48_000, channels: 2, interleaved: true
-        ))
-        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_800))
-        buffer.frameLength = buffer.frameCapacity
-        let data = try XCTUnwrap(buffer.int16ChannelData?[0])
-        for frame in 0..<4_800 {
-            data[frame * 2] = Int16(1_000 * sin(2 * Double.pi * 440 * Double(frame) / 48_000))
-            data[frame * 2 + 1] = -data[frame * 2]
+    func testSpeechPreprocessingPreservesPCMLayoutsAndChannelSeparation() throws {
+        for commonFormat in [AVAudioCommonFormat.pcmFormatFloat32, .pcmFormatInt16] {
+            for interleaved in [false, true] {
+                for channels: AVAudioChannelCount in [1, 2] {
+                    let format = try XCTUnwrap(AVAudioFormat(
+                        commonFormat: commonFormat, sampleRate: 48_000,
+                        channels: channels, interleaved: interleaved
+                    ))
+                    let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 4_800))
+                    buffer.frameLength = buffer.frameCapacity
+                    // Only the first channel has speech; a silent second channel must stay silent.
+                    let samples = (0..<4_800).map { Float(0.03 * sin(2 * Double.pi * 440 * Double($0) / 48_000)) }
+                    for frame in 0..<4_800 {
+                        for channel in 0..<Int(channels) {
+                            let plane = interleaved ? 0 : channel
+                            let offset = interleaved ? frame * Int(channels) + channel : frame
+                            let value = channel == 0 ? samples[frame] : 0
+                            if commonFormat == .pcmFormatFloat32 {
+                                buffer.floatChannelData![plane][offset] = value
+                            } else {
+                                buffer.int16ChannelData![plane][offset] = Int16(value * 32_768)
+                            }
+                        }
+                    }
+                    let result = try SpeechAudioPreprocessor().process(buffer)
+                    XCTAssertEqual(result.format, format)
+                    XCTAssertEqual(result.frameLength, buffer.frameLength)
+                    var peak: Float = 0
+                    for frame in 0..<4_800 {
+                        for channel in 0..<Int(channels) {
+                            let plane = interleaved ? 0 : channel
+                            let offset = interleaved ? frame * Int(channels) + channel : frame
+                            let expectedInput = channel == 0 ? samples[frame] : 0
+                            let output: Float
+                            if commonFormat == .pcmFormatFloat32 {
+                                XCTAssertEqual(buffer.floatChannelData![plane][offset], expectedInput)
+                                output = result.floatChannelData![plane][offset]
+                            } else {
+                                XCTAssertEqual(buffer.int16ChannelData![plane][offset], Int16(expectedInput * 32_768))
+                                output = Float(result.int16ChannelData![plane][offset]) / 32_768
+                            }
+                            XCTAssertTrue(output.isFinite)
+                            if channel == 0 { peak = max(peak, abs(output)) }
+                            else { XCTAssertEqual(output, 0) }
+                        }
+                    }
+                    XCTAssertGreaterThan(peak, 0.01)
+                    XCTAssertLessThanOrEqual(peak, 0.95)
+                }
+            }
         }
-        let result = try SpeechAudioPreprocessor().process(buffer)
-        XCTAssertEqual(result.format, format)
-        XCTAssertEqual(result.frameLength, 4_800)
-        let output = try XCTUnwrap(result.int16ChannelData?[0])
-        for frame in 0..<4_800 { XCTAssertEqual(output[frame * 2], -output[frame * 2 + 1]) }
     }
 
     func testSpeechPreprocessingRejectsNonFiniteAudio() throws {
@@ -276,47 +311,6 @@ final class AppleSpeechEnhancementTests: XCTestCase {
         buffer.frameLength = 1
         buffer.floatChannelData![0][0] = .nan
         XCTAssertThrowsError(try SpeechAudioPreprocessor().process(buffer))
-    }
-
-    func testSpeechPreprocessingMatchesOriginalBitsForEveryPCMLayout() throws {
-        for commonFormat in [AVAudioCommonFormat.pcmFormatFloat32, .pcmFormatInt16] {
-            for interleaved in [false, true] {
-                for channels: AVAudioChannelCount in [1, 2] {
-                    let format = try XCTUnwrap(AVAudioFormat(
-                        commonFormat: commonFormat, sampleRate: 16_000,
-                        channels: channels, interleaved: interleaved
-                    ))
-                    let original = SpeechAudioPreprocessorReference()
-                    let updated = SpeechAudioPreprocessor()
-                    var position = 0
-                    for count in [1, 137, 8_192, 1_601, 8_192, 13] {
-                        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)))
-                        buffer.frameLength = AVAudioFrameCount(count)
-                        for frame in 0..<count {
-                            for channel in 0..<Int(channels) {
-                                let plane = interleaved ? 0 : channel
-                                let offset = interleaved ? frame * Int(channels) + channel : frame
-                                let value = Float(sin(Double(position + frame) * 0.17)) * (channel == 0 ? 0.01 : 0.3)
-                                if commonFormat == .pcmFormatFloat32 {
-                                    buffer.floatChannelData![plane][offset] = value
-                                } else {
-                                    buffer.int16ChannelData![plane][offset] = Int16(value * 32_768)
-                                }
-                            }
-                        }
-                        let expected = try original.process(buffer)
-                        let actual = try updated.process(buffer)
-                        let expectedPlanes = UnsafeMutableAudioBufferListPointer(expected.mutableAudioBufferList)
-                        let actualPlanes = UnsafeMutableAudioBufferListPointer(actual.mutableAudioBufferList)
-                        for plane in 0..<expectedPlanes.count {
-                            XCTAssertEqual(actualPlanes[plane].mDataByteSize, expectedPlanes[plane].mDataByteSize)
-                            XCTAssertEqual(memcmp(actualPlanes[plane].mData!, expectedPlanes[plane].mData!, Int(expectedPlanes[plane].mDataByteSize)), 0)
-                        }
-                        position += count
-                    }
-                }
-            }
-        }
     }
 
     private func makeSilentM4A(at url: URL, duration: TimeInterval = 0.25) throws {

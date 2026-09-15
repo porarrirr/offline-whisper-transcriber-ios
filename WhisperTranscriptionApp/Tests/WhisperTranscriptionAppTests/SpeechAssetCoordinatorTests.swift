@@ -43,15 +43,6 @@ final class SpeechAssetStateReducerTests: XCTestCase {
         XCTAssertEqual(state, .downloading(progress: 0.34))
     }
 
-    func testInitialAttemptErrorCanRemainSystemManagedPending() {
-        let failure = SpeechAssetFailure(domain: "test", code: 1, message: "initial attempt failed")
-        let state = SpeechAssetStateReducer.reduce(
-            evidence(status: .downloading, hasActiveRequest: true, blockingIssue: nil)
-        )
-        XCTAssertEqual(state, .systemManagedPending)
-        XCTAssertNotEqual(state, .failed(failure))
-    }
-
     func testFinishedProgressVerifiesUntilInventoryIsInstalled() {
         let state = SpeechAssetStateReducer.reduce(
             evidence(

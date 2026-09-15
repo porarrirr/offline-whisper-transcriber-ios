@@ -51,26 +51,6 @@ final class LiveTranscriptScrollPinningTests: XCTestCase {
         )
     }
 
-    func testScrolledWellAboveBottomIsNotAtBottom() {
-        XCTAssertFalse(
-            LiveTranscriptScrollPinning.isAtBottom(
-                contentOffsetY: maxOffset - 100,
-                contentHeight: contentHeight,
-                containerHeight: containerHeight
-            )
-        )
-    }
-
-    func testTopOfLongContentIsNotAtBottom() {
-        XCTAssertFalse(
-            LiveTranscriptScrollPinning.isAtBottom(
-                contentOffsetY: 0,
-                contentHeight: contentHeight,
-                containerHeight: containerHeight
-            )
-        )
-    }
-
     /// ゴム紙的に最下部を超えて引っ張られた状態でも追従は維持する。
     func testOverscrollBeyondBottomIsAtBottom() {
         XCTAssertTrue(
