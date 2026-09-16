@@ -3,6 +3,23 @@ import XCTest
 @testable import WhisperTranscriptionApp
 
 final class AudioRecorderStartTests: XCTestCase {
+    func testStartingNewRecordingKeepsInterruptedRecordingAvailable() {
+        let recorder = AudioRecorder()
+        let interruptedURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("interrupted-\(UUID().uuidString).m4a")
+        recorder.interruptedRecordingURL = interruptedURL
+
+        recorder.publishStartedRecording()
+
+        let published = expectation(description: "recording start published")
+        DispatchQueue.main.async {
+            XCTAssertTrue(recorder.isRecording)
+            XCTAssertEqual(recorder.interruptedRecordingURL, interruptedURL)
+            published.fulfill()
+        }
+        wait(for: [published], timeout: 1)
+    }
+
     func testMatchingRecordingFormatUsesOriginalBufferWithoutChangingSamples() throws {
         let format = try XCTUnwrap(AVAudioFormat(
             commonFormat: .pcmFormatFloat32, sampleRate: 48_000,

@@ -383,11 +383,11 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
-    private func publishStartedRecording() {
+    // Internal so the interrupted-recording retention contract can be regression tested.
+    func publishStartedRecording() {
         DispatchQueue.main.async {
             self.recordingError = nil
             self.interruptionMessage = nil
-            self.interruptedRecordingURL = nil
             self.currentTime = 0
             self.audioLevel = 0
             self.isRecording = true
@@ -458,9 +458,21 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     func stopRecording() async throws -> URL {
+        try await waitForAutomaticInputReconfiguration()
         let url = try recordingURLForStop()
         finishActiveRecording()
         return try validateRecordingFile(at: url)
+    }
+
+    private func waitForAutomaticInputReconfiguration() async throws {
+        for _ in 0..<120 {
+            stateLock.lock()
+            let reconfiguring = recordingState == .reconfiguringAudioInput
+            stateLock.unlock()
+            guard reconfiguring else { return }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        throw AudioRecorderError.stopInProgress
     }
 
     private func recordingURLForStop() throws -> URL {
@@ -697,7 +709,10 @@ final class AudioRecorder: NSObject, ObservableObject {
 
         stateLock.lock()
         file = recordingFile
-        let shouldRecord = recordingState == .starting || recordingState == .recording || recordingState == .switchingMicrophone
+        let shouldRecord = recordingState == .starting
+            || recordingState == .recording
+            || recordingState == .switchingMicrophone
+            || recordingState == .reconfiguringAudioInput
         stateLock.unlock()
 
         guard shouldRecord else { return .ignored }
@@ -979,12 +994,14 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 
     @objc private func handleAudioEngineConfigurationChange(_ notification: Notification) {
-        stateLock.lock()
-        let switching = recordingState == .switchingMicrophone
-        stateLock.unlock()
-        guard !switching else { return }
-        let message = String(localized: "Recording stopped because the audio input changed. The saved part is available for transcription.")
-        stopRecordingAfterUnexpectedAudioChange(message: message)
+        guard beginAutomaticInputReconfiguration() else { return }
+        AppLogger.info(
+            "Audio engine configuration changed while recording; reconnecting the input tap",
+            context: "AudioRecorder"
+        )
+        Task { [weak self] in
+            await self?.reconfigureAudioInputAfterRouteChange()
+        }
     }
 
     @objc private func handleMediaServicesWereReset(_ notification: Notification) {
@@ -1018,11 +1035,93 @@ final class AudioRecorder: NSObject, ObservableObject {
     private func transitionActiveRecordingToStopping(includingStarting: Bool) -> URL? {
         stateLock.lock()
         defer { stateLock.unlock() }
-        let canStop = recordingState == .recording || recordingState == .switchingMicrophone
+        let canStop = recordingState == .recording
+            || recordingState == .switchingMicrophone
+            || recordingState == .reconfiguringAudioInput
             || (includingStarting && recordingState == .starting)
         guard canStop, let recordingURL else { return nil }
         recordingState = .stopping
         return recordingURL
+    }
+
+    private func beginAutomaticInputReconfiguration() -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard recordingState == .recording else { return false }
+        recordingState = .reconfiguringAudioInput
+        return true
+    }
+
+    private func ensureAutomaticInputReconfigurationActive() throws {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard recordingState == .reconfiguringAudioInput else {
+            throw AudioRecorderError.noActiveRecording
+        }
+    }
+
+    private func completeAutomaticInputReconfiguration() throws {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        guard recordingState == .reconfiguringAudioInput else {
+            throw AudioRecorderError.noActiveRecording
+        }
+        recordingState = .recording
+    }
+
+    /// A headset connection changes the hardware input format and invalidates the
+    /// input tap. Keep the recording file and its fixed 48 kHz timeline open, then
+    /// rebuild only the hardware-facing converter and tap for the new route.
+    private func reconfigureAudioInputAfterRouteChange() async {
+        do {
+            audioEngine.stop()
+            audioEngine.inputNode.removeTap(onBus: 0)
+            audioEngine.reset()
+
+            try ensureAutomaticInputReconfigurationActive()
+            let session = AVAudioSession.sharedInstance()
+            let usesBluetoothHFP = session.currentRoute.inputs.contains { $0.portType == .bluetoothHFP }
+            try session.setMode(usesBluetoothHFP ? .voiceChat : .default)
+            try session.setPreferredSampleRate(preferredRecordingSampleRate(usesBluetoothHFP: usesBluetoothHFP))
+            try session.setActive(true)
+
+            let inputNode = audioEngine.inputNode
+            let hardwareFormat = try await waitForStableInputTapFormat(on: inputNode)
+            try ensureAutomaticInputReconfigurationActive()
+            guard let recordingFormat = currentInputFormat else {
+                throw AudioRecorderError.noActiveRecording
+            }
+            let converter = try RecordingInputConverter(from: hardwareFormat, to: recordingFormat)
+            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: hardwareFormat) { [weak self] buffer, time in
+                do {
+                    let converted = try converter.convert(buffer)
+                    self?.handleAudioBuffer(converted, time: time, format: recordingFormat)
+                } catch {
+                    self?.reportEncodingFailure(error)
+                }
+            }
+
+            let initialFrames = recordedFrameCount()
+            audioEngine.prepare()
+            try audioEngine.start()
+            for _ in 0..<100 {
+                try ensureAutomaticInputReconfigurationActive()
+                if recordedFrameCount() > initialFrames, audioEngine.isRunning {
+                    try completeAutomaticInputReconfiguration()
+                    refreshMicrophones()
+                    logCurrentAudioRoute(session: session, event: "Recording continued after audio route change")
+                    return
+                }
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+            throw AudioRecorderError.microphoneSwitchFailed(
+                "No audio was received after the audio input changed."
+            )
+        } catch {
+            let message = String(localized: "Recording stopped because the audio input changed. The saved part is available for transcription.")
+                + " " + error.localizedDescription
+            stopRecordingAfterUnexpectedAudioChange(message: message)
+        }
     }
 
     @objc private func handleAudioRouteChange(_ notification: Notification) {
@@ -1111,6 +1210,7 @@ struct RecordingMicrophone: Identifiable, Equatable {
 
 private enum RecordingState {
     case switchingMicrophone
+    case reconfiguringAudioInput
     case idle
     case starting
     case recording
