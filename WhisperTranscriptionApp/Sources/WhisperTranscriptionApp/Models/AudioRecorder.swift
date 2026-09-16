@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import Foundation
 import UIKit
 
@@ -12,7 +12,6 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private static let recordingSampleRate = 48_000.0
     private static let bluetoothHFPRecordingSampleRate = 16_000.0
-    private static let recordingBitRate = 96_000
 
     @Published var microphoneInputs: [RecordingMicrophone] = []
     @Published var selectedMicrophoneID: String?
@@ -266,11 +265,17 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     static func recordingFileSettings(sampleRate: Double) -> [String: Any] {
         [
-            AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+            // AAC-in-M4A is finalized only when the file is closed. If iOS kills
+            // the process during recording, the samples are left behind without
+            // a readable container. Linear PCM in CAF remains readable up to the
+            // last completed write because CAF supports an open-ended data chunk.
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
             AVSampleRateKey: sampleRate,
             AVNumberOfChannelsKey: 1,
-            AVEncoderBitRateKey: recordingBitRate,
-            AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false
         ]
     }
 
@@ -461,7 +466,8 @@ final class AudioRecorder: NSObject, ObservableObject {
         try await waitForAutomaticInputReconfiguration()
         let url = try recordingURLForStop()
         finishActiveRecording()
-        return try validateRecordingFile(at: url)
+        let recoverableURL = try validateRecordingFile(at: url)
+        return try await RecordingAudioFinalizer.finalize(recoverableURL)
     }
 
     private func waitForAutomaticInputReconfiguration() async throws {
@@ -919,7 +925,7 @@ final class AudioRecorder: NSObject, ObservableObject {
         let timestamp = formatter.string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: ".", with: "-")
-        return recordingsDirectory.appendingPathComponent("recording_\(timestamp).m4a")
+        return recordingsDirectory.appendingPathComponent("recording_\(timestamp).caf")
     }
 
     private func setDisplayUpdatesActive(_ active: Bool) {
@@ -1164,6 +1170,89 @@ final class AudioRecorder: NSObject, ObservableObject {
     }
 }
 
+enum RecordingAudioFinalizer {
+    static func finalize(_ sourceURL: URL) async throws -> URL {
+        guard sourceURL.pathExtension.localizedCaseInsensitiveCompare("caf") == .orderedSame else {
+            return sourceURL
+        }
+
+        let asset = AVURLAsset(url: sourceURL)
+        guard try await !asset.loadTracks(withMediaType: .audio).isEmpty else {
+            throw AudioRecorderError.recordingFinalizationFailed(
+                String(localized: "The recorded audio track could not be read.")
+            )
+        }
+
+        guard let exportSession = AVAssetExportSession(
+            asset: asset,
+            presetName: AVAssetExportPresetAppleM4A
+        ) else {
+            throw AudioRecorderError.recordingFinalizationFailed(
+                String(localized: "The recording could not be prepared as M4A.")
+            )
+        }
+
+        let finalURL = sourceURL.deletingPathExtension().appendingPathExtension("m4a")
+        let stagingURL = sourceURL.deletingLastPathComponent()
+            .appendingPathComponent(".finalizing-\(UUID().uuidString).m4a")
+        exportSession.outputURL = stagingURL
+        exportSession.outputFileType = .m4a
+        exportSession.shouldOptimizeForNetworkUse = false
+
+        do {
+            try await export(exportSession)
+            try validateFinalizedFile(at: stagingURL)
+            if FileManager.default.fileExists(atPath: finalURL.path) {
+                try FileManager.default.removeItem(at: finalURL)
+            }
+            try FileManager.default.moveItem(at: stagingURL, to: finalURL)
+            try FileManager.default.removeItem(at: sourceURL)
+            return finalURL
+        } catch {
+            if FileManager.default.fileExists(atPath: stagingURL.path) {
+                try? FileManager.default.removeItem(at: stagingURL)
+            }
+            throw error
+        }
+    }
+
+    private static func export(_ exportSession: AVAssetExportSession) async throws {
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                exportSession.exportAsynchronously {
+                    switch exportSession.status {
+                    case .completed:
+                        continuation.resume()
+                    case .cancelled:
+                        continuation.resume(throwing: CancellationError())
+                    case .failed:
+                        continuation.resume(throwing: AudioRecorderError.recordingFinalizationFailed(
+                            exportSession.error?.localizedDescription
+                                ?? String(localized: "Audio export ended unexpectedly.")
+                        ))
+                    default:
+                        continuation.resume(throwing: AudioRecorderError.recordingFinalizationFailed(
+                            String(localized: "Audio export ended unexpectedly.")
+                        ))
+                    }
+                }
+            }
+        } onCancel: {
+            exportSession.cancelExport()
+        }
+    }
+
+    private static func validateFinalizedFile(at url: URL) throws {
+        guard FileManager.default.fileExists(atPath: url.path),
+              let size = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber,
+              size.int64Value > 0 else {
+            throw AudioRecorderError.recordingFinalizationFailed(
+                String(localized: "The finalized recording file is empty.")
+            )
+        }
+    }
+}
+
 enum AudioRecorderError: LocalizedError {
     case documentsDirectoryUnavailable
     case noActiveRecording
@@ -1172,6 +1261,7 @@ enum AudioRecorderError: LocalizedError {
     case recordingFileEmpty
     case stopInProgress
     case recordingEncodingFailed(String)
+    case recordingFinalizationFailed(String)
     case microphonePermissionRequired
     case backgroundSessionActivationDenied
     case microphoneSwitchFailed(String)
@@ -1194,6 +1284,8 @@ enum AudioRecorderError: LocalizedError {
             return String(localized: "Recording is already stopping.")
         case .recordingEncodingFailed(let message):
             return message
+        case .recordingFinalizationFailed(let detail):
+            return String(localized: "Failed to finalize the recording.") + " \(detail)"
         case .microphonePermissionRequired:
             return String(localized: "Microphone permission is required")
         case .backgroundSessionActivationDenied:

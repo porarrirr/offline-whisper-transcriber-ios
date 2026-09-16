@@ -58,17 +58,34 @@ final class AudioRecorderStartTests: XCTestCase {
         XCTAssertTrue(policy.shouldPublish(at: 0), "A new recording starts its own display timeline")
     }
 
-    func testRecordingFileSettingsUseMono96KbpsHighQualityAAC() {
+    func testRecordingFileSettingsUseCrashRecoverableMono16BitPCM() {
         let settings = AudioRecorder.recordingFileSettings(sampleRate: 48_000)
 
-        XCTAssertEqual(settings[AVFormatIDKey] as? Int, Int(kAudioFormatMPEG4AAC))
+        XCTAssertEqual(settings[AVFormatIDKey] as? Int, Int(kAudioFormatLinearPCM))
         XCTAssertEqual(settings[AVSampleRateKey] as? Double, 48_000)
         XCTAssertEqual(settings[AVNumberOfChannelsKey] as? Int, 1)
-        XCTAssertEqual(settings[AVEncoderBitRateKey] as? Int, 96_000)
-        XCTAssertEqual(
-            settings[AVEncoderAudioQualityKey] as? Int,
-            AVAudioQuality.high.rawValue
-        )
+        XCTAssertEqual(settings[AVLinearPCMBitDepthKey] as? Int, 16)
+        XCTAssertEqual(settings[AVLinearPCMIsFloatKey] as? Bool, false)
+        XCTAssertEqual(settings[AVLinearPCMIsBigEndianKey] as? Bool, false)
+    }
+
+    func testNormalStopFinalizationPublishesM4AAndRemovesDurableSource() async throws {
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("recording-finalization-\(UUID().uuidString).caf")
+        let outputURL = sourceURL.deletingPathExtension().appendingPathExtension("m4a")
+        defer {
+            try? FileManager.default.removeItem(at: sourceURL)
+            try? FileManager.default.removeItem(at: outputURL)
+        }
+        try makeDurableRecording(at: sourceURL, duration: 0.25)
+
+        let finalizedURL = try await RecordingAudioFinalizer.finalize(sourceURL)
+
+        XCTAssertEqual(finalizedURL, outputURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: sourceURL.path))
+        let finalizedFile = try AVAudioFile(forReading: outputURL)
+        XCTAssertGreaterThan(finalizedFile.length, 0)
     }
 
     func testStereoRecordingBufferIsAveragedToMono() throws {
@@ -105,6 +122,27 @@ final class AudioRecorderStartTests: XCTestCase {
         let monoSamples = try XCTUnwrap(monoBuffer.floatChannelData?[0])
         XCTAssertEqual(monoSamples[0], 0, accuracy: 0.000_001)
         XCTAssertEqual(monoSamples[1], 0.5, accuracy: 0.000_001)
+    }
+
+    private func makeDurableRecording(at url: URL, duration: TimeInterval) throws {
+        let sampleRate = 48_000.0
+        var file: AVAudioFile? = try AVAudioFile(
+            forWriting: url,
+            settings: AudioRecorder.recordingFileSettings(sampleRate: sampleRate),
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
+        let format = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: false
+        ))
+        let frameCount = AVAudioFrameCount(sampleRate * duration)
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
+        buffer.frameLength = frameCount
+        try file?.write(from: buffer)
+        file = nil
     }
 
     func testMicrophoneRouteFormatsAppendToOneRecording() throws {

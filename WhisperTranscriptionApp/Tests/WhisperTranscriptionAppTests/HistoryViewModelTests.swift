@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import SwiftData
 import XCTest
@@ -8,8 +9,8 @@ final class HistoryViewModelTests: XCTestCase {
     func testRecoverySkipsActiveRecordingAndImportsItOnlyOnceAfterStop() throws {
         let context = try makeModelContext()
         let directory = try makeTemporaryDirectory()
-        let url = directory.appendingPathComponent("active.m4a")
-        try Data("audio".utf8).write(to: url)
+        let url = directory.appendingPathComponent("active.caf")
+        try makeRecoverableRecording(at: url, duration: 1.25)
         let viewModel = HistoryViewModel(recordingsDirectory: directory)
         viewModel.setModelContext(context)
 
@@ -20,6 +21,26 @@ final class HistoryViewModelTests: XCTestCase {
         viewModel.importUntrackedRecordings()
         viewModel.importUntrackedRecordings()
         XCTAssertEqual(try context.fetchCount(FetchDescriptor<TranscriptionRecord>()), 1)
+        XCTAssertEqual(
+            try XCTUnwrap(context.fetch(FetchDescriptor<TranscriptionRecord>()).first).duration,
+            1.25,
+            accuracy: 0.01
+        )
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    func testRecoveryDoesNotCreateZeroDurationHistoryForUnreadableM4A() throws {
+        let context = try makeModelContext()
+        let directory = try makeTemporaryDirectory()
+        try Data("unfinished m4a".utf8).write(
+            to: directory.appendingPathComponent("recording-killed-before-finalization.m4a")
+        )
+        let viewModel = HistoryViewModel(recordingsDirectory: directory)
+        viewModel.setModelContext(context)
+
+        viewModel.importUntrackedRecordings()
+
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TranscriptionRecord>()), 0)
         XCTAssertNil(viewModel.errorMessage)
     }
 
@@ -358,6 +379,28 @@ final class HistoryViewModelTests: XCTestCase {
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url
+    }
+
+    private func makeRecoverableRecording(at url: URL, duration: TimeInterval) throws {
+        let sampleRate = 48_000.0
+        let settings = AudioRecorder.recordingFileSettings(sampleRate: sampleRate)
+        var file: AVAudioFile? = try AVAudioFile(
+            forWriting: url,
+            settings: settings,
+            commonFormat: .pcmFormatFloat32,
+            interleaved: false
+        )
+        let format = try XCTUnwrap(AVAudioFormat(
+            commonFormat: .pcmFormatFloat32,
+            sampleRate: sampleRate,
+            channels: 1,
+            interleaved: false
+        ))
+        let frameCount = AVAudioFrameCount(sampleRate * duration)
+        let buffer = try XCTUnwrap(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount))
+        buffer.frameLength = frameCount
+        try file?.write(from: buffer)
+        file = nil
     }
 
     private func makeRecord(

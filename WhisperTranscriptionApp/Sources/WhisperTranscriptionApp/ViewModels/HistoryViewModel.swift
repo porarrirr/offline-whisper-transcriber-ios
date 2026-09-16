@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import SwiftData
 import UIKit
@@ -316,10 +317,17 @@ class HistoryViewModel: ObservableObject {
             let recordingsDirectory = try recordingsDirectory()
             let descriptor = FetchDescriptor<TranscriptionRecord>()
             let records = try modelContext.fetch(descriptor)
-            if try migrateLegacyAudioFilePaths(
+            var recordsChanged = try migrateLegacyAudioFilePaths(
+                in: records,
+                recordingsDirectory: recordingsDirectory
+            )
+            if try repairMissingRecordingDurations(
                 in: records,
                 recordingsDirectory: recordingsDirectory
             ) {
+                recordsChanged = true
+            }
+            if recordsChanged {
                 try modelContext.save()
             }
 
@@ -341,10 +349,15 @@ class HistoryViewModel: ObservableObject {
                 directoryURLs: directoryURLs,
                 trackedAudioPaths: trackedAudioPaths
             )
-            let recordingURLs = directoryURLs.filter { !$0.lastPathComponent.hasPrefix(".") }
+            let supportedExtensions = Set(["caf", "m4a"])
+            let recordingURLs = directoryURLs.filter {
+                !$0.lastPathComponent.hasPrefix(".")
+                    && supportedExtensions.contains($0.pathExtension.lowercased())
+            }
+            let recoverableRecordings = try recoverableRecordingURLs(from: recordingURLs)
 
             var importedRecords = 0
-            for url in recordingURLs where url.pathExtension.localizedCaseInsensitiveCompare("m4a") == .orderedSame {
+            for (url, duration) in recoverableRecordings {
                 guard url.standardizedFileURL != activeRecordingURL?.standardizedFileURL,
                       !trackedAudioPaths.contains(url.standardizedFileURL.path) else { continue }
                 let resourceValues = try url.resourceValues(forKeys: [.creationDateKey, .fileSizeKey])
@@ -358,7 +371,7 @@ class HistoryViewModel: ObservableObject {
                         for: url,
                         recordingsDirectory: recordingsDirectory
                     ),
-                    duration: 0,
+                    duration: duration,
                     createdAt: createdAt
                 )
                 modelContext.insert(record)
@@ -496,6 +509,61 @@ class HistoryViewModel: ObservableObject {
             changed = true
         }
         return changed
+    }
+
+    private func repairMissingRecordingDurations(
+        in records: [TranscriptionRecord],
+        recordingsDirectory: URL
+    ) throws -> Bool {
+        var changed = false
+        for record in records where record.duration <= 0 {
+            guard let storedPath = record.audioFilePath else { continue }
+            let url = try RecordingFileReference.fileURL(
+                for: storedPath,
+                recordingsDirectory: recordingsDirectory
+            )
+            guard fileManager.fileExists(atPath: url.path),
+                  let duration = Self.readableAudioDuration(at: url) else { continue }
+            record.duration = duration
+            changed = true
+        }
+        return changed
+    }
+
+    private func recoverableRecordingURLs(from urls: [URL]) throws -> [(URL, TimeInterval)] {
+        var recordingsByBaseName: [String: (URL, TimeInterval)] = [:]
+        for url in urls {
+            let resourceValues = try url.resourceValues(forKeys: [.fileSizeKey])
+            guard (resourceValues.fileSize ?? 0) > 0,
+                  let duration = Self.readableAudioDuration(at: url) else {
+                AppLogger.error(
+                    "Skipped unreadable interrupted recording: file=\(url.lastPathComponent)",
+                    context: "HistoryViewModel"
+                )
+                continue
+            }
+
+            let baseName = url.deletingPathExtension().lastPathComponent
+            if let existing = recordingsByBaseName[baseName] {
+                // A process termination can land between publishing the finalized
+                // M4A and deleting its durable CAF source. Both contain the same
+                // recording; keep the completed M4A as the single history item.
+                if existing.0.pathExtension.lowercased() == "caf",
+                   url.pathExtension.lowercased() == "m4a" {
+                    recordingsByBaseName[baseName] = (url, duration)
+                }
+            } else {
+                recordingsByBaseName[baseName] = (url, duration)
+            }
+        }
+        return Array(recordingsByBaseName.values)
+    }
+
+    private static func readableAudioDuration(at url: URL) -> TimeInterval? {
+        guard let file = try? AVAudioFile(forReading: url),
+              file.fileFormat.sampleRate > 0 else { return nil }
+        let duration = TimeInterval(file.length) / file.fileFormat.sampleRate
+        return duration.isFinite && duration > 0 ? duration : nil
     }
 
     private func recordingsDirectory() throws -> URL {
