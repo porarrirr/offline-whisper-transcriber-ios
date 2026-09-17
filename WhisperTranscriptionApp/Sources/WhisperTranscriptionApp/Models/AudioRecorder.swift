@@ -22,10 +22,17 @@ final class AudioRecorder: NSObject, ObservableObject {
     @Published var interruptionMessage: String?
     @Published var interruptedRecordingURL: URL?
 
-    private let audioEngine = AVAudioEngine()
+    private var audioEngine = AVAudioEngine()
     private let stateLock = NSLock()
     private let fileWriteLock = NSLock()
     private let handlerLock = NSLock()
+    /// AVAudioEngine graph mutations are not safe to perform concurrently. Route
+    /// changes, user-requested microphone switches, and recording teardown can
+    /// otherwise all remove/install the input tap at the same time.
+    private let audioGraphQueue = DispatchQueue(
+        label: "com.porarrirr.audio-recorder.graph",
+        qos: .userInitiated
+    )
     private let recordingStopQueue = DispatchQueue(
         label: "com.porarrirr.audio-recorder.stop",
         qos: .userInitiated
@@ -36,6 +43,10 @@ final class AudioRecorder: NSObject, ObservableObject {
     private var displayUpdates = RecordingDisplayUpdatePolicy()
     private var recordedFrames: AVAudioFramePosition = 0
     private var recordingState: RecordingState = .idle
+    private var audioTapGeneration: UInt64 = 0
+    // Accessed only on audioGraphQueue.
+    private var isAudioTapInstalled = false
+    private var retiredAudioEngines: [AVAudioEngine] = []
     private var audioBufferHandler: AudioBufferHandler?
 
     override init() {
@@ -116,26 +127,32 @@ final class AudioRecorder: NSObject, ObservableObject {
             }
             setPreparedRecording(file: file, url: url, format: format)
 
-            inputNode.removeTap(onBus: 0)
+            let tapGeneration = nextAudioTapGeneration()
+            mutateAudioGraph {
+                removeAudioTapIfInstalled(from: inputNode)
+            }
             AppLogger.info(
-                "Installing audio input tap: sampleRate=\(format.sampleRate), channels=\(format.channelCount)",
+                "Installing audio input tap: hardwareSampleRate=\(hardwareFormat.sampleRate), hardwareChannels=\(hardwareFormat.channelCount), recordingSampleRate=\(format.sampleRate)",
                 context: "AudioRecorder"
             )
-            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: hardwareFormat) { [weak self] buffer, time in
-                do {
-                    let converted = try converter.convert(buffer)
-                    self?.handleAudioBuffer(converted, time: time, format: format)
-                } catch {
-                    self?.reportEncodingFailure(error)
+            mutateAudioGraph {
+                inputNode.installTap(onBus: 0, bufferSize: 1_024, format: hardwareFormat) { [weak self] buffer, time in
+                    guard let self, self.isCurrentAudioTap(generation: tapGeneration) else { return }
+                    do {
+                        let converted = try converter.convert(buffer)
+                        self.handleAudioBuffer(converted, time: time, format: format)
+                    } catch {
+                        self.reportEncodingFailure(error, tapGeneration: tapGeneration)
+                    }
                 }
+                isAudioTapInstalled = true
+                audioEngine.prepare()
             }
-
-            audioEngine.prepare()
             do {
                 try await Self.startEngineWithBoundedRetry(
                     maxAttempts: 3,
                     retryDelayNanoseconds: 300_000_000,
-                    startEngine: { try self.audioEngine.start() },
+                    startEngine: { try self.mutateAudioGraph { try self.audioEngine.start() } },
                     onRetry: { attempt, error in
                         AppLogger.error(
                             "Bounded retry of audioEngine.start() triggered: attempt=\(attempt)",
@@ -180,8 +197,11 @@ final class AudioRecorder: NSObject, ObservableObject {
         guard session.currentRoute.inputs.first?.uid != id else { return }
         try beginMicrophoneSwitch()
         do {
-            audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
+            invalidateAudioTap()
+            mutateAudioGraph {
+                audioEngine.stop()
+                removeAudioTapIfInstalled(from: audioEngine.inputNode)
+            }
             let usesBluetoothHFP = port.portType == .bluetoothHFP
             try session.setMode(usesBluetoothHFP ? .voiceChat : .default)
             try session.setPreferredSampleRate(preferredRecordingSampleRate(usesBluetoothHFP: usesBluetoothHFP))
@@ -203,17 +223,23 @@ final class AudioRecorder: NSObject, ObservableObject {
             try ensureMicrophoneSwitchActive()
             guard let format = currentInputFormat else { throw AudioRecorderError.noActiveRecording }
             let converter = try RecordingInputConverter(from: hardwareFormat, to: format)
-            node.installTap(onBus: 0, bufferSize: 1_024, format: hardwareFormat) { [weak self] buffer, time in
-                do {
-                    let converted = try converter.convert(buffer)
-                    self?.handleAudioBuffer(converted, time: time, format: format)
-                } catch {
-                    self?.reportEncodingFailure(error)
-                }
-            }
-            audioEngine.prepare()
-            try audioEngine.start()
             let initialFrames = recordedFrameCount()
+            let tapGeneration = nextAudioTapGeneration()
+            try mutateAudioGraph {
+                try ensureMicrophoneSwitchActive()
+                node.installTap(onBus: 0, bufferSize: 1_024, format: hardwareFormat) { [weak self] buffer, time in
+                    guard let self, self.isCurrentAudioTap(generation: tapGeneration) else { return }
+                    do {
+                        let converted = try converter.convert(buffer)
+                        self.handleAudioBuffer(converted, time: time, format: format)
+                    } catch {
+                        self.reportEncodingFailure(error, tapGeneration: tapGeneration)
+                    }
+                }
+                isAudioTapInstalled = true
+                audioEngine.prepare()
+                try audioEngine.start()
+            }
             var receivedAudio = false
             for _ in 0..<100 {
                 try ensureMicrophoneSwitchActive()
@@ -326,6 +352,39 @@ final class AudioRecorder: NSObject, ObservableObject {
         recordedFrames = 0
         displayUpdates.reset()
         stateLock.unlock()
+    }
+
+    @discardableResult
+    private func mutateAudioGraph<T>(_ operation: () throws -> T) rethrows -> T {
+        try audioGraphQueue.sync(execute: operation)
+    }
+
+    private func nextAudioTapGeneration() -> UInt64 {
+        stateLock.lock()
+        audioTapGeneration &+= 1
+        let generation = audioTapGeneration
+        stateLock.unlock()
+        return generation
+    }
+
+    private func invalidateAudioTap() {
+        stateLock.lock()
+        audioTapGeneration &+= 1
+        stateLock.unlock()
+    }
+
+    private func isCurrentAudioTap(generation: UInt64) -> Bool {
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return generation == audioTapGeneration
+            && recordingState != .idle
+            && recordingState != .stopping
+    }
+
+    private func removeAudioTapIfInstalled(from inputNode: AVAudioInputNode) {
+        guard isAudioTapInstalled else { return }
+        inputNode.removeTap(onBus: 0)
+        isAudioTapInstalled = false
     }
 
     private func waitForFirstRecordedBuffer() async throws {
@@ -812,12 +871,16 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private func finishActiveRecording() {
         setAudioBufferHandler(nil)
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
-        audioEngine.reset()
+        invalidateAudioTap()
+        mutateAudioGraph {
+            removeAudioTapIfInstalled(from: audioEngine.inputNode)
+            audioEngine.stop()
+            audioEngine.reset()
+            retiredAudioEngines.removeAll()
+        }
 
         // Wait for an in-flight tap callback to finish using AVAudioFile before
-        // releasing it so the AAC container is finalized before validation.
+        // releasing it so the recording container is finalized before validation.
         fileWriteLock.lock()
         stateLock.lock()
         let duration = inputFormat.map { format in
@@ -839,8 +902,11 @@ final class AudioRecorder: NSObject, ObservableObject {
         deactivateSession()
     }
 
-    private func reportEncodingFailure(_ error: Error) {
-        guard transitionActiveRecordingToStopping(includingStarting: true) != nil else { return }
+    private func reportEncodingFailure(_ error: Error, tapGeneration: UInt64? = nil) {
+        guard transitionActiveRecordingToStopping(
+            includingStarting: true,
+            tapGeneration: tapGeneration
+        ) != nil else { return }
         let detail = error.localizedDescription
         let message = String(localized: "Recording encoding failed") + ": \(detail)"
         AppLogger.error(message, context: "AudioRecorder", error: error)
@@ -854,11 +920,15 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     private func cleanupFailedStart() {
         setAudioBufferHandler(nil)
-        audioEngine.inputNode.removeTap(onBus: 0)
-        if audioEngine.isRunning {
-            audioEngine.stop()
+        invalidateAudioTap()
+        mutateAudioGraph {
+            removeAudioTapIfInstalled(from: audioEngine.inputNode)
+            if audioEngine.isRunning {
+                audioEngine.stop()
+            }
+            audioEngine.reset()
+            retiredAudioEngines.removeAll()
         }
-        audioEngine.reset()
         fileWriteLock.lock()
         stateLock.lock()
         let failedRecordingURL = recordingURL
@@ -1038,9 +1108,15 @@ final class AudioRecorder: NSObject, ObservableObject {
         }
     }
 
-    private func transitionActiveRecordingToStopping(includingStarting: Bool) -> URL? {
+    private func transitionActiveRecordingToStopping(
+        includingStarting: Bool,
+        tapGeneration: UInt64? = nil
+    ) -> URL? {
         stateLock.lock()
         defer { stateLock.unlock() }
+        if let tapGeneration, tapGeneration != audioTapGeneration {
+            return nil
+        }
         let canStop = recordingState == .recording
             || recordingState == .switchingMicrophone
             || recordingState == .reconfiguringAudioInput
@@ -1055,6 +1131,9 @@ final class AudioRecorder: NSObject, ObservableObject {
         defer { stateLock.unlock() }
         guard recordingState == .recording else { return false }
         recordingState = .reconfiguringAudioInput
+        // Any callback already queued by the old hardware route must not write
+        // or tear down the replacement graph.
+        audioTapGeneration &+= 1
         return true
     }
 
@@ -1077,42 +1156,47 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     /// A headset connection changes the hardware input format and invalidates the
     /// input tap. Keep the recording file and its fixed 48 kHz timeline open, then
-    /// rebuild only the hardware-facing converter and tap for the new route.
+    /// rebuild the hardware-facing engine for the new route. Reusing and mutating
+    /// the engine that emitted AVAudioEngineConfigurationChange can trigger an
+    /// AVFAudio precondition failure while its I/O unit is still being torn down.
     private func reconfigureAudioInputAfterRouteChange() async {
         do {
-            audioEngine.stop()
-            audioEngine.inputNode.removeTap(onBus: 0)
-            audioEngine.reset()
-
             try ensureAutomaticInputReconfigurationActive()
+            let replacementEngine = replaceAudioEngineAfterConfigurationChange()
             let session = AVAudioSession.sharedInstance()
             let usesBluetoothHFP = session.currentRoute.inputs.contains { $0.portType == .bluetoothHFP }
             try session.setMode(usesBluetoothHFP ? .voiceChat : .default)
             try session.setPreferredSampleRate(preferredRecordingSampleRate(usesBluetoothHFP: usesBluetoothHFP))
             try session.setActive(true)
 
-            let inputNode = audioEngine.inputNode
+            let inputNode = replacementEngine.inputNode
             let hardwareFormat = try await waitForStableInputTapFormat(on: inputNode)
             try ensureAutomaticInputReconfigurationActive()
             guard let recordingFormat = currentInputFormat else {
                 throw AudioRecorderError.noActiveRecording
             }
             let converter = try RecordingInputConverter(from: hardwareFormat, to: recordingFormat)
-            inputNode.installTap(onBus: 0, bufferSize: 1_024, format: hardwareFormat) { [weak self] buffer, time in
-                do {
-                    let converted = try converter.convert(buffer)
-                    self?.handleAudioBuffer(converted, time: time, format: recordingFormat)
-                } catch {
-                    self?.reportEncodingFailure(error)
+            let initialFrames = recordedFrameCount()
+            let tapGeneration = nextAudioTapGeneration()
+            try mutateAudioGraph {
+                try ensureAutomaticInputReconfigurationActive()
+                inputNode.installTap(onBus: 0, bufferSize: 1_024, format: hardwareFormat) { [weak self] buffer, time in
+                    guard let self, self.isCurrentAudioTap(generation: tapGeneration) else { return }
+                    do {
+                        let converted = try converter.convert(buffer)
+                        self.handleAudioBuffer(converted, time: time, format: recordingFormat)
+                    } catch {
+                        self.reportEncodingFailure(error, tapGeneration: tapGeneration)
+                    }
                 }
+                isAudioTapInstalled = true
+                replacementEngine.prepare()
+                try replacementEngine.start()
             }
 
-            let initialFrames = recordedFrameCount()
-            audioEngine.prepare()
-            try audioEngine.start()
             for _ in 0..<100 {
                 try ensureAutomaticInputReconfigurationActive()
-                if recordedFrameCount() > initialFrames, audioEngine.isRunning {
+                if recordedFrameCount() > initialFrames, replacementEngine.isRunning {
                     try completeAutomaticInputReconfiguration()
                     refreshMicrophones()
                     logCurrentAudioRoute(session: session, event: "Recording continued after audio route change")
@@ -1127,6 +1211,29 @@ final class AudioRecorder: NSObject, ObservableObject {
             let message = String(localized: "Recording stopped because the audio input changed. The saved part is available for transcription.")
                 + " " + error.localizedDescription
             stopRecordingAfterUnexpectedAudioChange(message: message)
+        }
+    }
+
+    private func replaceAudioEngineAfterConfigurationChange() -> AVAudioEngine {
+        mutateAudioGraph {
+            let previousEngine = audioEngine
+            NotificationCenter.default.removeObserver(
+                self,
+                name: .AVAudioEngineConfigurationChange,
+                object: previousEngine
+            )
+            retiredAudioEngines.append(previousEngine)
+
+            let replacementEngine = AVAudioEngine()
+            audioEngine = replacementEngine
+            isAudioTapInstalled = false
+            NotificationCenter.default.addObserver(
+                self,
+                selector: #selector(handleAudioEngineConfigurationChange),
+                name: .AVAudioEngineConfigurationChange,
+                object: replacementEngine
+            )
+            return replacementEngine
         }
     }
 
