@@ -2,6 +2,7 @@ import SwiftUI
 
 struct MainTabView: View {
     @Environment(\.openURL) private var openURL
+    @EnvironmentObject private var transcribeViewModel: TranscribeViewModel
     @State private var selectedTab = 0
     @State private var availableUpdate: AppUpdateInfo?
     @AppStorage(WhisperAppDestination.pendingDestinationKey) private var pendingDestination = ""
@@ -44,6 +45,17 @@ struct MainTabView: View {
         }
         .onChange(of: pendingDestination) { _, _ in
             applyPendingDestination()
+        }
+        .sheet(isPresented: $transcribeViewModel.showResult) {
+            ResultView(
+                title: transcribeViewModel.transcriptionTitle,
+                text: transcribeViewModel.transcriptionResult,
+                segments: transcribeViewModel.transcriptionSegments,
+                duration: transcribeViewModel.transcriptionDuration,
+                language: transcribeViewModel.transcriptionLanguage
+            ) {
+                transcribeViewModel.reset()
+            }
         }
         .alert("Update Available", isPresented: updateAlertBinding, presenting: availableUpdate) { update in
             Button("Later", role: .cancel) {

@@ -4,7 +4,7 @@ import PhotosUI
 import UniformTypeIdentifiers
 
 struct TranscribeView: View {
-    @StateObject private var viewModel = TranscribeViewModel()
+    @EnvironmentObject private var viewModel: TranscribeViewModel
     @StateObject private var modelManager = ModelManager.shared
     @StateObject private var settings = AppSettings.shared
     @State private var showFileImporter = false
@@ -40,17 +40,6 @@ struct TranscribeView: View {
             }
         }
         .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $viewModel.showResult) {
-            ResultView(
-                title: viewModel.transcriptionTitle,
-                text: viewModel.transcriptionResult,
-                segments: viewModel.transcriptionSegments,
-                duration: viewModel.transcriptionDuration,
-                language: viewModel.transcriptionLanguage
-            ) {
-                viewModel.reset()
-            }
-        }
         .sheet(isPresented: $showFileImporter) {
             FileImporter(selectedURL: $selectedFileURL, isPresented: $showFileImporter) { result in
                 switch result {

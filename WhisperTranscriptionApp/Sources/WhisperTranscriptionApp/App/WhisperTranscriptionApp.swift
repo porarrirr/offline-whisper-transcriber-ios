@@ -10,6 +10,9 @@ struct WhisperTranscriptionApp: App {
     // Scene全体が毎秒数百回無効化されるため、`@StateObject`ではなく`let`で保持する。
     private let recordingService = RecordingService.shared
     @StateObject private var settings = AppSettings.shared
+    // 通常の文字起こしは画面遷移で破棄されないよう、アプリ全体で1つの
+    // ViewModelを所有する。タブ移動や履歴詳細から戻った後も同じTaskを保持する。
+    @StateObject private var transcribeViewModel = TranscribeViewModel()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -41,6 +44,7 @@ struct WhisperTranscriptionApp: App {
                     }
                         .modelContainer(modelContainer)
                         .environmentObject(recordingService)
+                        .environmentObject(transcribeViewModel)
                         .onAppear {
                             if !ProcessInfo.processInfo.arguments.contains("--ui-test-long-transcription") {
                                 performStartupMaintenance(modelContainer: modelContainer)

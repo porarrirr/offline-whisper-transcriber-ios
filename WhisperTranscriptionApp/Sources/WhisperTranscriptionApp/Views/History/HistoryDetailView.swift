@@ -9,12 +9,12 @@ struct HistoryDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var transcribeViewModel: TranscribeViewModel
     // 再生位置は0.1秒ごとに更新される。この画面のbodyでは`audioPlayer`の観測対象プロパティを
     // 一切読まないこと(読むとその都度この長大なbody全体が無効化され、文字起こしリストの
     // 再レイアウトでスクロール位置が飛ぶ)。再生状態の参照は`AudioPlaybackPanel`内に閉じる。
     @StateObject private var recordingService = RecordingService.shared
     @State private var audioPlayer = AudioPlayer()
-    @StateObject private var transcribeViewModel = TranscribeViewModel()
     // 表示スタイルはユーザー操作時しか更新されないので、bodyで観測しても再生位置のような
     // 高頻度更新は発生しない。
     @StateObject private var settings = AppSettings.shared
@@ -175,17 +175,6 @@ struct HistoryDetailView: View {
                 case .failure(.transcription(let format)):
                     transcriptionExportErrorMessage = Self.exportFailureMessage(for: format)
                 }
-            }
-        }
-        .sheet(isPresented: $transcribeViewModel.showResult) {
-            ResultView(
-                title: transcribeViewModel.transcriptionTitle,
-                text: transcribeViewModel.transcriptionResult,
-                segments: transcribeViewModel.transcriptionSegments,
-                duration: transcribeViewModel.transcriptionDuration,
-                language: transcribeViewModel.transcriptionLanguage
-            ) {
-                transcribeViewModel.reset()
             }
         }
     }
