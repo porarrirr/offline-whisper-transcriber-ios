@@ -307,7 +307,7 @@ class TranscribeViewModel: ObservableObject {
                 TranscriptionSpotlightSync.index(record)
                 shouldKeepPersistedImportedAudio = true
                 showResult = true
-                generateTitleAfterTranscription(for: record, modelContext: modelContext)
+                await generateTitleAfterTranscription(for: record, modelContext: modelContext)
             } catch {
                 modelContext.rollback()
                 setError(String(localized: "Failed to save history") + ": \(error.localizedDescription)")
@@ -330,22 +330,20 @@ class TranscribeViewModel: ObservableObject {
         }
     }
 
-    private func generateTitleAfterTranscription(for record: TranscriptionRecord, modelContext: ModelContext) {
+    private func generateTitleAfterTranscription(for record: TranscriptionRecord, modelContext: ModelContext) async {
         guard #available(iOS 27.0, *) else { return }
-        Task { @MainActor in
-            let defaultTitle = TranscriptionRecord.defaultTitle(for: record.createdAt)
-            guard record.title.isEmpty || record.title == defaultTitle else { return }
-            do {
-                let title = try await AppleIntelligenceService.shared.suggestedTitle(for: record.text)
-                guard !record.isDeleted, record.title.isEmpty || record.title == defaultTitle else { return }
-                record.title = title
-                try modelContext.save()
-                transcriptionTitle = title
-                TranscriptionSpotlightSync.index(record)
-            } catch {
-                AppLogger.error("Apple Intelligence title generation failed", context: "TranscribeViewModel", error: error)
-                setError(String(localized: "The transcription was saved, but Apple Intelligence couldn't generate its title.") + " \(error.localizedDescription)")
-            }
+        let defaultTitle = TranscriptionRecord.defaultTitle(for: record.createdAt)
+        guard record.title.isEmpty || record.title == defaultTitle else { return }
+        do {
+            let title = try await AppleIntelligenceService.shared.suggestedTitle(for: record.text)
+            guard !record.isDeleted, record.title.isEmpty || record.title == defaultTitle else { return }
+            record.title = title
+            try modelContext.save()
+            transcriptionTitle = title
+            TranscriptionSpotlightSync.index(record)
+        } catch {
+            AppLogger.error("Apple Intelligence title generation failed", context: "TranscribeViewModel", error: error)
+            setError(String(localized: "The transcription was saved, but Apple Intelligence couldn't generate its title.") + " \(error.localizedDescription)")
         }
     }
     
