@@ -16,6 +16,7 @@ protocol RecordingAudioCapturing: AnyObject {
     var errorPublisher: AnyPublisher<String?, Never> { get }
     var currentInputFormat: AVAudioFormat? { get }
     var currentRecordingURL: URL? { get }
+    func synchronizeDisplayedRecordingTime()
     func requestPermission() async -> Bool
     func startRecording(context: RecordingStartContext) async throws
     func stopRecording() async throws -> URL
@@ -288,6 +289,7 @@ final class RecordingService: ObservableObject {
         }
 
         AppLogger.info("App became active while recording", context: "RecordingService")
+        audioRecorder.synchronizeDisplayedRecordingTime()
         let startedAt = recordingStartedAt ?? Date()
         Task {
             await RecordingLiveActivityManager.shared.ensureRecordingActivity(startedAt: startedAt)

@@ -92,26 +92,56 @@ class TranscribeViewModel: ObservableObject {
     }
 
     private func stopRecordingAndTranscribeAsync(recordingService: RecordingService, modelContext: ModelContext) async {
-        let recordingURL: URL
+        let capturedURL: URL
         do {
-            recordingURL = try await recordingService.stopRecording()
+            capturedURL = try await recordingService.stopRecording()
         } catch {
             setError(error.localizedDescription)
             return
         }
 
+        await persistFinalizeAndTranscribe(capturedURL: capturedURL, modelContext: modelContext)
+    }
+
+    private func persistFinalizeAndTranscribe(capturedURL: URL, modelContext: ModelContext) async {
         let record: TranscriptionRecord
         do {
             // Display time is throttled and suspended in the background.
-            // Persist the duration of the finalized recording itself.
-            let recordingDuration = try await AudioConverter.shared.getAudioDuration(url: recordingURL)
-            record = try saveRecordingRecord(url: recordingURL, duration: recordingDuration, modelContext: modelContext)
+            // Persist the duration of the durable capture before finalization.
+            let recordingDuration = try await AudioConverter.shared.getAudioDuration(url: capturedURL)
+            record = try saveRecordingRecord(url: capturedURL, duration: recordingDuration, modelContext: modelContext)
+            AppLogger.info(
+                "Recording history saved before finalization: file=\(capturedURL.lastPathComponent), duration=\(recordingDuration)s",
+                context: "TranscribeViewModel"
+            )
         } catch {
             setError(error.localizedDescription)
             return
         }
 
-        await transcribeAudio(url: recordingURL, sourceType: .recording, modelContext: modelContext, updating: record)
+        let finalizedURL: URL
+        do {
+            AppLogger.info(
+                "Recording finalization started: file=\(capturedURL.lastPathComponent)",
+                context: "TranscribeViewModel"
+            )
+            finalizedURL = try await RecordingAudioFinalizer.finalize(capturedURL, removeSource: false)
+            try updateRecordingFileReference(
+                record,
+                from: capturedURL,
+                to: finalizedURL,
+                modelContext: modelContext
+            )
+            AppLogger.info(
+                "Recording finalization completed: source=\(capturedURL.lastPathComponent), final=\(finalizedURL.lastPathComponent)",
+                context: "TranscribeViewModel"
+            )
+        } catch {
+            setError(error.localizedDescription)
+            return
+        }
+
+        await transcribeAudio(url: finalizedURL, sourceType: .recording, modelContext: modelContext, updating: record)
     }
 
     private func transcribeInterruptedRecordingAsync(recordingService: RecordingService, modelContext: ModelContext) async {
@@ -123,18 +153,7 @@ class TranscribeViewModel: ObservableObject {
             return
         }
 
-        let record: TranscriptionRecord
-        do {
-            // Display time is throttled and suspended in the background.
-            // Persist the duration of the finalized recording itself.
-            let recordingDuration = try await AudioConverter.shared.getAudioDuration(url: recordingURL)
-            record = try saveRecordingRecord(url: recordingURL, duration: recordingDuration, modelContext: modelContext)
-        } catch {
-            setError(error.localizedDescription)
-            return
-        }
-
-        await transcribeAudio(url: recordingURL, sourceType: .recording, modelContext: modelContext, updating: record)
+        await persistFinalizeAndTranscribe(capturedURL: recordingURL, modelContext: modelContext)
     }
     
     func transcribeFile(url: URL, modelContext: ModelContext, cleanupAfterProcessing: Bool = false) {
@@ -579,6 +598,37 @@ class TranscribeViewModel: ObservableObject {
         } catch {
             modelContext.delete(record)
             throw TranscriptionPipelineError.historySaveFailed(error.localizedDescription)
+        }
+    }
+
+    private func updateRecordingFileReference(
+        _ record: TranscriptionRecord,
+        from sourceURL: URL,
+        to finalizedURL: URL,
+        modelContext: ModelContext
+    ) throws {
+        guard sourceURL.standardizedFileURL != finalizedURL.standardizedFileURL else { return }
+
+        let previousPath = record.audioFilePath
+        record.audioFilePath = try RecordingFileReference.storedPath(for: finalizedURL)
+        do {
+            try modelContext.save()
+        } catch {
+            record.audioFilePath = previousPath
+            if FileManager.default.fileExists(atPath: finalizedURL.path) {
+                try? FileManager.default.removeItem(at: finalizedURL)
+            }
+            throw TranscriptionPipelineError.historySaveFailed(error.localizedDescription)
+        }
+
+        do {
+            try FileManager.default.removeItem(at: sourceURL)
+        } catch {
+            AppLogger.error(
+                "Failed to remove durable recording source after finalization",
+                context: "TranscribeViewModel",
+                error: error
+            )
         }
     }
 }

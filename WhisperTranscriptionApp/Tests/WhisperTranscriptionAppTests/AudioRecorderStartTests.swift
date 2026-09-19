@@ -88,6 +88,23 @@ final class AudioRecorderStartTests: XCTestCase {
         XCTAssertGreaterThan(finalizedFile.length, 0)
     }
 
+    func testFinalizationCanKeepDurableSourceUntilHistoryReferenceIsUpdated() async throws {
+        let sourceURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("recording-finalization-retained-\(UUID().uuidString).caf")
+        let outputURL = sourceURL.deletingPathExtension().appendingPathExtension("m4a")
+        defer {
+            try? FileManager.default.removeItem(at: sourceURL)
+            try? FileManager.default.removeItem(at: outputURL)
+        }
+        try makeDurableRecording(at: sourceURL, duration: 0.25)
+
+        let finalizedURL = try await RecordingAudioFinalizer.finalize(sourceURL, removeSource: false)
+
+        XCTAssertEqual(finalizedURL, outputURL)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: outputURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sourceURL.path))
+    }
+
     func testStereoRecordingBufferIsAveragedToMono() throws {
         let inputFormat = try XCTUnwrap(AVAudioFormat(
             commonFormat: .pcmFormatFloat32,

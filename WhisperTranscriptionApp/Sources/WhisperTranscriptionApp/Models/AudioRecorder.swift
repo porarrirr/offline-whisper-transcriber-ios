@@ -70,6 +70,20 @@ final class AudioRecorder: NSObject, ObservableObject {
         return inputFormat
     }
 
+    func synchronizeDisplayedRecordingTime() {
+        stateLock.lock()
+        let sampleRate = inputFormat?.sampleRate ?? 0
+        let duration = sampleRate > 0 ? TimeInterval(recordedFrames) / sampleRate : nil
+        let url = recordingURL
+        stateLock.unlock()
+
+        guard let duration, let url else { return }
+        DispatchQueue.main.async {
+            guard self.isRecording, self.currentRecordingURL == url else { return }
+            self.currentTime = duration
+        }
+    }
+
     func setAudioBufferHandler(_ handler: AudioBufferHandler?) {
         handlerLock.lock()
         audioBufferHandler = handler
@@ -526,7 +540,11 @@ final class AudioRecorder: NSObject, ObservableObject {
         let url = try recordingURLForStop()
         finishActiveRecording()
         let recoverableURL = try validateRecordingFile(at: url)
-        return try await RecordingAudioFinalizer.finalize(recoverableURL)
+        AppLogger.info(
+            "Recording capture closed: file=\(recoverableURL.lastPathComponent)",
+            context: "AudioRecorder"
+        )
+        return recoverableURL
     }
 
     private func waitForAutomaticInputReconfiguration() async throws {
@@ -1007,6 +1025,7 @@ final class AudioRecorder: NSObject, ObservableObject {
 
     @objc private func handleApplicationDidBecomeActive(_ notification: Notification) {
         setDisplayUpdatesActive(true)
+        synchronizeDisplayedRecordingTime()
     }
 
     @objc private func handleApplicationWillResignActive(_ notification: Notification) {
@@ -1279,6 +1298,10 @@ final class AudioRecorder: NSObject, ObservableObject {
 
 enum RecordingAudioFinalizer {
     static func finalize(_ sourceURL: URL) async throws -> URL {
+        try await finalize(sourceURL, removeSource: true)
+    }
+
+    static func finalize(_ sourceURL: URL, removeSource: Bool) async throws -> URL {
         guard sourceURL.pathExtension.localizedCaseInsensitiveCompare("caf") == .orderedSame else {
             return sourceURL
         }
@@ -1313,7 +1336,9 @@ enum RecordingAudioFinalizer {
                 try FileManager.default.removeItem(at: finalURL)
             }
             try FileManager.default.moveItem(at: stagingURL, to: finalURL)
-            try FileManager.default.removeItem(at: sourceURL)
+            if removeSource {
+                try FileManager.default.removeItem(at: sourceURL)
+            }
             return finalURL
         } catch {
             if FileManager.default.fileExists(atPath: stagingURL.path) {

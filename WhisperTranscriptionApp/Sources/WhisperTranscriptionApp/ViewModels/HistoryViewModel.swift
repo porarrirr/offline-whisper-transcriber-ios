@@ -340,6 +340,9 @@ class HistoryViewModel: ObservableObject {
                     recordingsDirectory: recordingsDirectory
                 ).path
             })
+            let trackedRecordingBaseNames = Set(trackedAudioPaths.map {
+                URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent
+            })
             let directoryURLs = try fileManager.contentsOfDirectory(
                 at: recordingsDirectory,
                 includingPropertiesForKeys: [.creationDateKey, .fileSizeKey],
@@ -359,7 +362,10 @@ class HistoryViewModel: ObservableObject {
             var importedRecords = 0
             for (url, duration) in recoverableRecordings {
                 guard url.standardizedFileURL != activeRecordingURL?.standardizedFileURL,
-                      !trackedAudioPaths.contains(url.standardizedFileURL.path) else { continue }
+                      !trackedAudioPaths.contains(url.standardizedFileURL.path),
+                      !trackedRecordingBaseNames.contains(url.deletingPathExtension().lastPathComponent) else {
+                    continue
+                }
                 let resourceValues = try url.resourceValues(forKeys: [.creationDateKey, .fileSizeKey])
                 guard (resourceValues.fileSize ?? 0) > 0 else { continue }
                 let createdAt = resourceValues.creationDate ?? Date()

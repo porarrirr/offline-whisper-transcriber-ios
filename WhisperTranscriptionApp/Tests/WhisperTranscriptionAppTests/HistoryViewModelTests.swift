@@ -44,6 +44,32 @@ final class HistoryViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.errorMessage)
     }
 
+    func testRecoveryDoesNotDuplicateTrackedCAFWhenFinalizedM4AAlsoExists() async throws {
+        let context = try makeModelContext()
+        let directory = try makeTemporaryDirectory()
+        let cafURL = directory.appendingPathComponent("finalization-interrupted.caf")
+        try makeRecoverableRecording(at: cafURL, duration: 1.25)
+        let m4aURL = try await RecordingAudioFinalizer.finalize(cafURL, removeSource: false)
+        let record = makeRecord(
+            title: "Already saved",
+            text: "",
+            audioFilePath: cafURL.path,
+            sourceType: .recording
+        )
+        context.insert(record)
+        try context.save()
+        let viewModel = HistoryViewModel(recordingsDirectory: directory)
+        viewModel.setModelContext(context)
+
+        viewModel.importUntrackedRecordings()
+
+        XCTAssertEqual(try context.fetchCount(FetchDescriptor<TranscriptionRecord>()), 1)
+        XCTAssertEqual(record.audioFilePath, cafURL.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cafURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: m4aURL.path))
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
     func testSavingRecoveredRecordingReusesHistoryAcrossRepeatedStops() throws {
         let context = try makeModelContext()
         let path = "Recordings/recovered-\(UUID().uuidString).m4a"

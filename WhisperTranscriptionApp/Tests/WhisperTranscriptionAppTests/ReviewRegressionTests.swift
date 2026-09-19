@@ -267,6 +267,8 @@ private final class ReviewRecorder: RecordingAudioCapturing {
     var errorPublisher: AnyPublisher<String?, Never> { Just(nil).eraseToAnyPublisher() }
     var currentInputFormat: AVAudioFormat? { AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1) }
     var currentRecordingURL: URL? = URL(fileURLWithPath: "/saved-recording.caf")
+    var synchronizedDisplayedTime = false
+    func synchronizeDisplayedRecordingTime() { synchronizedDisplayedTime = true }
     var handler: AudioRecorder.AudioBufferHandler?
     var didStop = false
     func requestPermission() async -> Bool { true }
@@ -301,6 +303,17 @@ private final class ReviewLiveRecognizer: RecordingLiveRecognizing {
 }
 
 extension ReviewRegressionTests {
+    @MainActor
+    func testBecameActiveSynchronizesDisplayedRecordingTime() {
+        let recorder = ReviewRecorder()
+        let service = RecordingService(audioRecorder: recorder)
+        service.isRecording = true
+
+        service.handleBecameActive(applicationState: .active)
+
+        XCTAssertTrue(recorder.synchronizedDisplayedTime)
+    }
+
     @MainActor
     func testMicrophoneSwitchBlocksDuplicateSwitchAndStop() async throws {
         let recorder = ReviewRecorder()
