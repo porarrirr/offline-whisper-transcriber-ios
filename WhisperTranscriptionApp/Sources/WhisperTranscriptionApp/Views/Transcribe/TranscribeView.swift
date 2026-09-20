@@ -21,24 +21,43 @@ struct TranscribeView: View {
         ZStack {
             Color(uiColor: .systemGroupedBackground).ignoresSafeArea()
 
-            if isImportingVideo || viewModel.isProcessing {
+            if isImportingVideo {
                 TranscriptionProcessingScreen(
-                    isImportingVideo: isImportingVideo,
+                    isImportingVideo: true,
                     progress: viewModel.transcriptionProgress,
                     statusText: viewModel.processingStatusText,
                     usesDeterminateProgress: viewModel.usesDeterminateProgress,
                     onCancel: {
-                        if isImportingVideo {
-                            videoImportTask?.cancel()
-                        } else {
-                            viewModel.cancelTranscription()
-                        }
+                        videoImportTask?.cancel()
                     }
                 )
             } else {
                 homeContent
             }
         }
+        .overlay(alignment: .top) {
+            if !isImportingVideo, viewModel.isProcessing || viewModel.isShowingCompletionIndicator {
+                TranscriptionStatusChip(
+                    isComplete: viewModel.isShowingCompletionIndicator,
+                    progress: viewModel.transcriptionProgress,
+                    statusText: viewModel.processingStatusText,
+                    usesDeterminateProgress: viewModel.usesDeterminateProgress,
+                    onCancel: viewModel.cancelTranscription
+                )
+                .safeAreaPadding(.top, 8)
+                .padding(.horizontal, 20)
+                .transition(
+                    .asymmetric(
+                        insertion: .scale(scale: 0.88, anchor: .top).combined(with: .opacity),
+                        removal: .scale(scale: 0.72, anchor: .top)
+                            .combined(with: .opacity)
+                            .combined(with: .offset(y: -18))
+                    )
+                )
+                .zIndex(1)
+            }
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.isShowingCompletionIndicator)
         .toolbar(.hidden, for: .navigationBar)
         .sheet(isPresented: $showFileImporter) {
             FileImporter(selectedURL: $selectedFileURL, isPresented: $showFileImporter) { result in
@@ -371,8 +390,7 @@ struct TranscribeView: View {
 
     private var recordingButtonDisabled: Bool {
         recordingService.isChangingRecordingState
-            || (!recordingService.isRecording && (viewModel.isProcessing
-                || recordingService.liveState == .preparing
+            || (!recordingService.isRecording && (recordingService.liveState == .preparing
                 || recordingService.liveState == .finalizing))
     }
 
@@ -750,6 +768,92 @@ private struct LiveTranscriptionPanel: View {
 }
 
 // MARK: - Processing
+
+private struct TranscriptionStatusChip: View {
+    let isComplete: Bool
+    let progress: Double
+    let statusText: String
+    let usesDeterminateProgress: Bool
+    let onCancel: () -> Void
+
+    private var percentText: String {
+        "\(Int((min(max(progress, 0), 1) * 100).rounded()))%"
+    }
+
+    private var visibleStatusText: String {
+        statusText.isEmpty ? String(localized: "Transcription in progress") : statusText
+    }
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Image(systemName: isComplete ? "checkmark" : "waveform")
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(isComplete ? Color.white : Theme.amber)
+                .frame(width: 30, height: 30)
+                .background(
+                    isComplete ? Color.white.opacity(0.2) : Theme.amber.opacity(0.12),
+                    in: Circle()
+                )
+                .contentTransition(.symbolEffect(.replace))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(isComplete
+                     ? LocalizedStringKey("Transcription complete")
+                     : LocalizedStringKey("Transcription in progress"))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(isComplete ? Color.white : Theme.textPrimary)
+
+                if !isComplete {
+                    Text(visibleStatusText)
+                        .font(.caption)
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+
+            Spacer(minLength: 8)
+
+            if !isComplete {
+                if usesDeterminateProgress {
+                    Text(percentText)
+                        .font(.caption.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(Theme.amber)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(Theme.amber)
+                }
+
+                Button(role: .cancel, action: onCancel) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 28, height: 28)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Theme.textSecondary)
+                .accessibilityLabel(Text("Cancel"))
+            }
+        }
+        .padding(.leading, 9)
+        .padding(.trailing, isComplete ? 16 : 8)
+        .padding(.vertical, 8)
+        .frame(maxWidth: 430)
+        .background {
+            Capsule(style: .continuous)
+                .fill(isComplete ? Color.green : Color(uiColor: .secondarySystemGroupedBackground))
+                .shadow(color: .black.opacity(0.16), radius: 12, y: 5)
+        }
+        .overlay {
+            if !isComplete {
+                Capsule(style: .continuous)
+                    .strokeBorder(Theme.stroke, lineWidth: 1)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("transcriptionStatusChip")
+    }
+}
 
 private struct TranscriptionProcessingScreen: View {
     let isImportingVideo: Bool

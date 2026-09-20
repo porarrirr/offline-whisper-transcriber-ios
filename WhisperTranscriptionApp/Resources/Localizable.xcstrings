@@ -9877,6 +9877,17 @@
         }
       }
     },
+    "Transcription complete" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こし完了"
+          }
+        }
+      }
+    },
     "Transcription in progress" : {
       "extractionState" : "stale",
       "localizations" : {

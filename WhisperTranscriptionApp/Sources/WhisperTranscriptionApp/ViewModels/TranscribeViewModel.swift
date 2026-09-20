@@ -16,6 +16,7 @@ class TranscribeViewModel: ObservableObject {
     @Published var transcriptionProgress: Double = 0
     @Published var processingStatusText: String = ""
     @Published var usesDeterminateProgress = true
+    @Published private(set) var isShowingCompletionIndicator = false
     @Published var liveState: LiveTranscriptionState = .idle
     @Published var liveElapsedTime: TimeInterval = 0
     @Published var liveAudioLevel: Float = -80
@@ -28,6 +29,8 @@ class TranscribeViewModel: ObservableObject {
     private let settings = AppSettings.shared
     private var transcriptionTask: Task<Void, Never>?
     private var transcriptionTaskID: UUID?
+    private var pendingTranscriptionOperations: [@MainActor () async -> Void] = []
+    private var completionIndicatorTask: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
 
     func startRecording(recordingService: RecordingService, requiresTranscriptionReadiness: Bool = true) {
@@ -48,13 +51,17 @@ class TranscribeViewModel: ObservableObject {
             setError(readinessError)
             return nil
         }
-        transcriptionResult = ""
-        transcriptionSegments = []
-        transcriptionLanguage = nil
-        transcriptionTitle = ""
-        transcriptionDuration = 0
+        // Recording can start while a previous file is being transcribed. Keep that
+        // operation's presentation state intact until it finishes.
+        if !isProcessing {
+            transcriptionResult = ""
+            transcriptionSegments = []
+            transcriptionLanguage = nil
+            transcriptionTitle = ""
+            transcriptionDuration = 0
+            transcriptionProgress = 0
+        }
         errorMessage = nil
-        transcriptionProgress = 0
         do {
             return try await recordingService.startRecordingFromApp()
         } catch {
@@ -64,8 +71,18 @@ class TranscribeViewModel: ObservableObject {
     }
     
     func stopRecordingAndTranscribe(recordingService: RecordingService, modelContext: ModelContext) {
-        startTranscriptionTask {
-            await self.stopRecordingAndTranscribeAsync(recordingService: recordingService, modelContext: modelContext)
+        Task { @MainActor in
+            let capturedURL: URL
+            do {
+                capturedURL = try await recordingService.stopRecording()
+            } catch {
+                setError(error.localizedDescription)
+                return
+            }
+
+            startTranscriptionTask {
+                await self.persistFinalizeAndTranscribe(capturedURL: capturedURL, modelContext: modelContext)
+            }
         }
     }
 
@@ -89,18 +106,6 @@ class TranscribeViewModel: ObservableObject {
         liveTask = Task { @MainActor in
             await recordingService.stopLiveTranscription()
         }
-    }
-
-    private func stopRecordingAndTranscribeAsync(recordingService: RecordingService, modelContext: ModelContext) async {
-        let capturedURL: URL
-        do {
-            capturedURL = try await recordingService.stopRecording()
-        } catch {
-            setError(error.localizedDescription)
-            return
-        }
-
-        await persistFinalizeAndTranscribe(capturedURL: capturedURL, modelContext: modelContext)
     }
 
     private func persistFinalizeAndTranscribe(capturedURL: URL, modelContext: ModelContext) async {
@@ -220,12 +225,15 @@ class TranscribeViewModel: ObservableObject {
         cleanupAfterProcessing: Bool = false
     ) async {
         let originalRevision = existingRecord?.transcriptionRevision
+        var transcriptionWasSaved = false
         errorMessage = nil
         transcriptionResult = ""
         transcriptionSegments = []
         transcriptionLanguage = nil
         transcriptionTitle = ""
         transcriptionDuration = 0
+        completionIndicatorTask?.cancel()
+        isShowingCompletionIndicator = false
 
         isProcessing = true
         modelManager.beginTranscriptionOperation()
@@ -241,6 +249,9 @@ class TranscribeViewModel: ObservableObject {
         var shouldKeepPersistedImportedAudio = false
         defer {
             modelManager.endTranscriptionOperation()
+            if transcriptionWasSaved {
+                showCompletionIndicatorBriefly()
+            }
             isProcessing = false
             transcriptionProgress = 0
             usesDeterminateProgress = true
@@ -326,6 +337,7 @@ class TranscribeViewModel: ObservableObject {
                 TranscriptionSpotlightSync.index(record)
                 shouldKeepPersistedImportedAudio = true
                 showResult = true
+                transcriptionWasSaved = true
                 await generateTitleAfterTranscription(for: record, modelContext: modelContext)
             } catch {
                 modelContext.rollback()
@@ -453,6 +465,16 @@ class TranscribeViewModel: ObservableObject {
         transcriptionProgress = progress
     }
 
+    private func showCompletionIndicatorBriefly() {
+        completionIndicatorTask?.cancel()
+        isShowingCompletionIndicator = true
+        completionIndicatorTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1.15))
+            guard !Task.isCancelled else { return }
+            self?.isShowingCompletionIndicator = false
+        }
+    }
+
     private func removeTemporaryInput(url: URL) {
         do {
             if FileManager.default.fileExists(atPath: url.path) {
@@ -547,7 +569,16 @@ class TranscribeViewModel: ObservableObject {
     }
 
     private func startTranscriptionTask(_ operation: @escaping @MainActor () async -> Void) {
-        transcriptionTask?.cancel()
+        // A recording may finish while another transcription is still running.
+        // Preserve the active job and run the newly captured recording next.
+        guard transcriptionTask == nil else {
+            pendingTranscriptionOperations.append(operation)
+            return
+        }
+        launchTranscriptionTask(operation)
+    }
+
+    private func launchTranscriptionTask(_ operation: @escaping @MainActor () async -> Void) {
         let taskID = UUID()
         transcriptionTaskID = taskID
         transcriptionTask = Task { @MainActor in
@@ -555,6 +586,10 @@ class TranscribeViewModel: ObservableObject {
             if transcriptionTaskID == taskID {
                 transcriptionTask = nil
                 transcriptionTaskID = nil
+                if !pendingTranscriptionOperations.isEmpty {
+                    let pendingOperation = pendingTranscriptionOperations.removeFirst()
+                    launchTranscriptionTask(pendingOperation)
+                }
             }
         }
     }

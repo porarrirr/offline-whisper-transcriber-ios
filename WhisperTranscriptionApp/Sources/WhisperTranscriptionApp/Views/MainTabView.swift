@@ -3,6 +3,7 @@ import SwiftUI
 struct MainTabView: View {
     @Environment(\.openURL) private var openURL
     @EnvironmentObject private var transcribeViewModel: TranscribeViewModel
+    @EnvironmentObject private var recordingService: RecordingService
     @State private var selectedTab = 0
     @State private var availableUpdate: AppUpdateInfo?
     @AppStorage(WhisperAppDestination.pendingDestinationKey) private var pendingDestination = ""
@@ -46,7 +47,7 @@ struct MainTabView: View {
         .onChange(of: pendingDestination) { _, _ in
             applyPendingDestination()
         }
-        .sheet(isPresented: $transcribeViewModel.showResult) {
+        .sheet(isPresented: resultPresentationBinding) {
             ResultView(
                 title: transcribeViewModel.transcriptionTitle,
                 text: transcribeViewModel.transcriptionResult,
@@ -67,6 +68,27 @@ struct MainTabView: View {
         } message: { update in
             Text("Version \(update.remoteVersion) is available on the App Store.")
         }
+    }
+
+    private var resultPresentationBinding: Binding<Bool> {
+        Binding(
+            get: {
+                transcribeViewModel.showResult
+                    && !transcribeViewModel.isProcessing
+                    && !transcribeViewModel.isShowingCompletionIndicator
+                    && !recordingService.isRecording
+            },
+            set: { isPresented in
+                // If recording temporarily hides the result, retain it so the latest
+                // result can be shown after recording and queued transcription finish.
+                if !isPresented,
+                   !recordingService.isRecording,
+                   !transcribeViewModel.isProcessing,
+                   !transcribeViewModel.isShowingCompletionIndicator {
+                    transcribeViewModel.showResult = false
+                }
+            }
+        )
     }
 
     private func applyPendingDestination() {
