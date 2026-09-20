@@ -184,18 +184,17 @@ struct HistoryDetailView: View {
                     WarningStrip(message: error)
                 }
 
-                if let audioURL = cachedAudioURL {
-                    AudioPlaybackPanel(audioURL: audioURL, player: audioPlayer)
-                        .disabled(recordingService.isRecording || recordingService.isChangingRecordingState)
-                    if recordingService.isRecording || recordingService.isChangingRecordingState {
+                Section {
+                    if cachedAudioURL != nil,
+                       recordingService.isRecording || recordingService.isChangingRecordingState {
                         Text("Audio playback is unavailable while recording.")
                             .font(.body)
                     }
-                }
 
-                transcriptionProcessingStatus
+                    transcriptionProcessingStatus
 
-                Section {
+                    transcriptionToolbar
+
                     if record.hasTranscriptionText {
                         TranscriptionCard(
                             text: record.text,
@@ -216,10 +215,16 @@ struct HistoryDetailView: View {
                         .accessibilityIdentifier("historyTranscriptionCard")
                     }
                 } header: {
-                    transcriptionToolbar
-                        .padding(.vertical, 8)
-                        .background(Theme.background)
-                        .zIndex(1)
+                    if let audioURL = cachedAudioURL {
+                        AudioPlaybackPanel(audioURL: audioURL, player: audioPlayer)
+                            .disabled(
+                                recordingService.isRecording
+                                    || recordingService.isChangingRecordingState
+                            )
+                            .padding(.vertical, 8)
+                            .background(Theme.background)
+                            .zIndex(1)
+                    }
                 }
 
                 Spacer(minLength: 88)

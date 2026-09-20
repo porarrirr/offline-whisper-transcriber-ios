@@ -81,6 +81,30 @@ final class LongTranscriptionLayoutTests: XCTestCase {
         add(reading)
     }
 
+    func testHistoryPlaybackControlsStayPinnedWhileTranscriptToolbarScrollsAway() {
+        let app = XCUIApplication()
+        app.launchArguments = [
+            "--ui-test-long-transcription",
+            "--ui-test-history-detail",
+            "--ui-test-playback",
+            "-transcriptDisplayStyle",
+            "timeline",
+        ]
+        app.launch()
+
+        let playPauseButton = app.buttons["historyPlayPause"]
+        let copyButton = app.buttons["historyCopyText"]
+        XCTAssertTrue(playPauseButton.waitForExistence(timeout: 10))
+        XCTAssertTrue(copyButton.waitForExistence(timeout: 10))
+
+        for _ in 0..<4 {
+            app.swipeUp(velocity: .fast)
+        }
+
+        XCTAssertTrue(playPauseButton.isHittable)
+        XCTAssertFalse(copyButton.isHittable)
+    }
+
     func testHistoryTitleEditorOffersGenerationForExistingTitle() throws {
         guard #available(iOS 27.0, *) else { throw XCTSkip("Apple Intelligence title generation requires iOS 27") }
 
