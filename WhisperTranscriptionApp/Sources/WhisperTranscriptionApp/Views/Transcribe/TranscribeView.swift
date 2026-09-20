@@ -97,8 +97,6 @@ struct TranscribeView: View {
     private var homeContent: some View {
         ScrollView {
             VStack(spacing: 20) {
-                header
-
                 VStack(spacing: 20) {
                     recorderDisplay
                     transport
@@ -196,35 +194,6 @@ struct TranscribeView: View {
     }
 
     // MARK: - Sections
-
-    private var header: some View {
-        HStack(alignment: .top, spacing: 16) {
-            VStack(alignment: .leading, spacing: 7) {
-                Text("Transcribe")
-                    .font(.largeTitle.bold())
-                    .foregroundStyle(Theme.textPrimary)
-
-                Label("Processed Offline", systemImage: "lock.shield")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.textSecondary)
-            }
-
-            Spacer(minLength: 8)
-
-            NavigationLink {
-                SettingsView()
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(Theme.textPrimary)
-                    .frame(width: 44, height: 44)
-                    .background(Theme.panelInset.opacity(0.7), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(Text("Settings"))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
 
     /// 波形とタイムコードだけを主役にした、フラットな録音表示。
     private var recorderDisplay: some View {

@@ -80,15 +80,47 @@ class TranscribeViewModel: ObservableObject {
                 return
             }
 
+            guard let record = await registerCapturedRecording(
+                capturedURL: capturedURL,
+                modelContext: modelContext
+            ) else {
+                return
+            }
+
             startTranscriptionTask {
-                await self.persistFinalizeAndTranscribe(capturedURL: capturedURL, modelContext: modelContext)
+                await self.finalizeAndTranscribe(
+                    capturedURL: capturedURL,
+                    record: record,
+                    modelContext: modelContext
+                )
             }
         }
     }
 
     func transcribeInterruptedRecording(recordingService: RecordingService, modelContext: ModelContext) {
-        startTranscriptionTask {
-            await self.transcribeInterruptedRecordingAsync(recordingService: recordingService, modelContext: modelContext)
+        Task { @MainActor in
+            let recordingURL: URL
+            do {
+                recordingURL = try await recordingService.consumeInterruptedRecording()
+            } catch {
+                setError(error.localizedDescription)
+                return
+            }
+
+            guard let record = await registerCapturedRecording(
+                capturedURL: recordingURL,
+                modelContext: modelContext
+            ) else {
+                return
+            }
+
+            startTranscriptionTask {
+                await self.finalizeAndTranscribe(
+                    capturedURL: recordingURL,
+                    record: record,
+                    modelContext: modelContext
+                )
+            }
         }
     }
 
@@ -108,22 +140,37 @@ class TranscribeViewModel: ObservableObject {
         }
     }
 
-    private func persistFinalizeAndTranscribe(capturedURL: URL, modelContext: ModelContext) async {
-        let record: TranscriptionRecord
+    private func registerCapturedRecording(
+        capturedURL: URL,
+        modelContext: ModelContext
+    ) async -> TranscriptionRecord? {
         do {
             // Display time is throttled and suspended in the background.
-            // Persist the duration of the durable capture before finalization.
+            // Persist the durable capture before waiting for an earlier transcription.
             let recordingDuration = try await AudioConverter.shared.getAudioDuration(url: capturedURL)
-            record = try saveRecordingRecord(url: capturedURL, duration: recordingDuration, modelContext: modelContext)
+            let record = try saveRecordingRecord(
+                url: capturedURL,
+                duration: recordingDuration,
+                modelContext: modelContext
+            )
             AppLogger.info(
-                "Recording history saved before finalization: file=\(capturedURL.lastPathComponent), duration=\(recordingDuration)s",
+                "Recording history saved before transcription queue: file=\(capturedURL.lastPathComponent), duration=\(recordingDuration)s",
                 context: "TranscribeViewModel"
             )
+            return record
         } catch {
             setError(error.localizedDescription)
-            return
+            return nil
         }
+    }
 
+    private func finalizeAndTranscribe(
+        capturedURL: URL,
+        record: TranscriptionRecord,
+        modelContext: ModelContext
+    ) async {
+        // The user may delete a queued history item before its turn arrives.
+        guard !record.isDeleted else { return }
         let finalizedURL: URL
         do {
             AppLogger.info(
@@ -146,19 +193,8 @@ class TranscribeViewModel: ObservableObject {
             return
         }
 
+        guard !record.isDeleted else { return }
         await transcribeAudio(url: finalizedURL, sourceType: .recording, modelContext: modelContext, updating: record)
-    }
-
-    private func transcribeInterruptedRecordingAsync(recordingService: RecordingService, modelContext: ModelContext) async {
-        let recordingURL: URL
-        do {
-            recordingURL = try await recordingService.consumeInterruptedRecording()
-        } catch {
-            setError(error.localizedDescription)
-            return
-        }
-
-        await persistFinalizeAndTranscribe(capturedURL: recordingURL, modelContext: modelContext)
     }
     
     func transcribeFile(url: URL, modelContext: ModelContext, cleanupAfterProcessing: Bool = false) {
