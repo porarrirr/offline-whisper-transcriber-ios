@@ -1498,6 +1498,9 @@
         }
       }
     },
+    "Chat History" : {
+
+    },
     "Checking installation completion" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -2747,6 +2750,7 @@
       }
     },
     "Edit transcription segment" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -6296,6 +6300,28 @@
         }
       }
     },
+    "Paragraphs are shown with their starting time." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "段落ごとに開始時刻を表示します。"
+          }
+        }
+      }
+    },
+    "Paragraphs follow playback. Tapping does not move playback." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再生位置に合わせて本文を強調します。タップでは再生位置は変わりません。"
+          }
+        }
+      }
+    },
     "Pause Audio" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -6319,6 +6345,7 @@
       }
     },
     "Play from here" : {
+      "extractionState" : "stale",
       "localizations" : {
         "ja" : {
           "stringUnit" : {
@@ -6821,6 +6848,9 @@
           }
         }
       }
+    },
+    "Questions and answers will appear here after you start a conversation." : {
+
     },
     "Ready to record" : {
       "extractionState" : "manual",
@@ -7670,6 +7700,9 @@
           }
         }
       }
+    },
+    "Send" : {
+
     },
     "Settings" : {
       "extractionState" : "manual",
@@ -8742,6 +8775,17 @@
         }
       }
     },
+    "Long-press a paragraph to choose text to edit." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "段落を長押しすると編集する部分を選べます。"
+          }
+        }
+      }
+    },
     "Tap to Start Recording" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -8878,6 +8922,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文字 (.txt)"
+          }
+        }
+      }
+    },
+    "Text is arranged in paragraphs for easier reading." : {
+      "extractionState" : "stale",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読みやすい段落にまとめて表示します。"
           }
         }
       }
@@ -9311,9 +9366,6 @@
           }
         }
       }
-    },
-    "Timeline marker %@" : {
-
     },
     "Tiny (Fast & Light)" : {
       "extractionState" : "manual",
@@ -9831,6 +9883,17 @@
         }
       }
     },
+    "Transcription complete" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こし完了"
+          }
+        }
+      }
+    },
     "Transcription failed" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9873,17 +9936,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "文字起こしは完了しましたが、テキストが生成されませんでした。"
-          }
-        }
-      }
-    },
-    "Transcription complete" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "文字起こし完了"
           }
         }
       }

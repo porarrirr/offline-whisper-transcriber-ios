@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 import SwiftData
 
@@ -37,10 +38,23 @@ struct LongTranscriptionUITestFixture: View {
             title: "Long transcription fixture",
             text: text,
             sourceType: .file,
+            audioFilePath: ProcessInfo.processInfo.arguments.contains("--ui-test-playback")
+                ? try! Self.makePlaybackAudio().path : nil,
             duration: 1_000,
             segments: fixtureSegments,
             language: "ja"
         )
+    }
+
+    private static func makePlaybackAudio() throws -> URL {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("transcript-playback-fixture.caf")
+        let format = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1)!
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 16_000 * 120)!
+        buffer.frameLength = buffer.frameCapacity
+        buffer.floatChannelData![0].initialize(repeating: 0, count: Int(buffer.frameLength))
+        let file = try AVAudioFile(forWriting: url, settings: format.settings)
+        try file.write(from: buffer)
+        return url
     }
 
     var body: some View {

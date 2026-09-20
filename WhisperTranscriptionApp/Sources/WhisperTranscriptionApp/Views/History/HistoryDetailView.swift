@@ -12,7 +12,7 @@ struct HistoryDetailView: View {
     @EnvironmentObject private var transcribeViewModel: TranscribeViewModel
     // 再生位置は0.1秒ごとに更新される。この画面のbodyでは`audioPlayer`の観測対象プロパティを
     // 一切読まないこと(読むとその都度この長大なbody全体が無効化され、文字起こしリストの
-    // 再レイアウトでスクロール位置が飛ぶ)。再生状態の参照は`AudioPlaybackPanel`内に閉じる。
+    // 再レイアウトでスクロール位置が飛ぶ)。再生状態の参照は`AudioPlaybackPanel`と文字起こしの段落ビュー内に閉じる。
     @StateObject private var recordingService = RecordingService.shared
     @State private var audioPlayer = AudioPlayer()
     // 表示スタイルはユーザー操作時しか更新されないので、bodyで観測しても再生位置のような
@@ -28,7 +28,6 @@ struct HistoryDetailView: View {
     @State private var sharePayload: SharePayload?
     @State private var showExportAudioError = false
     @State private var transcriptionExportErrorMessage: String?
-    @State private var showPlaybackAudioError = false
     @State private var cachedSegments: [TranscriptionSegment] = []
     @State private var cachedAudioURL: URL?
     @State private var editingSegment: TranscriptionSegment?
@@ -114,12 +113,6 @@ struct HistoryDetailView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(transcriptionExportErrorMessage ?? "")
-        }
-        .alert(
-            String(localized: "Audio is unavailable for playback."),
-            isPresented: $showPlaybackAudioError
-        ) {
-            Button("OK", role: .cancel) {}
         }
         .alert("Edit Title", isPresented: $showEditTitle) {
             TextField("Title", text: $editableTitle)
@@ -213,11 +206,11 @@ struct HistoryDetailView: View {
                             showsTimelineMarkers: true,
                             displayStyle: settings.transcriptDisplayStyle,
                             showsDisplayStyleControl: false,
-                            onSegmentTap: handleSegmentTap,
                             onSegmentLongPress: { segment in
                                 guard !transcribeViewModel.isProcessing else { return }
                                 editingSegment = segment
-                            }
+                            },
+                            audioPlayer: audioPlayer
                         )
                         .equatable()
                         .accessibilityIdentifier("historyTranscriptionCard")
@@ -574,15 +567,6 @@ struct HistoryDetailView: View {
         }
     }
 
-    private func handleSegmentTap(_ segment: TranscriptionSegment) {
-        guard !recordingService.isRecording, !recordingService.isChangingRecordingState else { return }
-        guard cachedAudioURL != nil else {
-            showPlaybackAudioError = true
-            return
-        }
-        audioPlayer.play(from: max(0, segment.start - 2))
-    }
-
     private func applySegmentReplacement(
         segment: TranscriptionSegment,
         replacement: String,
@@ -757,6 +741,7 @@ private struct AudioPlaybackPanel: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(Text(player.isPlaying ? "Pause Audio" : "Play Audio"))
+        .accessibilityIdentifier("historyPlayPause")
     }
 
     private func skipButton(

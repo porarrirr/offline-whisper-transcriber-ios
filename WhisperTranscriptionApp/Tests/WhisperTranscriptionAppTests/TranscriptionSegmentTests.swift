@@ -27,7 +27,6 @@ final class TranscriptionCardEquatableTests: XCTestCase {
             isLoading: isLoading,
             showsTimelineMarkers: showsTimelineMarkers,
             displayStyle: displayStyle,
-            onSegmentTap: interactive ? { _ in } : nil,
             onSegmentLongPress: interactive ? { _ in } : nil
         )
     }

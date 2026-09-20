@@ -14,8 +14,14 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
 
     @ObservationIgnored private var player: AVAudioPlayer?
     @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var preparedURL: URL?
 
     func prepare(url: URL) {
+        guard preparedURL != url || player == nil else { return }
+        stop()
+        preparedURL = nil
+        player = nil
+        duration = 0
         do {
             player = try AVAudioPlayer(contentsOf: url)
             player?.delegate = self
@@ -24,6 +30,7 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
             player?.prepareToPlay()
             duration = player?.duration ?? 0
             currentTime = player?.currentTime ?? 0
+            preparedURL = url
             errorMessage = nil
         } catch {
             errorMessage = String(localized: "Failed to prepare audio playback") + ": \(error.localizedDescription)"
@@ -47,13 +54,15 @@ class AudioPlayer: NSObject, AVAudioPlayerDelegate {
         isPlaying = true
 
         invalidateProgressTimer()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        let progressTimer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
             self?.currentTime = player.currentTime
             if !player.isPlaying {
                 self?.isPlaying = false
                 self?.invalidateProgressTimer()
             }
         }
+        timer = progressTimer
+        RunLoop.main.add(progressTimer, forMode: .common)
     }
 
     func play(from time: TimeInterval) {

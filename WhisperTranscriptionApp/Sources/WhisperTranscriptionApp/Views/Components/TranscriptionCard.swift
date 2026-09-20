@@ -11,8 +11,9 @@ struct TranscriptionCard: View, Equatable {
     let showsDisplayStyleControl: Bool
     let displayStyleControlAccessibilityIdentifier: String
     let onDisplayStyleToggle: (() -> Void)?
-    let onSegmentTap: ((TranscriptionSegment) -> Void)?
     let onSegmentLongPress: ((TranscriptionSegment) -> Void)?
+    let audioPlayer: AudioPlayer?
+    @State private var paragraphs: [TranscriptParagraph] = []
     @State private var textChunks: [TranscriptionTextChunk] = []
 
     init(
@@ -26,9 +27,10 @@ struct TranscriptionCard: View, Equatable {
         showsDisplayStyleControl: Bool = false,
         displayStyleControlAccessibilityIdentifier: String = "historyTranscriptDisplayToggle",
         onDisplayStyleToggle: (() -> Void)? = nil,
-        onSegmentTap: ((TranscriptionSegment) -> Void)? = nil,
-        onSegmentLongPress: ((TranscriptionSegment) -> Void)? = nil
+        onSegmentLongPress: ((TranscriptionSegment) -> Void)? = nil,
+        audioPlayer: AudioPlayer? = nil
     ) {
+        self.audioPlayer = audioPlayer
         self.text = text
         self.segments = segments
         self.showTimestamps = showTimestamps
@@ -39,19 +41,18 @@ struct TranscriptionCard: View, Equatable {
         self.showsDisplayStyleControl = showsDisplayStyleControl
         self.displayStyleControlAccessibilityIdentifier = displayStyleControlAccessibilityIdentifier
         self.onDisplayStyleToggle = onDisplayStyleToggle
-        self.onSegmentTap = onSegmentTap
         self.onSegmentLongPress = onSegmentLongPress
     }
 
     /// 数百行のセグメントを親の更新ごとに再diffさせないための等価判定。
-    /// 描画はクロージャの「中身」ではなくnil性にしか依存しない(`shouldShowSegmentRows` と
-    /// `TranscriptionSegmentRow.isInteractive`)ため、クロージャの同一性は比較しない。
+    /// 描画はクロージャのnil性に依存するため、クロージャの同一性は比較しない。
     /// 呼び出し側はこのクロージャに`@Environment`由来の値(`dismiss`等)を捕捉させないこと。
     /// 等価と判定されると古い構造体コピーが残るので、捕捉したEnvironmentが陳腐化する。
     /// 描画に影響するプロパティ(`displayStyle`を含む)を追加したらここにも必ず加えること。
     /// 漏れると表示スタイルを切り替えても再描画されない。
     static func == (lhs: TranscriptionCard, rhs: TranscriptionCard) -> Bool {
-        lhs.showTimestamps == rhs.showTimestamps
+        lhs.audioPlayer === rhs.audioPlayer
+            && lhs.showTimestamps == rhs.showTimestamps
             && lhs.isLoading == rhs.isLoading
             && lhs.showsHeader == rhs.showsHeader
             && lhs.showsTimelineMarkers == rhs.showsTimelineMarkers
@@ -59,7 +60,6 @@ struct TranscriptionCard: View, Equatable {
             && lhs.showsDisplayStyleControl == rhs.showsDisplayStyleControl
             && lhs.displayStyleControlAccessibilityIdentifier == rhs.displayStyleControlAccessibilityIdentifier
             && (lhs.onDisplayStyleToggle == nil) == (rhs.onDisplayStyleToggle == nil)
-            && (lhs.onSegmentTap == nil) == (rhs.onSegmentTap == nil)
             && (lhs.onSegmentLongPress == nil) == (rhs.onSegmentLongPress == nil)
             && lhs.text == rhs.text
             && lhs.segments == rhs.segments
@@ -103,20 +103,15 @@ struct TranscriptionCard: View, Equatable {
                 }
                 .shimmer()
             } else {
-                if shouldShowSegmentRows {
-                    LazyVStack(alignment: .leading, spacing: 12) {
-                        ForEach(timelineItems) { item in
-                            switch item {
-                            case .marker(let seconds):
-                                TranscriptionTimelineMarker(seconds: seconds)
-                            case .segment(let segment):
-                                TranscriptionSegmentRow(
-                                    segment: segment,
-                                    showTimestamp: showTimestamps,
-                                    onTap: onSegmentTap,
-                                    onLongPress: onSegmentLongPress
-                                )
-                            }
+                if !segments.isEmpty {
+                    LazyVStack(alignment: .leading, spacing: 24) {
+                        ForEach(paragraphs) { paragraph in
+                            TranscriptParagraphRow(
+                                paragraph: paragraph,
+                                showsTimestamp: displayStyle == .timeline && (showTimestamps || showsTimelineMarkers),
+                                player: audioPlayer,
+                                onEdit: onSegmentLongPress
+                            )
                         }
                     }
                 } else if !textOnlyDisplayText.isEmpty && textChunks.isEmpty {
@@ -137,8 +132,11 @@ struct TranscriptionCard: View, Equatable {
                 }
             }
         }
-        .task(id: shouldShowSegmentRows ? nil : textOnlyDisplayText) {
-            guard !shouldShowSegmentRows else {
+        .onChange(of: segments, initial: true) { _, value in
+            paragraphs = TranscriptParagraph.make(from: value)
+        }
+        .task(id: segments.isEmpty ? text : nil) {
+            guard segments.isEmpty else {
                 textChunks = []
                 return
             }
@@ -175,29 +173,13 @@ struct TranscriptionCard: View, Equatable {
 
     private func displayStyleDescription(isTimeline: Bool) -> LocalizedStringKey {
         if isTimeline {
-            return onSegmentTap != nil || onSegmentLongPress != nil
-                ? "Tap a line to play from there. Long-press to edit."
-                : "Segments are arranged along 30-second timeline markers."
+            return onSegmentLongPress != nil
+                ? "Long-press a paragraph to choose text to edit."
+                : "Paragraphs are shown with their starting time."
         }
-        return onSegmentTap != nil
-            ? "Continuous text. Tapping does not move playback."
-            : "Continuous text for easier reading."
-    }
-
-    private var shouldShowSegmentRows: Bool {
-        displayStyle == .timeline && !segments.isEmpty && (
-            showTimestamps
-                || showsTimelineMarkers
-                || onSegmentTap != nil
-                || onSegmentLongPress != nil
-        )
-    }
-
-    private var timelineItems: [TranscriptionTimelineItem] {
-        if showsTimelineMarkers {
-            return TranscriptionTimelineItem.items(from: segments)
-        }
-        return segments.map(TranscriptionTimelineItem.segment)
+        return audioPlayer != nil
+            ? "Paragraphs follow playback. Tapping does not move playback."
+            : "Text is arranged in paragraphs for easier reading."
     }
 
     @MainActor
@@ -211,6 +193,76 @@ struct TranscriptionCard: View, Equatable {
         }.value
         guard !Task.isCancelled else { return }
         textChunks = chunks
+    }
+}
+
+/// Only these visible paragraph rows observe playback ticks, not the history screen.
+private struct TranscriptParagraphRow: View {
+    let paragraph: TranscriptParagraph
+    let showsTimestamp: Bool
+    let player: AudioPlayer?
+    let onEdit: ((TranscriptionSegment) -> Void)?
+
+    var body: some View {
+        let active = player.flatMap { player in
+            player.isPlaying || player.currentTime > 0
+                ? paragraph.activeSegment(at: player.currentTime) : nil
+        }
+        VStack(alignment: .leading, spacing: 8) {
+            if showsTimestamp, let first = paragraph.segments.first {
+                Text(TranscriptionTimelineItem.markerLabel(seconds: Int(max(0, first.start))))
+                    .font(.caption.monospaced().weight(.semibold))
+                    .foregroundStyle(Theme.amber)
+            }
+            Text(attributedText(active: active))
+                .font(.body)
+                .lineSpacing(7)
+                .tint(Theme.textPrimary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+        }
+        .padding(10)
+        .background(active != nil ? Theme.amber.opacity(0.08) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 10))
+        .overlay(alignment: .leading) {
+            if active != nil {
+                RoundedRectangle(cornerRadius: 2).fill(Theme.amber).frame(width: 3)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("transcriptParagraph-\(paragraph.id)")
+        .accessibilityAddTraits(active != nil ? .isSelected : [])
+        .contextMenu {
+            if let onEdit {
+                ForEach(paragraph.segments) { segment in
+                    Button { onEdit(segment) } label: {
+                        Text(segment.text)
+                        Image(systemName: "pencil")
+                    }
+                    .accessibilityIdentifier("editTranscriptSegment-\(segment.id)")
+                }
+            }
+        }
+    }
+
+    private func attributedText(active: Int?) -> AttributedString {
+        var result = AttributedString()
+        var previous = ""
+        for index in paragraph.parts.indices {
+            let text = paragraph.parts[index].text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let joined = TranscriptionSegment.joinedPlainText(from: [previous, text])
+            let separator = previous.isEmpty ? "" : String(joined.dropFirst(previous.count).dropLast(text.count))
+            result.append(AttributedString(separator))
+            var part = AttributedString(text)
+            part.foregroundColor = active == index ? Theme.amber : Theme.textPrimary
+            if active == index {
+                part.backgroundColor = Theme.amber.opacity(0.16)
+            }
+            result.append(part)
+            previous = text
+        }
+        return result
     }
 }
 
@@ -244,152 +296,16 @@ struct TranscriptionDetailActionRow: View {
     }
 }
 
-private struct TranscriptionTimelineMarker: View {
-    let seconds: Int
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Rectangle()
-                .fill(Theme.stroke)
-                .frame(height: 1)
-
-            Text(TranscriptionTimelineItem.markerLabel(seconds: seconds))
-                .font(Theme.mono(11, weight: .semibold))
-                .foregroundColor(Theme.amber)
-                .fixedSize()
-
-            Rectangle()
-                .fill(Theme.stroke)
-                .frame(height: 1)
-        }
-        .accessibilityElement()
-        .accessibilityIdentifier("timelineMarker-\(seconds)")
-        .accessibilityLabel(
-            Text("Timeline marker \(TranscriptionTimelineItem.markerLabel(seconds: seconds))")
-        )
-    }
-}
-
-private struct TranscriptionSegmentRow: View {
-    let segment: TranscriptionSegment
-    let showTimestamp: Bool
-    let onTap: ((TranscriptionSegment) -> Void)?
-    let onLongPress: ((TranscriptionSegment) -> Void)?
-
-    private var isInteractive: Bool {
-        onTap != nil || onLongPress != nil
-    }
-
-    var body: some View {
-        Group {
-            if isInteractive {
-                primaryContent
-                    .gesture(segmentGesture)
-                    .accessibilityAction(named: Text("Play from here")) {
-                        onTap?(segment)
-                    }
-                    .accessibilityAction(named: Text("Edit transcription segment")) {
-                        onLongPress?(segment)
-                    }
-            } else {
-                primaryContent
-            }
-        }
-    }
-
-    private var primaryContent: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            if showTimestamp {
-                Text(segment.formattedTimestamp)
-                    .font(.caption.monospaced().weight(.semibold))
-                    .foregroundColor(Theme.amber)
-            }
-
-            segmentText
-        }
-        .padding(.vertical, isInteractive ? 6 : 0)
-        .padding(.horizontal, isInteractive ? 8 : 0)
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("transcriptionSegment-\(segment.id)")
-    }
-
-    @ViewBuilder
-    private var segmentText: some View {
-        if isInteractive {
-            Text(segment.text)
-                .font(.body)
-                .foregroundColor(Theme.textPrimary)
-                .lineSpacing(7)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            Text(segment.text)
-                .font(.body)
-                .foregroundColor(Theme.textPrimary)
-                .lineSpacing(7)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    private var segmentGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.5)
-            .exclusively(before: TapGesture())
-            .onEnded { value in
-                switch value {
-                case .first:
-                    onLongPress?(segment)
-                case .second:
-                    onTap?(segment)
-                }
-            }
-    }
-}
-
 private struct TranscriptionTextChunk: Identifiable, Sendable {
     let id: Int
     let text: String
 
-    static func chunks(from text: String, targetLength: Int = 1_200) -> [TranscriptionTextChunk] {
-        guard !text.isEmpty else { return [] }
-
-        var chunks: [TranscriptionTextChunk] = []
-        chunks.reserveCapacity(max(1, text.count / targetLength))
-
-        var current = ""
-        current.reserveCapacity(targetLength)
-
-        func appendCurrentIfNeeded() {
-            guard !current.isEmpty else { return }
-            chunks.append(TranscriptionTextChunk(id: chunks.count, text: current))
-            current = ""
-            current.reserveCapacity(targetLength)
+    static func chunks(from text: String, targetLength: Int = 180) -> [TranscriptionTextChunk] {
+        TranscriptParagraph.readingChunks(text, targetLength: targetLength).enumerated().map {
+            TranscriptionTextChunk(id: $0.offset, text: $0.element.trimmingCharacters(in: .whitespacesAndNewlines))
         }
-
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            let lineText = String(line)
-            if current.count + lineText.count + 1 > targetLength {
-                appendCurrentIfNeeded()
-            }
-
-            if lineText.count > targetLength {
-                var start = lineText.startIndex
-                while start < lineText.endIndex {
-                    let end = lineText.index(start, offsetBy: targetLength, limitedBy: lineText.endIndex) ?? lineText.endIndex
-                    chunks.append(TranscriptionTextChunk(id: chunks.count, text: String(lineText[start..<end])))
-                    start = end
-                }
-            } else {
-                if !current.isEmpty {
-                    current.append("\n")
-                }
-                current.append(lineText)
-            }
-        }
-
-        appendCurrentIfNeeded()
-        return chunks
     }
+
 }
 
 struct ShimmerModifier: ViewModifier {

@@ -169,12 +169,15 @@ struct TranscribeView: View {
                         LiveTranscriptionPanel(
                             finalizedText: recordingService.liveFinalizedText,
                             volatileText: recordingService.liveVolatileText,
-                            state: recordingService.liveState
+                            state: recordingService.liveState,
+                            usesExpandedHeight: recordingService.isRecording
                         )
                     }
                 }
 
-                inputSection
+                if !recordingService.isRecording {
+                    inputSection
+                }
 
                 if let error = displayedError {
                     WarningStrip(message: error)
@@ -582,6 +585,7 @@ private struct LiveTranscriptionPanel: View {
     let finalizedText: String
     let volatileText: String
     let state: LiveTranscriptionState
+    let usesExpandedHeight: Bool
 
     /// 最下部に張り付いている間だけ新着テキストを追従する。ユーザーが上へスクロールしたら止め、
     /// 最下部へ戻したら再開する。
@@ -660,7 +664,10 @@ private struct LiveTranscriptionPanel: View {
                             .id(Self.bottomAnchorID)
                     }
                 }
-                .frame(minHeight: 84, maxHeight: 180)
+                .frame(
+                    minHeight: usesExpandedHeight ? 180 : 84,
+                    maxHeight: usesExpandedHeight ? 320 : 180
+                )
                 .onScrollGeometryChange(for: Bool.self) { geometry in
                     LiveTranscriptScrollPinning.isAtBottom(
                         contentOffsetY: geometry.contentOffset.y,

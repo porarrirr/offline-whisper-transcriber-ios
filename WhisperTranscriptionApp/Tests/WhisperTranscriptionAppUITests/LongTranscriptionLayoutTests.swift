@@ -31,19 +31,17 @@ final class LongTranscriptionLayoutTests: XCTestCase {
 
         XCTAssertTrue(app.otherElements["historyTranscriptionCard"].waitForExistence(timeout: 10))
 
-        let firstSegment = app.descendants(matching: .any)["transcriptionSegment-0"]
+        let firstSegment = app.descendants(matching: .any)["transcriptParagraph-0"]
         XCTAssertTrue(scrollUntilVisible(firstSegment, in: app))
         firstSegment.tap()
-
-        let playbackAlert = app.alerts.firstMatch
-        if playbackAlert.waitForExistence(timeout: 2) {
-            playbackAlert.buttons["OK"].tap()
-        }
+        XCTAssertFalse(app.alerts.firstMatch.exists)
+        XCTAssertFalse(app.links.firstMatch.exists)
 
         let alternative = app.buttons["transcriptionAlternative-0-0"]
         XCTAssertFalse(alternative.exists)
 
         firstSegment.press(forDuration: 0.7)
+        app.buttons["editTranscriptSegment-0"].tap()
         XCTAssertTrue(
             app.textViews["transcriptionSegmentEditor"].waitForExistence(timeout: 10)
         )
@@ -52,8 +50,35 @@ final class LongTranscriptionLayoutTests: XCTestCase {
             .firstMatch
             .tap()
 
-        let marker = app.descendants(matching: .any)["timelineMarker-30"]
+        let marker = app.descendants(matching: .any)["transcriptParagraph-1"]
         XCTAssertTrue(scrollUntilVisible(marker, in: app))
+    }
+
+    func testPlaybackHighlightsParagraphsInBothDisplayStyles() {
+        let app = XCUIApplication()
+        app.launchArguments = ["--ui-test-long-transcription", "--ui-test-history-detail",
+                               "--ui-test-inline-edit", "--ui-test-playback",
+                               "-transcriptDisplayStyle", "timeline"]
+        app.launch()
+        let paragraph = app.otherElements["transcriptParagraph-0"]
+        XCTAssertTrue(scrollUntilVisible(paragraph, in: app))
+        paragraph.tap()
+        XCTAssertFalse(paragraph.isSelected)
+        app.buttons["historyPlayPause"].tap()
+        let selected = NSPredicate(format: "selected == true")
+        expectation(for: selected, evaluatedWith: paragraph)
+        waitForExpectations(timeout: 5)
+        let timeline = XCTAttachment(screenshot: app.screenshot())
+        timeline.name = "Timeline playback highlight"
+        timeline.lifetime = .keepAlways
+        add(timeline)
+        app.buttons["historyTranscriptDisplayToggle"].tap()
+        expectation(for: selected, evaluatedWith: paragraph)
+        waitForExpectations(timeout: 5)
+        let reading = XCTAttachment(screenshot: app.screenshot())
+        reading.name = "Reading playback highlight"
+        reading.lifetime = .keepAlways
+        add(reading)
     }
 
     func testHistoryTitleEditorOffersGenerationForExistingTitle() throws {

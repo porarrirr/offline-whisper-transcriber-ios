@@ -10,6 +10,7 @@ struct TranscriptChatView: View {
     @State private var questionFieldID = UUID()
     @State private var isResponding = false
     @State private var errorMessage: String?
+    @State private var showChatHistory = false
     @FocusState private var isQuestionFocused: Bool
 
     init(record: TranscriptionRecord) {
@@ -57,28 +58,106 @@ struct TranscriptChatView: View {
                     }
                 }
 
-                HStack(alignment: .bottom, spacing: 10) {
-                    TextField("Ask a question…", text: $question, axis: .vertical)
-                        .id(questionFieldID)
-                        .focused($isQuestionFocused)
-                        .lineLimit(1...5)
-                        .textFieldStyle(.roundedBorder)
-                        .submitLabel(.send)
-                        .onSubmit(send)
-                    Button(action: send) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 30))
-                            .foregroundStyle(Theme.amber)
-                    }
-                    .disabled(isResponding || question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-                .padding()
-                .background(.bar)
+                messageComposer
             }
             .background(Theme.background)
             .navigationTitle(record.displayTitle)
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } } }
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Done") { dismiss() }
+                }
+                ToolbarItem(placement: .primaryAction) {
+                    Button {
+                        isQuestionFocused = false
+                        showChatHistory = true
+                    } label: {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 16, weight: .semibold))
+                            .frame(width: 32, height: 32)
+                    }
+                    .accessibilityLabel(Text("Chat History"))
+                    .accessibilityIdentifier("transcriptChatHistory")
+                }
+            }
+            .sheet(isPresented: $showChatHistory) {
+                chatHistorySheet
+            }
+        }
+    }
+
+    private var messageComposer: some View {
+        HStack(alignment: .bottom, spacing: 10) {
+            TextField("Ask a question…", text: $question, axis: .vertical)
+                .id(questionFieldID)
+                .focused($isQuestionFocused)
+                .font(Theme.sans(16))
+                .lineLimit(1...5)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .frame(minHeight: 48)
+                .background(Theme.panelInset)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Theme.stroke, lineWidth: 1)
+                }
+                .submitLabel(.send)
+                .onSubmit(send)
+
+            Button(action: send) {
+                Image(systemName: "arrow.up")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(canSend ? Theme.onAmber : Theme.textSecondary)
+                    .frame(width: 48, height: 48)
+                    .background(canSend ? Theme.amberFill : Theme.panelInset)
+                    .clipShape(Circle())
+                    .overlay {
+                        Circle().stroke(canSend ? Color.clear : Theme.stroke, lineWidth: 1)
+                    }
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .accessibilityLabel(Text("Send"))
+            .accessibilityIdentifier("transcriptChatSend")
+        }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .padding(.bottom, 10)
+        .background(Theme.panel.shadow(color: .black.opacity(0.18), radius: 12, y: -3))
+    }
+
+    private var canSend: Bool {
+        !isResponding && !question.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private var chatHistorySheet: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if messages.isEmpty {
+                        ContentUnavailableView(
+                            "No Chat History",
+                            systemImage: "bubble.left.and.bubble.right",
+                            description: Text("Questions and answers will appear here after you start a conversation.")
+                        )
+                        .padding(.top, 48)
+                    } else {
+                        ForEach(messages) { message in
+                            chatBubble(message)
+                        }
+                    }
+                }
+                .padding()
+            }
+            .background(Theme.background)
+            .navigationTitle("Chat History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showChatHistory = false }
+                }
+            }
         }
     }
 
