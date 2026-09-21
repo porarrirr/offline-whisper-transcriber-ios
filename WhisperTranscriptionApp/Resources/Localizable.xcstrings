@@ -7504,6 +7504,106 @@
         }
       }
     },
+    "Close Search" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Cerrar búsqueda" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Fermer la recherche" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "検索を閉じる" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "关闭搜索" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "關閉搜尋" } }
+      }
+    },
+    "Next Match" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Coincidencia siguiente" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Résultat suivant" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "次の一致" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "下一个匹配项" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "下一個相符項目" } }
+      }
+    },
+    "Previous Match" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : { "stringUnit" : { "state" : "translated", "value" : "Coincidencia anterior" } },
+        "fr" : { "stringUnit" : { "state" : "translated", "value" : "Résultat précédent" } },
+        "ja" : { "stringUnit" : { "state" : "translated", "value" : "前の一致" } },
+        "zh-Hans" : { "stringUnit" : { "state" : "translated", "value" : "上一个匹配项" } },
+        "zh-Hant" : { "stringUnit" : { "state" : "translated", "value" : "上一個相符項目" } }
+      }
+    },
+    "Search transcription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar en la transcripción"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher dans la transcription"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしを検索"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索转写内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜尋轉寫內容"
+          }
+        }
+      }
+    },
+    "Search Transcription" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Buscar en la transcripción"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rechercher dans la transcription"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "文字起こしを検索"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜索转写内容"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "搜尋轉寫內容"
+          }
+        }
+      }
+    },
     "Search Languages" : {
       "extractionState" : "manual",
       "localizations" : {

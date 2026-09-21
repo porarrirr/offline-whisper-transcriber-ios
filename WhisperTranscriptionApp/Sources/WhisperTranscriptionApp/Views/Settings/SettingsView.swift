@@ -19,24 +19,32 @@ struct SettingsView: View {
                 NavigationLink {
                     modelSettings
                 } label: {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 10) {
                         Label("Model & Downloads", systemImage: "cpu")
                             .font(.headline)
-                        Text(settings.selectedTranscriptionModel.displayName)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Label {
-                            Text(modelStatusText)
-                        } icon: {
-                            Image(systemName: modelManager.isModelReady ? "checkmark.circle" : "exclamationmark.circle")
+
+                        HStack(alignment: .firstTextBaseline, spacing: 12) {
+                            Text(settings.selectedTranscriptionModel.displayName)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.8)
+                                .layoutPriority(1)
+
+                            Spacer(minLength: 0)
+
+                            HStack(spacing: 5) {
+                                Image(systemName: modelManager.isModelReady ? "checkmark.circle" : "exclamationmark.circle")
+                                    .foregroundStyle(modelManager.isModelReady ? Theme.amber : Theme.rec)
+                                Text(modelStatusText)
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                            .font(.caption)
+                            .lineLimit(1)
                         }
-                        .font(.caption)
-                        .foregroundStyle(modelManager.isModelReady ? Theme.textSecondary : Theme.rec)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 6)
                 }
-            } footer: {
-                Text("The model determines transcription speed, accuracy, and available languages.")
             }
 
             if settings.usesWhisperBackend {
@@ -167,6 +175,7 @@ struct SettingsView: View {
             }
             .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
         }
+        .contentMargins(.top, 16, for: .scrollContent)
         .scrollContentBackground(.hidden)
         .background(Color(uiColor: .systemGroupedBackground))
         .tint(Theme.amber)

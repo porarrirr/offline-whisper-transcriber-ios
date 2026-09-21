@@ -13,6 +13,9 @@ struct ResultView: View {
     @State private var showCopyConfirmation = false
     @State private var showExportSheet = false
     @State private var sharePayload: SharePayload?
+    @State private var showsTranscriptSearch = false
+    @State private var transcriptSearchText = ""
+    @State private var selectedSearchMatchIndex = 0
 
     @MainActor
     init(
@@ -35,45 +38,89 @@ struct ResultView: View {
         TranscriptionSegment.plainText(from: segments, fallback: text)
     }
 
+    private var transcriptSearchMatches: [TranscriptSearchMatch] {
+        TranscriptSearchMatcher.matches(query: transcriptSearchText, text: text, segments: segments)
+    }
+
+    private var selectedSearchMatch: TranscriptSearchMatch? {
+        guard transcriptSearchMatches.indices.contains(selectedSearchMatchIndex) else { return nil }
+        return transcriptSearchMatches[selectedSearchMatchIndex]
+    }
+
     var body: some View {
         NavigationStack {
             // Keep dynamically sized, asynchronously chunked transcription content out
             // of List/Form. UICollectionView self-sizing can enter a feedback loop.
-            ScrollView {
-                VStack(spacing: 14) {
-                    metaDisplay
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 14) {
+                        metaDisplay
 
-                    actionsPanel
+                        actionsPanel
 
-                    TranscriptionCard(
-                        text: text,
-                        segments: segments,
-                        showTimestamps: false,
-                        isLoading: false,
-                        showsTimelineMarkers: true,
-                        displayStyle: settings.transcriptDisplayStyle,
-                        showsDisplayStyleControl: !segments.isEmpty,
-                        displayStyleControlAccessibilityIdentifier: "resultTranscriptDisplayToggle",
-                        onDisplayStyleToggle: {
-                            settings.transcriptDisplayStyle =
-                                settings.transcriptDisplayStyle == .timeline ? .reading : .timeline
-                        }
-                    )
-                    .equatable()
-                    .accessibilityIdentifier("resultTranscriptionCard")
+                        TranscriptionCard(
+                            text: text,
+                            segments: segments,
+                            showTimestamps: false,
+                            isLoading: false,
+                            showsTimelineMarkers: true,
+                            displayStyle: settings.transcriptDisplayStyle,
+                            showsDisplayStyleControl: !segments.isEmpty,
+                            displayStyleControlAccessibilityIdentifier: "resultTranscriptDisplayToggle",
+                            onDisplayStyleToggle: {
+                                settings.transcriptDisplayStyle =
+                                    settings.transcriptDisplayStyle == .timeline ? .reading : .timeline
+                            },
+                            searchMatches: transcriptSearchMatches,
+                            selectedSearchMatchID: selectedSearchMatch?.id
+                        )
+                        .equatable()
+                        .accessibilityIdentifier("resultTranscriptionCard")
 
-                    LegalDisclaimerFootnote()
-                        .padding(.top, 4)
+                        LegalDisclaimerFootnote()
+                            .padding(.top, 4)
 
-                    Spacer(minLength: 20)
+                        Spacer(minLength: 20)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
                 }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+                .onChange(of: selectedSearchMatch, initial: true) { _, _ in
+                    guard let rowID = selectedSearchMatch?.rowID else { return }
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        proxy.scrollTo(rowID, anchor: .center)
+                    }
+                }
             }
             .background(Theme.background)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if showsTranscriptSearch {
+                    TranscriptSearchBar(
+                        query: $transcriptSearchText,
+                        selectedIndex: $selectedSearchMatchIndex,
+                        matches: transcriptSearchMatches
+                    ) {
+                        withAnimation {
+                            showsTranscriptSearch = false
+                            transcriptSearchText = ""
+                            selectedSearchMatchIndex = 0
+                        }
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+            }
             .navigationTitle("Result")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        withAnimation { showsTranscriptSearch = true }
+                    } label: {
+                        Image(systemName: "magnifyingglass")
+                    }
+                    .accessibilityLabel(Text("Search Transcription"))
+                    .accessibilityIdentifier("resultTranscriptSearch")
+                }
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done", action: onDismiss)
                 }

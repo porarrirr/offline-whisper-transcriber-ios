@@ -13,6 +13,8 @@ struct TranscriptionCard: View, Equatable {
     let onDisplayStyleToggle: (() -> Void)?
     let onSegmentLongPress: ((TranscriptionSegment) -> Void)?
     let audioPlayer: AudioPlayer?
+    let searchMatches: [TranscriptSearchMatch]
+    let selectedSearchMatchID: Int?
     @State private var paragraphs: [TranscriptParagraph] = []
     @State private var textChunks: [TranscriptionTextChunk] = []
 
@@ -28,7 +30,9 @@ struct TranscriptionCard: View, Equatable {
         displayStyleControlAccessibilityIdentifier: String = "historyTranscriptDisplayToggle",
         onDisplayStyleToggle: (() -> Void)? = nil,
         onSegmentLongPress: ((TranscriptionSegment) -> Void)? = nil,
-        audioPlayer: AudioPlayer? = nil
+        audioPlayer: AudioPlayer? = nil,
+        searchMatches: [TranscriptSearchMatch] = [],
+        selectedSearchMatchID: Int? = nil
     ) {
         self.audioPlayer = audioPlayer
         self.text = text
@@ -42,6 +46,8 @@ struct TranscriptionCard: View, Equatable {
         self.displayStyleControlAccessibilityIdentifier = displayStyleControlAccessibilityIdentifier
         self.onDisplayStyleToggle = onDisplayStyleToggle
         self.onSegmentLongPress = onSegmentLongPress
+        self.searchMatches = searchMatches
+        self.selectedSearchMatchID = selectedSearchMatchID
     }
 
     /// 数百行のセグメントを親の更新ごとに再diffさせないための等価判定。
@@ -61,6 +67,8 @@ struct TranscriptionCard: View, Equatable {
             && lhs.displayStyleControlAccessibilityIdentifier == rhs.displayStyleControlAccessibilityIdentifier
             && (lhs.onDisplayStyleToggle == nil) == (rhs.onDisplayStyleToggle == nil)
             && (lhs.onSegmentLongPress == nil) == (rhs.onSegmentLongPress == nil)
+            && lhs.searchMatches == rhs.searchMatches
+            && lhs.selectedSearchMatchID == rhs.selectedSearchMatchID
             && lhs.text == rhs.text
             && lhs.segments == rhs.segments
     }
@@ -110,8 +118,11 @@ struct TranscriptionCard: View, Equatable {
                                 paragraph: paragraph,
                                 showsTimestamp: displayStyle == .timeline && (showTimestamps || showsTimelineMarkers),
                                 player: audioPlayer,
-                                onEdit: onSegmentLongPress
+                                onEdit: onSegmentLongPress,
+                                searchMatches: searchMatches.filter { $0.rowID == .paragraph(paragraph.id) },
+                                selectedSearchMatchID: selectedSearchMatchID
                             )
+                            .id(TranscriptSearchRowID.paragraph(paragraph.id))
                         }
                     }
                 } else if !textOnlyDisplayText.isEmpty && textChunks.isEmpty {
@@ -121,12 +132,19 @@ struct TranscriptionCard: View, Equatable {
                 } else {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(textChunks) { chunk in
-                            Text(chunk.text)
+                            Text(
+                                highlightedSearchText(
+                                    chunk.text,
+                                    matches: searchMatches.filter { $0.rowID == .textChunk(chunk.id) },
+                                    selectedMatchID: selectedSearchMatchID
+                                )
+                            )
                                 .font(.body)
                                 .foregroundColor(Theme.textPrimary)
                                 .lineSpacing(7)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
+                                .id(TranscriptSearchRowID.textChunk(chunk.id))
                         }
                     }
                 }
@@ -202,6 +220,8 @@ private struct TranscriptParagraphRow: View {
     let showsTimestamp: Bool
     let player: AudioPlayer?
     let onEdit: ((TranscriptionSegment) -> Void)?
+    let searchMatches: [TranscriptSearchMatch]
+    let selectedSearchMatchID: Int?
 
     var body: some View {
         let active = player.flatMap { player in
@@ -262,7 +282,190 @@ private struct TranscriptParagraphRow: View {
             result.append(part)
             previous = text
         }
+        applySearchHighlights(
+            to: &result,
+            plainText: paragraph.displayText,
+            matches: searchMatches,
+            selectedMatchID: selectedSearchMatchID
+        )
         return result
+    }
+}
+
+enum TranscriptSearchRowID: Hashable {
+    case paragraph(Int)
+    case textChunk(Int)
+}
+
+struct TranscriptSearchMatch: Identifiable, Equatable {
+    let id: Int
+    let rowID: TranscriptSearchRowID
+    let range: NSRange
+}
+
+enum TranscriptSearchMatcher {
+    static func matches(
+        query: String,
+        text: String,
+        segments: [TranscriptionSegment]
+    ) -> [TranscriptSearchMatch] {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return [] }
+
+        let rows: [(TranscriptSearchRowID, String)]
+        if segments.isEmpty {
+            rows = TranscriptParagraph.readingChunks(text).enumerated().map {
+                (.textChunk($0.offset), $0.element.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
+        } else {
+            rows = TranscriptParagraph.make(from: segments).map {
+                (.paragraph($0.id), $0.displayText)
+            }
+        }
+
+        var result: [TranscriptSearchMatch] = []
+        for (rowID, rowText) in rows {
+            let source = rowText as NSString
+            var remaining = NSRange(location: 0, length: source.length)
+            while remaining.length > 0 {
+                let found = source.range(
+                    of: normalizedQuery,
+                    options: [.caseInsensitive, .diacriticInsensitive],
+                    range: remaining
+                )
+                guard found.location != NSNotFound else { break }
+                result.append(TranscriptSearchMatch(id: result.count, rowID: rowID, range: found))
+                let nextLocation = NSMaxRange(found)
+                remaining = NSRange(location: nextLocation, length: source.length - nextLocation)
+            }
+        }
+        return result
+    }
+}
+
+private func highlightedSearchText(
+    _ text: String,
+    matches: [TranscriptSearchMatch],
+    selectedMatchID: Int?
+) -> AttributedString {
+    var result = AttributedString(text)
+    applySearchHighlights(
+        to: &result,
+        plainText: text,
+        matches: matches,
+        selectedMatchID: selectedMatchID
+    )
+    return result
+}
+
+private func applySearchHighlights(
+    to attributedText: inout AttributedString,
+    plainText: String,
+    matches: [TranscriptSearchMatch],
+    selectedMatchID: Int?
+) {
+    for match in matches {
+        guard let stringRange = Range(match.range, in: plainText),
+              let lowerBound = AttributedString.Index(stringRange.lowerBound, within: attributedText),
+              let upperBound = AttributedString.Index(stringRange.upperBound, within: attributedText) else {
+            continue
+        }
+        let range = lowerBound..<upperBound
+        let isSelected = match.id == selectedMatchID
+        attributedText[range].backgroundColor = Theme.amberFill.opacity(isSelected ? 0.9 : 0.32)
+        if isSelected {
+            attributedText[range].foregroundColor = Theme.onAmber
+        }
+    }
+}
+
+struct TranscriptSearchBar: View {
+    @Binding var query: String
+    @Binding var selectedIndex: Int
+    let matches: [TranscriptSearchMatch]
+    let onClose: () -> Void
+
+    @FocusState private var isFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 18, weight: .semibold))
+                    .frame(width: 44, height: 44)
+                    .background(Theme.panel, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Close Search"))
+            .accessibilityIdentifier("transcriptSearchClose")
+
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(Theme.textSecondary)
+
+                TextField("Search transcription", text: $query)
+                    .focused($isFocused)
+                    .submitLabel(.search)
+                    .onSubmit { selectNext() }
+                    .accessibilityIdentifier("transcriptSearchField")
+
+                if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(matchPositionLabel)
+                        .font(Theme.mono(12, weight: .medium))
+                        .foregroundStyle(Theme.textSecondary)
+                        .lineLimit(1)
+                        .accessibilityIdentifier("transcriptSearchMatchCount")
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(height: 44)
+            .background(Theme.panel, in: Capsule())
+
+            HStack(spacing: 0) {
+                searchNavigationButton(systemImage: "chevron.up", label: "Previous Match") {
+                    guard !matches.isEmpty else { return }
+                    selectedIndex = (selectedIndex - 1 + matches.count) % matches.count
+                }
+                searchNavigationButton(systemImage: "chevron.down", label: "Next Match") {
+                    selectNext()
+                }
+            }
+            .frame(height: 44)
+            .background(Theme.panel, in: Capsule())
+        }
+        .foregroundStyle(Theme.textPrimary)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial)
+        .onAppear { isFocused = true }
+        .onChange(of: query) { _, _ in selectedIndex = 0 }
+        .onChange(of: matches.count) { _, count in
+            selectedIndex = count == 0 ? 0 : min(selectedIndex, count - 1)
+        }
+    }
+
+    private var matchPositionLabel: String {
+        matches.isEmpty ? "0/0" : "\(min(selectedIndex + 1, matches.count))/\(matches.count)"
+    }
+
+    private func searchNavigationButton(
+        systemImage: String,
+        label: LocalizedStringKey,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 14, weight: .semibold))
+                .frame(width: 40, height: 44)
+        }
+        .buttonStyle(.plain)
+        .disabled(matches.isEmpty)
+        .accessibilityLabel(Text(label))
+    }
+
+    private func selectNext() {
+        guard !matches.isEmpty else { return }
+        selectedIndex = (selectedIndex + 1) % matches.count
     }
 }
 

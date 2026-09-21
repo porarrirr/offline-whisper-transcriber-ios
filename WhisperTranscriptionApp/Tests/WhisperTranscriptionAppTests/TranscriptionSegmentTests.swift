@@ -18,7 +18,9 @@ final class TranscriptionCardEquatableTests: XCTestCase {
         isLoading: Bool = false,
         showsTimelineMarkers: Bool = true,
         displayStyle: TranscriptDisplayStyle = .timeline,
-        interactive: Bool = true
+        interactive: Bool = true,
+        searchMatches: [TranscriptSearchMatch] = [],
+        selectedSearchMatchID: Int? = nil
     ) -> TranscriptionCard {
         TranscriptionCard(
             text: text,
@@ -27,7 +29,9 @@ final class TranscriptionCardEquatableTests: XCTestCase {
             isLoading: isLoading,
             showsTimelineMarkers: showsTimelineMarkers,
             displayStyle: displayStyle,
-            onSegmentLongPress: interactive ? { _ in } : nil
+            onSegmentLongPress: interactive ? { _ in } : nil,
+            searchMatches: searchMatches,
+            selectedSearchMatchID: selectedSearchMatchID
         )
     }
 
@@ -52,10 +56,50 @@ final class TranscriptionCardEquatableTests: XCTestCase {
         XCTAssertNotEqual(base, makeCard(showsTimelineMarkers: false))
         // 文章表示への切り替えはセグメント行と連続テキストの描画経路を変える。
         XCTAssertNotEqual(base, makeCard(displayStyle: .reading))
+        let match = TranscriptSearchMatch(
+            id: 0,
+            rowID: .paragraph(0),
+            range: NSRange(location: 0, length: 3)
+        )
+        XCTAssertNotEqual(base, makeCard(searchMatches: [match]))
+        XCTAssertNotEqual(
+            makeCard(searchMatches: [match]),
+            makeCard(searchMatches: [match], selectedSearchMatchID: 0)
+        )
     }
 }
 
 final class TranscriptionSegmentTests: XCTestCase {
+    func testTranscriptSearchFindsEveryCaseInsensitiveOccurrenceInDisplayOrder() {
+        let segments = [
+            TranscriptionSegment(id: 0, start: 0, end: 1, text: "Hello hello"),
+            TranscriptionSegment(id: 1, start: 1, end: 2, text: "HELLO again"),
+        ]
+
+        let matches = TranscriptSearchMatcher.matches(query: " hello ", text: "", segments: segments)
+
+        XCTAssertEqual(matches.count, 3)
+        XCTAssertEqual(matches.map(\.id), [0, 1, 2])
+        XCTAssertEqual(Set(matches.map(\.rowID)), [.paragraph(0)])
+    }
+
+    func testTranscriptSearchUsesTextChunksWhenSegmentsAreUnavailable() {
+        let matches = TranscriptSearchMatcher.matches(
+            query: "needle",
+            text: "first needle. second NEEDLE.",
+            segments: []
+        )
+
+        XCTAssertEqual(matches.count, 2)
+        XCTAssertEqual(matches.map(\.rowID), [.textChunk(0), .textChunk(0)])
+    }
+
+    func testTranscriptSearchTreatsBlankQueryAsNoMatches() {
+        XCTAssertTrue(
+            TranscriptSearchMatcher.matches(query: "  ", text: "anything", segments: []).isEmpty
+        )
+    }
+
     func testReadableTimestampOmitsHoursBeforeOneHour() {
         let segment = TranscriptionSegment(id: 0, start: 65.432, end: 125.001, text: "hello")
 

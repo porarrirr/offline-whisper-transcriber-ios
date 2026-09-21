@@ -10,6 +10,15 @@ struct TranscriptParagraph: Identifiable, Equatable {
     let parts: [Part]
     var segments: [TranscriptionSegment] { parts.map(\.segment) }
 
+    var displayText: String {
+        var result = ""
+        for part in parts {
+            let text = part.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            result = TranscriptionSegment.joinedPlainText(from: [result, text])
+        }
+        return result
+    }
+
     static func make(from segments: [TranscriptionSegment]) -> [Self] {
         var result: [Self] = []
         var current: [Part] = []

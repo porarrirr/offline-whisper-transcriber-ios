@@ -35,6 +35,22 @@ struct HistoryDetailView: View {
     @State private var undoDismissTask: Task<Void, Never>?
     @State private var titleGenerationErrorMessage: String?
     @State private var titleGenerationErrorDismissTask: Task<Void, Never>?
+    @State private var showsTranscriptSearch = false
+    @State private var transcriptSearchText = ""
+    @State private var selectedSearchMatchIndex = 0
+
+    private var transcriptSearchMatches: [TranscriptSearchMatch] {
+        TranscriptSearchMatcher.matches(
+            query: transcriptSearchText,
+            text: record.text,
+            segments: cachedSegments
+        )
+    }
+
+    private var selectedSearchMatch: TranscriptSearchMatch? {
+        guard transcriptSearchMatches.indices.contains(selectedSearchMatchIndex) else { return nil }
+        return transcriptSearchMatches[selectedSearchMatchIndex]
+    }
 
     @ViewBuilder
     var body: some View {
@@ -62,11 +78,23 @@ struct HistoryDetailView: View {
                 }
         }
         .safeAreaInset(edge: .bottom) {
-            if let pendingUndo {
-                undoBanner(pendingUndo)
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 8)
+            VStack(spacing: 0) {
+                if showsTranscriptSearch {
+                    TranscriptSearchBar(
+                        query: $transcriptSearchText,
+                        selectedIndex: $selectedSearchMatchIndex,
+                        matches: transcriptSearchMatches,
+                        onClose: closeTranscriptSearch
+                    )
                     .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
+
+                if let pendingUndo {
+                    undoBanner(pendingUndo)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 8)
+                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
         }
         .toolbar(.hidden, for: .navigationBar)
@@ -191,65 +219,75 @@ struct HistoryDetailView: View {
     private var detailScrollView: some View {
         // This screen intentionally uses ScrollView: TranscriptionCard changes height
         // asynchronously and must not participate in List/Form cell self-sizing.
-        ScrollView {
-            LazyVStack(spacing: 10, pinnedViews: [.sectionHeaders]) {
-                headerPanel
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 10, pinnedViews: [.sectionHeaders]) {
+                    headerPanel
 
-                if let error = viewModel.errorMessage {
-                    WarningStrip(message: error)
-                }
-
-                if let titleGenerationErrorMessage {
-                    WarningStrip(message: titleGenerationErrorMessage)
-                        .transition(.opacity)
-                }
-
-                Section {
-                    if cachedAudioURL != nil,
-                       recordingService.isRecording || recordingService.isChangingRecordingState {
-                        Text("Audio playback is unavailable while recording.")
-                            .font(.body)
+                    if let error = viewModel.errorMessage {
+                        WarningStrip(message: error)
                     }
 
-                    transcriptionProcessingStatus
-
-                    transcriptionToolbar
-
-                    if record.hasTranscriptionText {
-                        TranscriptionCard(
-                            text: record.text,
-                            segments: cachedSegments,
-                            showTimestamps: false,
-                            isLoading: false,
-                            showsHeader: false,
-                            showsTimelineMarkers: true,
-                            displayStyle: settings.transcriptDisplayStyle,
-                            showsDisplayStyleControl: false,
-                            onSegmentLongPress: { segment in
-                                guard !transcribeViewModel.isProcessing else { return }
-                                editingSegment = segment
-                            },
-                            audioPlayer: audioPlayer
-                        )
-                        .equatable()
-                        .accessibilityIdentifier("historyTranscriptionCard")
+                    if let titleGenerationErrorMessage {
+                        WarningStrip(message: titleGenerationErrorMessage)
+                            .transition(.opacity)
                     }
-                } header: {
-                    if let audioURL = cachedAudioURL {
-                        AudioPlaybackPanel(audioURL: audioURL, player: audioPlayer)
-                            .disabled(
-                                recordingService.isRecording
-                                    || recordingService.isChangingRecordingState
+
+                    Section {
+                        if cachedAudioURL != nil,
+                           recordingService.isRecording || recordingService.isChangingRecordingState {
+                            Text("Audio playback is unavailable while recording.")
+                                .font(.body)
+                        }
+
+                        transcriptionProcessingStatus
+
+                        transcriptionToolbar
+
+                        if record.hasTranscriptionText {
+                            TranscriptionCard(
+                                text: record.text,
+                                segments: cachedSegments,
+                                showTimestamps: false,
+                                isLoading: false,
+                                showsHeader: false,
+                                showsTimelineMarkers: true,
+                                displayStyle: settings.transcriptDisplayStyle,
+                                showsDisplayStyleControl: false,
+                                onSegmentLongPress: { segment in
+                                    guard !transcribeViewModel.isProcessing else { return }
+                                    editingSegment = segment
+                                },
+                                audioPlayer: audioPlayer,
+                                searchMatches: transcriptSearchMatches,
+                                selectedSearchMatchID: selectedSearchMatch?.id
                             )
-                            .padding(.horizontal, -16)
-                            .zIndex(1)
+                            .equatable()
+                            .accessibilityIdentifier("historyTranscriptionCard")
+                        }
+                    } header: {
+                        if let audioURL = cachedAudioURL {
+                            AudioPlaybackPanel(audioURL: audioURL, player: audioPlayer)
+                                .disabled(
+                                    recordingService.isRecording
+                                        || recordingService.isChangingRecordingState
+                                )
+                                .padding(.horizontal, -16)
+                                .zIndex(1)
+                        }
                     }
-                }
 
-                Spacer(minLength: 88)
+                    Spacer(minLength: 88)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
+            .onChange(of: selectedSearchMatch, initial: true) { _, _ in
+                guard let rowID = selectedSearchMatch?.rowID else { return }
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    proxy.scrollTo(rowID, anchor: .center)
+                }
+            }
         }
     }
 
@@ -272,8 +310,21 @@ struct HistoryDetailView: View {
 
             Spacer()
 
-            favoriteButton
-                .frame(width: 44, height: 44)
+            if record.hasTranscriptionText {
+                Button {
+                    withAnimation { showsTranscriptSearch = true }
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 17, weight: .medium))
+                        .foregroundStyle(Theme.textPrimary)
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Search Transcription"))
+                .accessibilityIdentifier("historyTranscriptSearch")
+            }
+
+            favoriteButton.frame(width: 44, height: 44)
         }
         .frame(maxWidth: .infinity)
     }
@@ -519,6 +570,14 @@ struct HistoryDetailView: View {
                     titleGenerationErrorMessage = nil
                 }
             }
+        }
+    }
+
+    private func closeTranscriptSearch() {
+        withAnimation {
+            showsTranscriptSearch = false
+            transcriptSearchText = ""
+            selectedSearchMatchIndex = 0
         }
     }
 
@@ -931,6 +990,7 @@ private struct TagEditorSheetView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTags: [String]
     @State private var newTagText = ""
+    @FocusState private var isNewTagFieldFocused: Bool
 
     private let tagColumns = [
         GridItem(.adaptive(minimum: 92), spacing: 8, alignment: .leading)
@@ -989,13 +1049,13 @@ private struct TagEditorSheetView: View {
                                 .autocorrectionDisabled()
                                 .submitLabel(.done)
                                 .onSubmit(addTypedTags)
+                                .focused($isNewTagFieldFocused)
 
-                            Button(action: addTypedTags) {
+                            Button(action: handleAddButtonTapped) {
                                 Image(systemName: "plus.circle.fill")
                                     .font(.title3)
                                     .foregroundColor(Theme.amber)
                             }
-                            .disabled(newTagText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             .accessibilityLabel(Text("Add Tags"))
                         }
 
@@ -1048,6 +1108,18 @@ private struct TagEditorSheetView: View {
     private func addTypedTags() {
         addTags(TranscriptionRecord.normalizedTags(from: newTagText))
         newTagText = ""
+    }
+
+    private func handleAddButtonTapped() {
+        let typedTags = TranscriptionRecord.normalizedTags(from: newTagText)
+        guard !typedTags.isEmpty else {
+            isNewTagFieldFocused = true
+            return
+        }
+
+        addTags(typedTags)
+        newTagText = ""
+        isNewTagFieldFocused = true
     }
 
     private func addTags(_ tags: [String]) {
