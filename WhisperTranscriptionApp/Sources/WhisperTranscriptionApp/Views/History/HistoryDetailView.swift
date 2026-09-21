@@ -178,8 +178,8 @@ struct HistoryDetailView: View {
         .sheet(item: $sharePayload) { payload in
             ShareSheet(activityItems: payload.activityItems)
         }
-        .sheet(isPresented: $showEditTags) {
-            TagEditorSheetView(
+        .fullScreenCover(isPresented: $showEditTags) {
+            TagEditorView(
                 title: record.tags.isEmpty ? "Add Tags" : "Edit Tags",
                 initialTags: record.tags,
                 availableTags: viewModel.availableTags
@@ -982,7 +982,7 @@ private struct TranscriptionSegmentEditor: View {
     }
 }
 
-private struct TagEditorSheetView: View {
+private struct TagEditorView: View {
     let title: LocalizedStringKey
     let availableTags: [String]
     let onSave: ([String]) -> Void
@@ -1011,63 +1011,90 @@ private struct TagEditorSheetView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 14) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        TechLabel(text: "Tags")
+            ZStack {
+                Theme.background.ignoresSafeArea()
 
-                        if selectedTags.isEmpty {
-                            Text("No tags")
-                                .font(Theme.sans(13))
-                                .foregroundColor(Theme.textSecondary)
-                        } else {
-                            tagGrid(tags: selectedTags) { tag in
-                                removeTag(tag)
+                ScrollView {
+                    VStack(spacing: 14) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            sectionHeader(
+                                title: "Selected Tags",
+                                help: selectedTags.isEmpty ? nil : "Tap a tag to remove it."
+                            )
+
+                            if selectedTags.isEmpty {
+                                Text("No tags")
+                                    .font(Theme.sans(13))
+                                    .foregroundColor(Theme.textSecondary)
+                            } else {
+                                tagGrid(
+                                    tags: selectedTags,
+                                    systemImage: "xmark.circle.fill",
+                                    isSelected: true
+                                ) { tag in
+                                    removeTag(tag)
+                                }
                             }
                         }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .recorderPanel(padding: 14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .recorderPanel(padding: 14)
 
-                    if !reusableTags.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            TechLabel(text: "Add Tags")
+                        if !reusableTags.isEmpty {
+                            VStack(alignment: .leading, spacing: 10) {
+                                sectionHeader(
+                                    title: "Choose Existing Tags",
+                                    help: "Tap a tag to add it."
+                                )
 
-                            tagGrid(tags: reusableTags) { tag in
-                                addTags([tag])
+                                tagGrid(
+                                    tags: reusableTags,
+                                    systemImage: "plus.circle",
+                                    isSelected: false
+                                ) { tag in
+                                    addTags([tag])
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .recorderPanel(padding: 14)
+                        }
+
+                        VStack(alignment: .leading, spacing: 12) {
+                            sectionHeader(
+                                title: "Create New Tags",
+                                help: "Enter tags separated by commas."
+                            )
+
+                            HStack(spacing: 10) {
+                                TextField("New tag names", text: $newTagText, axis: .vertical)
+                                    .font(.body)
+                                    .textInputAutocapitalization(.never)
+                                    .autocorrectionDisabled()
+                                    .submitLabel(.done)
+                                    .onSubmit(addTypedTags)
+                                    .focused($isNewTagFieldFocused)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 10)
+                                    .background(Theme.panelInset)
+                                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                                            .strokeBorder(Theme.stroke, lineWidth: 1)
+                                    }
+
+                                Button(action: handleAddButtonTapped) {
+                                    Label("Add", systemImage: "plus")
+                                }
+                                .buttonStyle(.recorderQuiet)
+                                .disabled(newTagText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                                .accessibilityLabel(Text("Add Tags"))
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .recorderPanel(padding: 14)
                     }
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(spacing: 12) {
-                            TextField("Tags", text: $newTagText, axis: .vertical)
-                                .font(.body)
-                                .textInputAutocapitalization(.never)
-                                .autocorrectionDisabled()
-                                .submitLabel(.done)
-                                .onSubmit(addTypedTags)
-                                .focused($isNewTagFieldFocused)
-
-                            Button(action: handleAddButtonTapped) {
-                                Image(systemName: "plus.circle.fill")
-                                    .font(.title3)
-                                    .foregroundColor(Theme.amber)
-                            }
-                            .accessibilityLabel(Text("Add Tags"))
-                        }
-
-                        Text("Enter tags separated by commas.")
-                            .font(Theme.sans(11))
-                            .foregroundColor(Theme.textSecondary)
-                    }
-                    .recorderPanel(padding: 14)
+                    .padding(16)
                 }
-                .padding(16)
             }
-            .background(Theme.background)
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -1085,19 +1112,42 @@ private struct TagEditorSheetView: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
     }
 
-    private func tagGrid(tags: [String], action: @escaping (String) -> Void) -> some View {
+    private func sectionHeader(title: LocalizedStringKey, help: LocalizedStringKey?) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            TechLabel(text: title)
+
+            if let help {
+                Text(help)
+                    .font(Theme.sans(11))
+                    .foregroundStyle(Theme.textSecondary)
+            }
+        }
+    }
+
+    private func tagGrid(
+        tags: [String],
+        systemImage: String,
+        isSelected: Bool,
+        action: @escaping (String) -> Void
+    ) -> some View {
         LazyVGrid(columns: tagColumns, alignment: .leading, spacing: 8) {
             ForEach(tags, id: \.self) { tag in
                 Button {
                     action(tag)
                 } label: {
-                    TagPillLabel(
-                        tag: tag,
-                        isSelected: selectedTags.contains { tagsAreEqual($0, tag) }
-                    )
+                    Label(tag, systemImage: systemImage)
+                        .font(Theme.mono(11, weight: .medium))
+                        .lineLimit(1)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .foregroundStyle(isSelected ? Theme.onAmber : Theme.textSecondary)
+                        .background(isSelected ? Theme.amberFill : Theme.panelInset, in: Capsule())
+                        .overlay {
+                            Capsule()
+                                .strokeBorder(isSelected ? Color.clear : Theme.stroke, lineWidth: 1)
+                        }
                 }
                 .buttonStyle(.plain)
             }

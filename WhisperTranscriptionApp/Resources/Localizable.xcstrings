@@ -280,6 +280,17 @@
         }
       }
     },
+    "Add" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "追加"
+          }
+        }
+      }
+    },
     "Add / Prepare" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1569,6 +1580,17 @@
         }
       }
     },
+    "Choose Existing Tags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "既存のタグから選択"
+          }
+        }
+      }
+    },
     "Choose a prepared model, or download a model to use on this device." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -1771,6 +1793,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "音声を準備中..."
+          }
+        }
+      }
+    },
+    "Create New Tags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しいタグを作成"
           }
         }
       }
@@ -5921,6 +5954,17 @@
         }
       }
     },
+    "New tag names" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しいタグ名"
+          }
+        }
+      }
+    },
     "No tags" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7801,6 +7845,17 @@
         }
       }
     },
+    "Selected Tags" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択中のタグ"
+          }
+        }
+      }
+    },
     "Send" : {
 
     },
@@ -8801,6 +8856,28 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "タグ"
+          }
+        }
+      }
+    },
+    "Tap a tag to add it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップすると追加できます。"
+          }
+        }
+      }
+    },
+    "Tap a tag to remove it." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "タップすると選択を解除できます。"
           }
         }
       }
