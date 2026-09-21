@@ -13,6 +13,16 @@ class HistoryViewModel: ObservableObject {
     @Published var selectedTag: String?
     @Published private(set) var availableTags: [String] = []
     @Published var errorMessage: String?
+
+    var suggestedTags: [String] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return availableTags }
+
+        let foldedQuery = Self.foldedTagText(query)
+        return availableTags.filter { tag in
+            Self.foldedTagText(tag).contains(foldedQuery)
+        }
+    }
     
     private var modelContext: ModelContext?
     private var fetchTask: Task<Void, Never>?
@@ -157,6 +167,12 @@ class HistoryViewModel: ObservableObject {
         } else {
             selectedTag = tag
         }
+        fetchRecords()
+    }
+
+    func selectTagSuggestion(_ tag: String) {
+        searchText = ""
+        selectedTag = tag
         fetchRecords()
     }
 
@@ -607,7 +623,7 @@ class HistoryViewModel: ObservableObject {
         var tagsByKey: [String: String] = [:]
         for record in records {
             for tag in record.tags {
-                let key = tag.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+                let key = foldedTagText(tag)
                 tagsByKey[key] = tagsByKey[key] ?? tag
             }
         }
@@ -619,6 +635,10 @@ class HistoryViewModel: ObservableObject {
 
     private static func tagsAreEqual(_ lhs: String, _ rhs: String) -> Bool {
         lhs.compare(rhs, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+    }
+
+    private static func foldedTagText(_ text: String) -> String {
+        text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive], locale: .current)
     }
 }
 

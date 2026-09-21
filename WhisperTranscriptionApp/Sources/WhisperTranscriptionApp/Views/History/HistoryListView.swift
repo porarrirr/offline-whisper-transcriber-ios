@@ -17,7 +17,7 @@ struct HistoryListView: View {
                     .listRowSeparator(.hidden)
             }
 
-            if !viewModel.records.isEmpty {
+            if !viewModel.records.isEmpty || !viewModel.suggestedTags.isEmpty {
                 HStack(spacing: 12) {
                     Text("\(viewModel.records.count) Records")
                         .font(Theme.mono(11, weight: .semibold))
@@ -25,12 +25,16 @@ struct HistoryListView: View {
                         .foregroundColor(Theme.textSecondary)
                         .fixedSize(horizontal: true, vertical: false)
 
-                    if !viewModel.availableTags.isEmpty {
+                    if !viewModel.suggestedTags.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(viewModel.availableTags, id: \.self) { tag in
+                                ForEach(viewModel.suggestedTags, id: \.self) { tag in
                                     Button {
-                                        viewModel.toggleTagFilter(tag)
+                                        if viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                            viewModel.toggleTagFilter(tag)
+                                        } else {
+                                            viewModel.selectTagSuggestion(tag)
+                                        }
                                     } label: {
                                         TagPillLabel(
                                             tag: tag,

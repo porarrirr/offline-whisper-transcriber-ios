@@ -177,10 +177,12 @@ final class HistoryViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.records.map(\.id), [newestRecord.id, middleRecord.id, oldRecord.id])
         XCTAssertEqual(viewModel.availableTags, ["Archive", "Client", "Work"])
+        XCTAssertEqual(viewModel.suggestedTags, ["Archive", "Client", "Work"])
 
         viewModel.searchText = " alpha "
         viewModel.fetchRecords()
         XCTAssertEqual(viewModel.records.map(\.id), [oldRecord.id])
+        XCTAssertTrue(viewModel.suggestedTags.isEmpty)
 
         viewModel.searchText = ""
         viewModel.toggleTagFilter("client")
@@ -192,6 +194,26 @@ final class HistoryViewModelTests: XCTestCase {
 
         viewModel.clearTagFilter()
         XCTAssertEqual(viewModel.records.map(\.id), [newestRecord.id])
+    }
+
+    func testTagSuggestionsFollowSearchTextAndSelectingOneAppliesTagFilter() throws {
+        let context = try makeModelContext()
+        let matchingRecord = makeRecord(title: "Match", text: "body", tags: ["Café", "Client"])
+        let otherRecord = makeRecord(title: "Other", text: "body", tags: ["Archive"])
+        [matchingRecord, otherRecord].forEach(context.insert)
+        try context.save()
+
+        let viewModel = HistoryViewModel()
+        viewModel.setModelContext(context)
+
+        viewModel.searchText = " cafe "
+        XCTAssertEqual(viewModel.suggestedTags, ["Café"])
+
+        viewModel.selectTagSuggestion("Café")
+
+        XCTAssertEqual(viewModel.searchText, "")
+        XCTAssertEqual(viewModel.selectedTag, "Café")
+        XCTAssertEqual(viewModel.records.map(\.id), [matchingRecord.id])
     }
 
     func testUpdateTagsNormalizesInputAndRefreshesAvailableTags() throws {
