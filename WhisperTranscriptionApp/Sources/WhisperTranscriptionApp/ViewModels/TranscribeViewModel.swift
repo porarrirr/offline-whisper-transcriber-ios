@@ -410,7 +410,6 @@ class TranscribeViewModel: ObservableObject {
             TranscriptionSpotlightSync.index(record)
         } catch {
             AppLogger.error("Apple Intelligence title generation failed", context: "TranscribeViewModel", error: error)
-            setError(String(localized: "The transcription was saved, but Apple Intelligence couldn't generate its title.") + " \(error.localizedDescription)")
         }
     }
     

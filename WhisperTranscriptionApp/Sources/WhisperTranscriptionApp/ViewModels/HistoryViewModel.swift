@@ -5,6 +5,8 @@ import UIKit
 
 @MainActor
 class HistoryViewModel: ObservableObject {
+    typealias TitleGenerator = (String) async throws -> String
+
     @Published var records: [TranscriptionRecord] = []
     @Published var searchText = ""
     @Published var filterFavorite = false
@@ -17,10 +19,18 @@ class HistoryViewModel: ObservableObject {
     private var availableTagsNeedRefresh = true
     private let fileManager: FileManager
     private let recordingsDirectoryOverride: URL?
+    private let titleGenerator: TitleGenerator
 
-    init(fileManager: FileManager = .default, recordingsDirectory: URL? = nil) {
+    init(
+        fileManager: FileManager = .default,
+        recordingsDirectory: URL? = nil,
+        titleGenerator: @escaping TitleGenerator = { text in
+            try await AppleIntelligenceService.shared.suggestedTitle(for: text)
+        }
+    ) {
         self.fileManager = fileManager
         self.recordingsDirectoryOverride = recordingsDirectory
+        self.titleGenerator = titleGenerator
     }
     
     func setModelContext(_ context: ModelContext) {
@@ -181,12 +191,20 @@ class HistoryViewModel: ObservableObject {
         fetchRecords()
     }
 
-    func generateTitleWithAppleIntelligence(_ record: TranscriptionRecord) async {
+    /// Returns a message for the invoking screen to present locally. Title generation is
+    /// optional, so its failure must not become a history-wide error banner.
+    func generateTitleWithAppleIntelligence(_ record: TranscriptionRecord) async -> String? {
         do {
-            let title = try await AppleIntelligenceService.shared.suggestedTitle(for: record.text)
+            let title = try await titleGenerator(record.text)
             updateTitle(record, title: title)
+            return nil
         } catch {
-            setError(error.localizedDescription)
+            AppLogger.error(
+                "Apple Intelligence title generation failed",
+                context: "HistoryViewModel",
+                error: error
+            )
+            return error.localizedDescription
         }
     }
 

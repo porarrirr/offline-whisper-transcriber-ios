@@ -33,6 +33,8 @@ struct HistoryDetailView: View {
     @State private var editingSegment: TranscriptionSegment?
     @State private var pendingUndo: SegmentEditUndo?
     @State private var undoDismissTask: Task<Void, Never>?
+    @State private var titleGenerationErrorMessage: String?
+    @State private var titleGenerationErrorDismissTask: Task<Void, Never>?
 
     @ViewBuilder
     var body: some View {
@@ -48,6 +50,17 @@ struct HistoryDetailView: View {
     private var baseScreen: some View {
         detailScrollView
         .background(Theme.background)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            compactNavigationBar
+                .padding(.horizontal, 16)
+                .padding(.vertical, 4)
+                .background(Theme.background)
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(Theme.stroke)
+                        .frame(height: 1)
+                }
+        }
         .safeAreaInset(edge: .bottom) {
             if let pendingUndo {
                 undoBanner(pendingUndo)
@@ -74,6 +87,9 @@ struct HistoryDetailView: View {
             undoDismissTask?.cancel()
             undoDismissTask = nil
             pendingUndo = nil
+            titleGenerationErrorDismissTask?.cancel()
+            titleGenerationErrorDismissTask = nil
+            titleGenerationErrorMessage = nil
         }
     }
 
@@ -118,7 +134,7 @@ struct HistoryDetailView: View {
             TextField("Title", text: $editableTitle)
             if #available(iOS 27.0, *), record.hasTranscriptionText {
                 Button("Generate Title with Apple Intelligence") {
-                    Task { await viewModel.generateTitleWithAppleIntelligence(record) }
+                    generateTitleWithAppleIntelligence()
                 }
                 .accessibilityIdentifier("generateTitleFromTitleEditor")
             }
@@ -177,11 +193,15 @@ struct HistoryDetailView: View {
         // asynchronously and must not participate in List/Form cell self-sizing.
         ScrollView {
             LazyVStack(spacing: 10, pinnedViews: [.sectionHeaders]) {
-                compactNavigationBar
                 headerPanel
 
                 if let error = viewModel.errorMessage {
                     WarningStrip(message: error)
+                }
+
+                if let titleGenerationErrorMessage {
+                    WarningStrip(message: titleGenerationErrorMessage)
+                        .transition(.opacity)
                 }
 
                 Section {
@@ -221,8 +241,7 @@ struct HistoryDetailView: View {
                                 recordingService.isRecording
                                     || recordingService.isChangingRecordingState
                             )
-                            .padding(.vertical, 8)
-                            .background(Theme.background)
+                            .padding(.horizontal, -16)
                             .zIndex(1)
                     }
                 }
@@ -249,6 +268,7 @@ struct HistoryDetailView: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel(Text("Back"))
+            .accessibilityIdentifier("historyBackButton")
 
             Spacer()
 
@@ -452,7 +472,7 @@ struct HistoryDetailView: View {
 
             if #available(iOS 27.0, *), record.hasTranscriptionText {
                 Button {
-                    Task { await viewModel.generateTitleWithAppleIntelligence(record) }
+                    generateTitleWithAppleIntelligence()
                 } label: {
                     Label("Generate Title with Apple Intelligence", systemImage: "sparkles")
                 }
@@ -481,6 +501,25 @@ struct HistoryDetailView: View {
                 .background(Theme.panelInset, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         }
         .accessibilityLabel(Text("More Actions"))
+    }
+
+    private func generateTitleWithAppleIntelligence() {
+        titleGenerationErrorDismissTask?.cancel()
+        titleGenerationErrorMessage = nil
+
+        Task {
+            guard let message = await viewModel.generateTitleWithAppleIntelligence(record) else { return }
+            withAnimation {
+                titleGenerationErrorMessage = message
+            }
+            titleGenerationErrorDismissTask = Task {
+                try? await Task.sleep(for: .seconds(5))
+                guard !Task.isCancelled else { return }
+                withAnimation {
+                    titleGenerationErrorMessage = nil
+                }
+            }
+        }
     }
 
     private func startTranscription() {
@@ -683,14 +722,21 @@ private struct AudioPlaybackPanel: View {
     let player: AudioPlayer
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 7) {
                 skipButton(interval: -15, systemImage: "gobackward.15", label: "Go Back 15 Seconds")
                 playPauseButton
                 skipButton(interval: 15, systemImage: "goforward.15", label: "Go Forward 15 Seconds")
 
                 if player.duration > 0 {
-                    CompactPlaybackSlider(player: player)
+                    VStack(spacing: 2) {
+                        CompactPlaybackSlider(player: player)
+
+                        Text("\(formatTime(player.currentTime)) / \(formatTime(player.duration))")
+                            .font(Theme.mono(10, weight: .medium))
+                            .foregroundStyle(Theme.textSecondary)
+                            .lineLimit(1)
+                    }
                 }
 
                 Button {
@@ -707,23 +753,19 @@ private struct AudioPlaybackPanel: View {
                 .accessibilityValue(Text(playbackRateLabel))
             }
 
-            Text("\(formatTime(player.currentTime)) / \(formatTime(player.duration))")
-                .font(Theme.mono(11, weight: .medium))
-                .foregroundStyle(Theme.textPrimary.opacity(0.7))
-                .frame(maxWidth: .infinity)
-
             if let error = player.errorMessage {
                 Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(Theme.sans(12))
                     .foregroundColor(Theme.rec)
             }
         }
-        .padding(10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .background(Theme.panel)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Theme.stroke, lineWidth: 1)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.stroke)
+                .frame(height: 1)
         }
         .onAppear {
             player.prepare(url: audioURL)
@@ -807,7 +849,7 @@ private struct CompactPlaybackSlider: View {
             )
         }
         .frame(minWidth: 64)
-        .frame(height: 36)
+        .frame(height: 28)
         .accessibilityElement()
         .accessibilityLabel(Text("Playback Position"))
         .accessibilityValue(Text("\(formatTime(player.currentTime)) / \(formatTime(player.duration))"))

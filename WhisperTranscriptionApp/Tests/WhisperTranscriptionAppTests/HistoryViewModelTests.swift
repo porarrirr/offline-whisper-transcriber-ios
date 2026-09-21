@@ -6,6 +6,38 @@ import XCTest
 
 @MainActor
 final class HistoryViewModelTests: XCTestCase {
+    func testTitleGenerationFailureDoesNotSetHistoryWideError() async throws {
+        let context = try makeModelContext()
+        let record = makeRecord(title: "Original", text: "transcript")
+        context.insert(record)
+        try context.save()
+        let viewModel = HistoryViewModel(titleGenerator: { _ in
+            throw TitleGenerationTestError.safeguard
+        })
+        viewModel.setModelContext(context)
+
+        let message = await viewModel.generateTitleWithAppleIntelligence(record)
+
+        XCTAssertEqual(message, TitleGenerationTestError.safeguard.localizedDescription)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertEqual(record.title, "Original")
+    }
+
+    func testSuccessfulTitleGenerationUpdatesTitleWithoutHistoryWideError() async throws {
+        let context = try makeModelContext()
+        let record = makeRecord(title: "Original", text: "transcript")
+        context.insert(record)
+        try context.save()
+        let viewModel = HistoryViewModel(titleGenerator: { _ in "Generated" })
+        viewModel.setModelContext(context)
+
+        let message = await viewModel.generateTitleWithAppleIntelligence(record)
+
+        XCTAssertNil(message)
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertEqual(record.title, "Generated")
+    }
+
     func testRecoverySkipsActiveRecordingAndImportsItOnlyOnceAfterStop() throws {
         let context = try makeModelContext()
         let directory = try makeTemporaryDirectory()
@@ -448,6 +480,14 @@ final class HistoryViewModelTests: XCTestCase {
             isFavorite: isFavorite,
             tags: tags
         )
+    }
+}
+
+private enum TitleGenerationTestError: LocalizedError {
+    case safeguard
+
+    var errorDescription: String? {
+        "The model's safety guardrails were triggered."
     }
 }
 
