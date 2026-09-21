@@ -18,45 +18,44 @@ struct HistoryListView: View {
             }
 
             if !viewModel.records.isEmpty {
-                Text("\(viewModel.records.count) Records")
-                    .font(Theme.mono(11, weight: .semibold))
-                    .tracking(1.2)
-                    .foregroundColor(Theme.textSecondary)
-                    .listRowInsets(EdgeInsets(top: 2, leading: 20, bottom: 2, trailing: 16))
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
+                HStack(spacing: 12) {
+                    Text("\(viewModel.records.count) Records")
+                        .font(Theme.mono(11, weight: .semibold))
+                        .tracking(1.2)
+                        .foregroundColor(Theme.textSecondary)
+                        .fixedSize(horizontal: true, vertical: false)
 
-            if !viewModel.availableTags.isEmpty {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(viewModel.availableTags, id: \.self) { tag in
-                            Button {
-                                viewModel.toggleTagFilter(tag)
-                            } label: {
-                                TagPillLabel(
-                                    tag: tag,
-                                    isSelected: viewModel.selectedTag == tag
-                                )
-                            }
-                            .buttonStyle(.plain)
-                        }
+                    if !viewModel.availableTags.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 8) {
+                                ForEach(viewModel.availableTags, id: \.self) { tag in
+                                    Button {
+                                        viewModel.toggleTagFilter(tag)
+                                    } label: {
+                                        TagPillLabel(
+                                            tag: tag,
+                                            isSelected: viewModel.selectedTag == tag
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
 
-                        if viewModel.selectedTag != nil {
-                            Button {
-                                viewModel.clearTagFilter()
-                            } label: {
-                                Label("Clear Tag Filter", systemImage: "xmark.circle.fill")
-                                    .font(Theme.sans(12))
-                                    .foregroundColor(Theme.textSecondary)
+                                if viewModel.selectedTag != nil {
+                                    Button {
+                                        viewModel.clearTagFilter()
+                                    } label: {
+                                        Label("Clear Tag Filter", systemImage: "xmark.circle.fill")
+                                            .font(Theme.sans(12))
+                                            .foregroundColor(Theme.textSecondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
-                            .buttonStyle(.plain)
+                            .padding(.vertical, 2)
                         }
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 2)
                 }
-                .listRowInsets(EdgeInsets())
+                .listRowInsets(EdgeInsets(top: 2, leading: 20, bottom: 2, trailing: 16))
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             }
