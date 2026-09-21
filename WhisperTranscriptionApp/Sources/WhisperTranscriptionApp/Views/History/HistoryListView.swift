@@ -104,7 +104,11 @@ struct HistoryListView: View {
                 )
             }
         }
-        .searchable(text: $viewModel.searchText, prompt: "Search title, text, or tags")
+        .searchable(
+            text: $viewModel.searchText,
+            placement: .navigationBarDrawer(displayMode: .always),
+            prompt: "Search title, text, or tags"
+        )
         .onChange(of: viewModel.searchText) { _, _ in
             viewModel.scheduleFetchRecords()
         }
