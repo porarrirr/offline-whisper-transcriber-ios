@@ -212,7 +212,43 @@ final class HistoryViewModelTests: XCTestCase {
         viewModel.selectTagSuggestion("Café")
 
         XCTAssertEqual(viewModel.searchText, "")
-        XCTAssertEqual(viewModel.selectedTag, "Café")
+        XCTAssertEqual(viewModel.selectedTagTokens.map(\.name), ["Café"])
+        XCTAssertEqual(viewModel.suggestedTags, ["Archive", "Client"])
+        XCTAssertEqual(viewModel.records.map(\.id), [matchingRecord.id])
+    }
+
+    func testMultipleTagFiltersUseIntersectionAndCombineWithTextSearch() throws {
+        let context = try makeModelContext()
+        let matchingRecord = makeRecord(
+            title: "Weekly sync",
+            text: "田中さんが次の対応を説明しました",
+            tags: ["会議", "重要"]
+        )
+        let wrongTextRecord = makeRecord(
+            title: "Planning",
+            text: "鈴木さんが担当します",
+            tags: ["会議", "重要"]
+        )
+        let missingTagRecord = makeRecord(
+            title: "One-on-one",
+            text: "田中さんとの面談記録",
+            tags: ["会議"]
+        )
+        [matchingRecord, wrongTextRecord, missingTagRecord].forEach(context.insert)
+        try context.save()
+
+        let viewModel = HistoryViewModel()
+        viewModel.setModelContext(context)
+
+        viewModel.selectTagSuggestion("会議")
+        viewModel.selectTagSuggestion("重要")
+
+        XCTAssertEqual(viewModel.selectedTagTokens.map(\.name), ["会議", "重要"])
+        XCTAssertEqual(Set(viewModel.records.map(\.id)), Set([matchingRecord.id, wrongTextRecord.id]))
+
+        viewModel.searchText = "田中"
+        viewModel.fetchRecords()
+
         XCTAssertEqual(viewModel.records.map(\.id), [matchingRecord.id])
     }
 

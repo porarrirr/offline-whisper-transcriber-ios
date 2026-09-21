@@ -3,6 +3,14 @@ import Foundation
 import SwiftData
 import UIKit
 
+struct HistoryTagToken: Identifiable, Hashable {
+    let name: String
+
+    var id: String {
+        name.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
+    }
+}
+
 @MainActor
 class HistoryViewModel: ObservableObject {
     typealias TitleGenerator = (String) async throws -> String
@@ -10,17 +18,16 @@ class HistoryViewModel: ObservableObject {
     @Published var records: [TranscriptionRecord] = []
     @Published var searchText = ""
     @Published var filterFavorite = false
-    @Published var selectedTag: String?
+    @Published var selectedTagTokens: [HistoryTagToken] = []
     @Published private(set) var availableTags: [String] = []
     @Published var errorMessage: String?
 
     var suggestedTags: [String] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else { return availableTags }
-
         let foldedQuery = Self.foldedTagText(query)
         return availableTags.filter { tag in
-            Self.foldedTagText(tag).contains(foldedQuery)
+            !selectedTagTokens.contains(where: { Self.tagsAreEqual($0.name, tag) }) &&
+                (foldedQuery.isEmpty || Self.foldedTagText(tag).contains(foldedQuery))
         }
     }
     
@@ -70,8 +77,10 @@ class HistoryViewModel: ObservableObject {
                 allRecords = allRecords.filter { $0.matchesSearchText(searchText) }
             }
 
-            if let selectedTag {
-                allRecords = allRecords.filter { $0.hasTag(selectedTag) }
+            if !selectedTagTokens.isEmpty {
+                allRecords = allRecords.filter { record in
+                    selectedTagTokens.allSatisfy { record.hasTag($0.name) }
+                }
             }
             
             records = allRecords
@@ -162,22 +171,24 @@ class HistoryViewModel: ObservableObject {
     }
 
     func toggleTagFilter(_ tag: String) {
-        if selectedTag == tag {
-            selectedTag = nil
+        if let index = selectedTagTokens.firstIndex(where: { Self.tagsAreEqual($0.name, tag) }) {
+            selectedTagTokens.remove(at: index)
         } else {
-            selectedTag = tag
+            selectedTagTokens.append(HistoryTagToken(name: tag))
         }
         fetchRecords()
     }
 
     func selectTagSuggestion(_ tag: String) {
         searchText = ""
-        selectedTag = tag
+        if !selectedTagTokens.contains(where: { Self.tagsAreEqual($0.name, tag) }) {
+            selectedTagTokens.append(HistoryTagToken(name: tag))
+        }
         fetchRecords()
     }
 
     func clearTagFilter() {
-        selectedTag = nil
+        selectedTagTokens.removeAll()
         fetchRecords()
     }
     
@@ -442,9 +453,8 @@ class HistoryViewModel: ObservableObject {
             )
             let allRecords = try modelContext.fetch(descriptor)
             availableTags = Self.sortedUniqueTags(from: allRecords)
-            if let selectedTag,
-               !availableTags.contains(where: { Self.tagsAreEqual($0, selectedTag) }) {
-                self.selectedTag = nil
+            selectedTagTokens.removeAll { selectedTag in
+                !availableTags.contains(where: { Self.tagsAreEqual($0, selectedTag.name) })
             }
             availableTagsNeedRefresh = false
         } catch {

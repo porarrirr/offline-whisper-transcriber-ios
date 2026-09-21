@@ -17,7 +17,7 @@ struct HistoryListView: View {
                     .listRowSeparator(.hidden)
             }
 
-            if !viewModel.records.isEmpty || !viewModel.suggestedTags.isEmpty {
+            if !viewModel.records.isEmpty || !viewModel.selectedTagTokens.isEmpty {
                 HStack(spacing: 12) {
                     Text("\(viewModel.records.count) Records")
                         .font(Theme.mono(11, weight: .semibold))
@@ -25,38 +25,17 @@ struct HistoryListView: View {
                         .foregroundColor(Theme.textSecondary)
                         .fixedSize(horizontal: true, vertical: false)
 
-                    if !viewModel.suggestedTags.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 8) {
-                                ForEach(viewModel.suggestedTags, id: \.self) { tag in
-                                    Button {
-                                        if viewModel.searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                            viewModel.toggleTagFilter(tag)
-                                        } else {
-                                            viewModel.selectTagSuggestion(tag)
-                                        }
-                                    } label: {
-                                        TagPillLabel(
-                                            tag: tag,
-                                            isSelected: viewModel.selectedTag == tag
-                                        )
-                                    }
-                                    .buttonStyle(.plain)
-                                }
+                    Spacer(minLength: 0)
 
-                                if viewModel.selectedTag != nil {
-                                    Button {
-                                        viewModel.clearTagFilter()
-                                    } label: {
-                                        Label("Clear Tag Filter", systemImage: "xmark.circle.fill")
-                                            .font(Theme.sans(12))
-                                            .foregroundColor(Theme.textSecondary)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
-                            .padding(.vertical, 2)
+                    if !viewModel.selectedTagTokens.isEmpty {
+                        Button {
+                            viewModel.clearTagFilter()
+                        } label: {
+                            Label("Clear Tag Filter", systemImage: "xmark.circle.fill")
+                                .font(Theme.sans(12))
+                                .foregroundColor(Theme.textSecondary)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .listRowInsets(EdgeInsets(top: 2, leading: 20, bottom: 2, trailing: 16))
@@ -109,11 +88,26 @@ struct HistoryListView: View {
         }
         .searchable(
             text: $viewModel.searchText,
+            tokens: $viewModel.selectedTagTokens,
             placement: .navigationBarDrawer(displayMode: .always),
             prompt: "Search title, text, or tags"
-        )
+        ) { token in
+            Label(token.name, systemImage: "tag.fill")
+        }
+        .searchSuggestions {
+            ForEach(viewModel.suggestedTags, id: \.self) { tag in
+                Button {
+                    viewModel.selectTagSuggestion(tag)
+                } label: {
+                    Label(tag, systemImage: "tag")
+                }
+            }
+        }
         .onChange(of: viewModel.searchText) { _, _ in
             viewModel.scheduleFetchRecords()
+        }
+        .onChange(of: viewModel.selectedTagTokens) { _, _ in
+            viewModel.fetchRecords()
         }
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
