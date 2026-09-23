@@ -1970,6 +1970,17 @@
         }
       }
     },
+    "Could Not Share Logs" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ログを共有できませんでした"
+          }
+        }
+      }
+    },
     "Could not prepare the live audio format." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -7929,6 +7940,17 @@
         }
       }
     },
+    "Share Logs" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ログを共有"
+          }
+        }
+      }
+    },
     "Share Text" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -9235,6 +9257,17 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "初回の処理は完了しました。モデルが使用可能になったというiOSの報告を待っています。"
+          }
+        }
+      }
+    },
+    "The log file could not be created." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ログファイルを作成できませんでした。"
           }
         }
       }

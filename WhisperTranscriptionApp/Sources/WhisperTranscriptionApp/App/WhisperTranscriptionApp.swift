@@ -16,6 +16,7 @@ struct WhisperTranscriptionApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        AppLogger.shared.recordAppLaunch()
         do {
             if ProcessInfo.processInfo.arguments.contains("--ui-test-long-transcription") {
                 let configuration = ModelConfiguration(isStoredInMemoryOnly: true)

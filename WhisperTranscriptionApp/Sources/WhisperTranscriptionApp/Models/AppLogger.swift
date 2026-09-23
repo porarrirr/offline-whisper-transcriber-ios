@@ -7,10 +7,13 @@ final class AppLogger: ObservableObject {
     @Published private(set) var entries: [LogEntry]
 
     private static let storageKey = "appLogs"
+    private static let lastLaunchedVersionKey = "AppLogger.lastLaunchedVersion"
     private let maxEntries = 200
+    private let defaults: UserDefaults
 
-    private init() {
-        if let data = UserDefaults.standard.data(forKey: Self.storageKey),
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        if let data = defaults.data(forKey: Self.storageKey),
            let entries = try? JSONDecoder().decode([LogEntry].self, from: data) {
             self.entries = entries
         } else {
@@ -25,8 +28,39 @@ final class AppLogger: ObservableObject {
         return entries.map(\.formatted).joined(separator: "\n")
     }
 
-    var latestPreview: String {
-        entries.suffix(20).map(\.formatted).joined(separator: "\n")
+    func exportFile() throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("WhisperTranscriberLogs-\(UUID().uuidString).txt")
+        try exportText.write(to: url, atomically: true, encoding: .utf8)
+        return url
+    }
+
+    func recordAppLaunch(bundle: Bundle = .main) {
+        guard let version = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String,
+              !version.isEmpty,
+              let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String,
+              !build.isEmpty else {
+            append(level: .error, message: "App version metadata is missing", context: "App")
+            return
+        }
+        recordAppLaunch(version: version, build: build)
+    }
+
+    func recordAppLaunch(version: String, build: String) {
+        let current = "\(version) (build \(build))"
+        let previous = defaults.string(forKey: Self.lastLaunchedVersionKey)
+        let message: String
+        if let previous {
+            if previous != current {
+                message = "App updated: \(previous) -> \(current)"
+            } else {
+                message = "App launched: \(current)"
+            }
+        } else {
+            message = "App launched: \(current) (prior version unknown)"
+        }
+        append(level: .info, message: message, context: "App")
+        defaults.set(current, forKey: Self.lastLaunchedVersionKey)
     }
 
     static func info(_ message: String, context: String? = nil) {
@@ -61,7 +95,7 @@ final class AppLogger: ObservableObject {
 
     private func persist() {
         guard let data = try? JSONEncoder().encode(entries) else { return }
-        UserDefaults.standard.set(data, forKey: Self.storageKey)
+        defaults.set(data, forKey: Self.storageKey)
     }
 }
 

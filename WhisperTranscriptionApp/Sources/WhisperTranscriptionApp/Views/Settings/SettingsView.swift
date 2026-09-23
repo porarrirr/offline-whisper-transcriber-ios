@@ -11,6 +11,8 @@ struct SettingsView: View {
     @State private var showDeleteConfirmation = false
     @State private var showLanguagePicker = false
     @State private var showLogCopiedConfirmation = false
+    @State private var logSharePayload: SharePayload?
+    @State private var showLogShareError = false
     @FocusState private var isPromptEditorFocused: Bool
 
     var body: some View {
@@ -144,7 +146,7 @@ struct SettingsView: View {
                 if !logger.entries.isEmpty {
                     NavigationLink("View Logs") {
                         ScrollView {
-                            Text(logger.latestPreview)
+                            Text(logger.exportText)
                                 .font(Theme.mono(11))
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding()
@@ -154,6 +156,20 @@ struct SettingsView: View {
                         .navigationTitle("Logs")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                Button {
+                                    do {
+                                        logSharePayload = .file(try logger.exportFile())
+                                    } catch {
+                                        AppLogger.error("Failed to export logs", context: "Settings", error: error)
+                                        showLogShareError = true
+                                    }
+                                } label: {
+                                    Image(systemName: "square.and.arrow.up")
+                                }
+                                .accessibilityLabel("Share Logs")
+                                .disabled(logger.entries.isEmpty)
+                            }
                             ToolbarItem(placement: .navigationBarTrailing) {
                                 Button("Copy") {
                                     UIPasteboard.general.string = logger.exportText
@@ -165,6 +181,14 @@ struct SettingsView: View {
                                     Image(systemName: "trash")
                                 }
                             }
+                        }
+                        .sheet(item: $logSharePayload) { payload in
+                            ShareSheet(activityItems: payload.activityItems)
+                        }
+                        .alert("Could Not Share Logs", isPresented: $showLogShareError) {
+                            Button("OK", role: .cancel) {}
+                        } message: {
+                            Text("The log file could not be created.")
                         }
                     }
                 }
