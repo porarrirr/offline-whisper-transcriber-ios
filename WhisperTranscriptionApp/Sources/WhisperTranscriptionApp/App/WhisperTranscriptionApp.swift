@@ -75,9 +75,6 @@ struct WhisperTranscriptionApp: App {
         let viewModel = HistoryViewModel()
         viewModel.setModelContext(context)
         viewModel.importUntrackedRecordings(excluding: recordingService.currentRecordingURL)
-        if AppSettings.shared.autoDeleteRecordings {
-            viewModel.cleanupOldRecordings()
-        }
         TranscriptionSpotlightSync.indexAll(using: modelContainer)
         ModelManager.shared.scheduleWhisperSessionStartIfNeeded()
     }

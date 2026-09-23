@@ -297,64 +297,6 @@ class HistoryViewModel: ObservableObject {
         RecordingAudioExporter.export(record: record)
     }
     
-    func cleanupOldRecordings(referenceDate: Date = Date()) {
-        guard let modelContext = modelContext else { return }
-        
-        let cutoffDate = referenceDate.addingTimeInterval(-7 * 24 * 60 * 60)
-        let descriptor = FetchDescriptor<TranscriptionRecord>(
-            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-        )
-        
-        do {
-            let allRecords = try modelContext.fetch(descriptor)
-            for record in allRecords where record.createdAt < cutoffDate && !record.isFavorite {
-                guard let audioPath = record.audioFilePath else { continue }
-                try removeExpiredRecording(
-                    from: record,
-                    audioPath: audioPath,
-                    modelContext: modelContext
-                )
-            }
-        } catch {
-            setError(String(localized: "Failed to delete old recordings") + ": \(error.localizedDescription)")
-        }
-    }
-
-    private func removeExpiredRecording(
-        from record: TranscriptionRecord,
-        audioPath: String,
-        modelContext: ModelContext
-    ) throws {
-        let audioURL = try RecordingFileReference.fileURL(
-            for: audioPath,
-            recordingsDirectory: recordingsDirectoryOverride
-        )
-        record.audioFilePath = nil
-        do {
-            try modelContext.save()
-        } catch {
-            record.audioFilePath = audioPath
-            throw error
-        }
-
-        guard fileManager.fileExists(atPath: audioURL.path) else { return }
-
-        do {
-            try fileManager.removeItem(at: audioURL)
-        } catch {
-            record.audioFilePath = audioPath
-            do {
-                try modelContext.save()
-            } catch let restoreError {
-                throw HistoryViewModelError.cleanupRollbackFailed(
-                    deletionError: error.localizedDescription,
-                    restoreError: restoreError.localizedDescription
-                )
-            }
-            throw error
-        }
-    }
-
     func importUntrackedRecordings(excluding activeRecordingURL: URL? = nil) {
         guard let modelContext = modelContext else { return }
 
@@ -659,7 +601,6 @@ private struct StagedRecordingDeletion {
 
 private enum HistoryViewModelError: LocalizedError {
     case documentsDirectoryUnavailable
-    case cleanupRollbackFailed(deletionError: String, restoreError: String)
     case deletionRollbackFailed(databaseError: String, restoreError: String)
     case invalidStagedRecordingName(String)
     case segmentEncodingFailed
@@ -668,8 +609,6 @@ private enum HistoryViewModelError: LocalizedError {
         switch self {
         case .documentsDirectoryUnavailable:
             return String(localized: "Could not retrieve document directory for saved recordings.")
-        case .cleanupRollbackFailed(let deletionError, let restoreError):
-            return "Recording deletion failed (\(deletionError)); restoring its history reference also failed (\(restoreError))."
         case .deletionRollbackFailed(let databaseError, let restoreError):
             return String(localized: "Failed to restore recording file")
                 + ": database=\(databaseError), file=\(restoreError)"

@@ -110,16 +110,6 @@ struct SettingsView: View {
                     }
                 }
                 .tint(Theme.amberFill)
-
-                Toggle(isOn: $settings.autoDeleteRecordings) {
-                    VStack(alignment: .leading) {
-                        Text("Auto-Delete Recordings")
-                        Text("Automatically delete recording files after 7 days")
-                            .font(.subheadline)
-                            .foregroundColor(Theme.textSecondary)
-                    }
-                }
-                .tint(Theme.amberFill)
             } header: {
                 Text("Recording & Storage")
             }

@@ -156,10 +156,6 @@ class AppSettings: ObservableObject {
         didSet { UserDefaults.standard.set(keepScreenOn, forKey: "keepScreenOn") }
     }
 
-    @Published var autoDeleteRecordings: Bool {
-        didSet { UserDefaults.standard.set(autoDeleteRecordings, forKey: "autoDeleteRecordings") }
-    }
-
     @Published var includeTimestamps: Bool {
         didSet { UserDefaults.standard.set(includeTimestamps, forKey: "includeTimestamps") }
     }
@@ -220,7 +216,6 @@ class AppSettings: ObservableObject {
         self.keepScreenOn = defaults.object(forKey: "keepScreenOn") == nil
             ? true
             : defaults.bool(forKey: "keepScreenOn")
-        self.autoDeleteRecordings = defaults.bool(forKey: "autoDeleteRecordings")
         self.includeTimestamps = defaults.bool(forKey: "includeTimestamps")
         if let storedAppearance = defaults.string(forKey: Self.appAppearanceKey),
            let appAppearance = AppAppearance(rawValue: storedAppearance) {
