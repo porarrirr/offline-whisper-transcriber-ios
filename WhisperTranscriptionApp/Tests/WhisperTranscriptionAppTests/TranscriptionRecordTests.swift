@@ -3,6 +3,121 @@ import SwiftData
 @testable import WhisperTranscriptionApp
 
 final class TranscriptionRecordTests: XCTestCase {
+    func testCloudMergeCombinesDifferentFieldsWithoutConflict() {
+        let record = TranscriptionRecord(title: "Original", text: "Body", sourceType: .recording, duration: 10)
+        let base = CloudHistorySnapshot(record)
+        var local = base
+        var remote = base
+        local.title = "Local title"
+        remote.tagsJSON = "[\"Cloud tag\"]"
+
+        let result = CloudHistorySnapshot.merged(base: base, local: local, remote: remote)
+
+        XCTAssertFalse(result.conflict)
+        XCTAssertEqual(result.value.title, "Local title")
+        XCTAssertEqual(result.value.tagsJSON, "[\"Cloud tag\"]")
+    }
+
+    func testCloudMergeMarksSameFieldConflict() {
+        let record = TranscriptionRecord(title: "Original", text: "Body", sourceType: .recording, duration: 10)
+        let base = CloudHistorySnapshot(record)
+        var local = base
+        var remote = base
+        local.title = "Local title"
+        remote.title = "Cloud title"
+
+        let result = CloudHistorySnapshot.merged(base: base, local: local, remote: remote)
+
+        XCTAssertTrue(result.conflict)
+        XCTAssertEqual(result.value.title, "Cloud title")
+    }
+
+    func testCloudMergeTreatsTranscriptAndSegmentsAsOneEdit() {
+        let record = TranscriptionRecord(title: "Original", text: "Body", sourceType: .recording, duration: 10)
+        let base = CloudHistorySnapshot(record)
+        var local = base
+        var remote = base
+        local.text = "Locally edited"
+        remote.segmentsJSON = "[{\"id\":1}]"
+
+        XCTAssertTrue(CloudHistorySnapshot.merged(base: base, local: local, remote: remote).conflict)
+    }
+
+    func testCloudSnapshotComparisonIgnoresJSONKeyOrderAndWhitespace() throws {
+        let record = TranscriptionRecord(title: "Original", text: "Body", sourceType: .recording, duration: 10)
+        let snapshot = CloudHistorySnapshot(record)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let differentlyFormatted = try XCTUnwrap(String(data: encoder.encode(snapshot), encoding: .utf8))
+
+        XCTAssertFalse(snapshot.differs(fromEncodedSnapshot: differentlyFormatted))
+        var changed = snapshot
+        changed.text = "Updated"
+        XCTAssertTrue(changed.differs(fromEncodedSnapshot: differentlyFormatted))
+        XCTAssertTrue(snapshot.differs(fromEncodedSnapshot: nil))
+    }
+
+    func testCloudDeletionPreservesUnsyncedLocalContentOrAudio() {
+        let record = TranscriptionRecord(title: "Original", text: "Body", sourceType: .recording, duration: 10)
+        record.lastSyncedSnapshotJSON = CloudHistorySnapshot(record).json
+        XCTAssertFalse(CloudHistorySnapshot.needsPreservationAfterCloudDeletion(record))
+
+        record.text = "Offline edit"
+        XCTAssertTrue(CloudHistorySnapshot.needsPreservationAfterCloudDeletion(record))
+
+        record.text = "Body"
+        record.audioFilePath = "Recordings/offline.m4a"
+        XCTAssertTrue(CloudHistorySnapshot.needsPreservationAfterCloudDeletion(record))
+
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        record.deletedAt = now
+        XCTAssertTrue(CloudHistorySnapshot.needsPreservationAfterCloudDeletion(record, asOf: now))
+
+        record.deletedAt = now.addingTimeInterval(-31 * 24 * 60 * 60)
+        XCTAssertFalse(CloudHistorySnapshot.needsPreservationAfterCloudDeletion(record, asOf: now))
+    }
+
+    @MainActor
+    func testCloudDeletionDetachesUnsyncedRecordWithoutRemovingLocalContent() {
+        let record = TranscriptionRecord(
+            title: "Offline title", text: "Offline edit", sourceType: .recording,
+            audioFilePath: "Recordings/offline.m4a", duration: 10)
+        let previousCloudID = record.cloudID
+        record.cloudAudioID = "deleted-audio"
+        record.cloudAudioChunkCount = 2
+        record.cloudAudioByteCount = 1024
+        record.cloudAudioSHA256 = "digest"
+        record.lastSyncedSnapshotJSON = CloudHistorySnapshot(record).json
+
+        HistoryCloudSync.preserveLocalRecordAfterCloudDeletion(record)
+
+        XCTAssertNotEqual(record.cloudID, previousCloudID)
+        XCTAssertNil(record.lastSyncedSnapshotJSON)
+        XCTAssertNil(record.cloudAudioID)
+        XCTAssertEqual(record.cloudAudioChunkCount, 0)
+        XCTAssertEqual(record.audioFilePath, "Recordings/offline.m4a")
+        XCTAssertEqual(record.text, "Offline edit")
+        XCTAssertNil(record.deletedAt)
+        XCTAssertEqual(record.title, "Offline title (Conflict Copy)")
+    }
+
+    func testDeleteVersusRemoteEditKeepsAnActiveConflictCopy() {
+        let record = TranscriptionRecord(title: "Original", text: "Body", sourceType: .recording, duration: 10)
+        let base = CloudHistorySnapshot(record)
+        var local = base
+        local.deletedAt = Date()
+        var remote = base
+        remote.text = "Remote edit"
+        let merged = CloudHistorySnapshot.merged(base: base, local: local, remote: remote)
+
+        XCTAssertTrue(merged.conflict)
+        XCTAssertNotNil(merged.value.deletedAt)
+        let preserved = CloudHistorySnapshot.versionToPreserveOnConflict(
+            base: base, local: local, remote: remote, merged: merged.value)
+        XCTAssertNil(preserved.deletedAt)
+        XCTAssertEqual(preserved.text, "Remote edit")
+    }
+
     func testDefaultDateTitleUsesTranscriptionOpeningAsDisplayTitle() {
         let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
         let record = TranscriptionRecord(

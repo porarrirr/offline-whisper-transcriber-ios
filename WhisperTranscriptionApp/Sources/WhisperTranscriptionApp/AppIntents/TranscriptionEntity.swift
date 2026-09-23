@@ -122,11 +122,12 @@ struct TranscriptionEntityQuery: EntityStringQuery {
 
     @MainActor
     private static func fetchRecords() throws -> [TranscriptionRecord] {
-        let container = try ModelContainer(for: TranscriptionRecord.self)
+        let container = try ModelContainer(for: TranscriptionRecord.self,
+            configurations: ModelConfiguration(cloudKitDatabase: .none))
         let context = ModelContext(container)
         return try context.fetch(FetchDescriptor<TranscriptionRecord>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-        ))
+        )).filter { $0.deletedAt == nil }
     }
 }
 
@@ -136,8 +137,10 @@ enum TranscriptionEntityRecordStore {
     static func markAsFavorite(_ entity: TranscriptionEntity) throws -> TranscriptionEntity {
         let (record, context) = try recordAndContext(for: entity.id)
         record.isFavorite = true
+        record.modifiedAt = Date()
         try context.save()
         TranscriptionSpotlightSync.index(record)
+        HistoryCloudSync.shared.scheduleSync()
         return TranscriptionEntity(record: record)
     }
 
@@ -147,6 +150,7 @@ enum TranscriptionEntityRecordStore {
         record.updateTags(newTags)
         try context.save()
         TranscriptionSpotlightSync.index(record)
+        HistoryCloudSync.shared.scheduleSync()
         return TranscriptionEntity(record: record)
     }
 
@@ -162,14 +166,16 @@ enum TranscriptionEntityRecordStore {
     }
 
     private static func recordAndContext(for id: UUID) throws -> (TranscriptionRecord, ModelContext) {
-        let container = try ModelContainer(for: TranscriptionRecord.self)
+        let container = try ModelContainer(for: TranscriptionRecord.self,
+            configurations: ModelConfiguration(cloudKitDatabase: .none))
         let context = ModelContext(container)
         let descriptor = FetchDescriptor<TranscriptionRecord>(
             predicate: #Predicate<TranscriptionRecord> { record in
                 record.id == id
             }
         )
-        guard let record = try context.fetch(descriptor).first else {
+        guard let record = try context.fetch(descriptor).first,
+              record.deletedAt == nil else {
             throw IntentError.transcriptionNotFound
         }
         return (record, context)
@@ -274,6 +280,10 @@ enum TranscriptionSpotlightSync {
 
     static func index(_ record: TranscriptionRecord) {
         guard #available(iOS 18.0, *) else { return }
+        guard record.deletedAt == nil else {
+            delete(identifiers: [record.id])
+            return
+        }
         let entity = TranscriptionEntity(record: record)
         enqueue {
             await TranscriptionSpotlightIndexer.shared.index(entity)
@@ -294,7 +304,7 @@ enum TranscriptionSpotlightSync {
             let context = ModelContext(modelContainer)
             let records = try context.fetch(FetchDescriptor<TranscriptionRecord>(
                 sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
-            ))
+            )).filter { $0.deletedAt == nil }
             let entities = records.map(TranscriptionEntity.init(record:))
             enqueue {
                 await TranscriptionSpotlightIndexer.shared.indexAll(entities)

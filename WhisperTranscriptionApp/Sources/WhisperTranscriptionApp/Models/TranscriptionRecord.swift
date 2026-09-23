@@ -15,6 +15,24 @@ class TranscriptionRecord: Identifiable {
     var language: String?
     var tagsJSON: String?
     var chatMessagesJSON: String?
+    // CloudKit uses this stable ID, while SwiftData remains device local.
+    var cloudID: String = UUID().uuidString
+    var modifiedAt: Date = Date()
+    var deletedAt: Date?
+    var cloudAudioID: String?
+    var cloudAudioByteCount: Int64 = 0
+    var cloudAudioChunkCount: Int = 0
+    var cloudAudioSHA256: String?
+    var audioUploadedAt: Date?
+    var cloudRecordSystemFields: Data?
+    var lastSyncedSnapshotJSON: String?
+    var syncError: String?
+    var keepAudioOnDevice: Bool = false
+    var audioLastUsedAt: Date?
+    var audioDownloadedAt: Date?
+    var pendingAudioID: String?
+    var audioFinalizationPending: Bool = false
+    var cloudDeletionConfirmed: Bool = false
     
     var segments: [TranscriptionSegment] {
         guard let segmentsJSON = segmentsJSON,
@@ -52,6 +70,7 @@ class TranscriptionRecord: Identifiable {
         tags: [String] = []
     ) {
         self.id = id
+        self.cloudID = id.uuidString
         self.title = title
         self.text = text
         self.sourceType = sourceType.rawValue
@@ -106,13 +125,14 @@ class TranscriptionRecord: Identifiable {
         text: String, duration: Double, segments: [TranscriptionSegment], language: String?,
         ifUnchangedSince revision: TranscriptionRevision
     ) throws {
-        guard !isDeleted, transcriptionRevision == revision else {
+        guard !isDeleted, deletedAt == nil, transcriptionRevision == revision else {
             throw TranscriptionEditConflict()
         }
         updateTranscription(text: text, duration: duration, segments: segments, language: language)
     }
 
     func updateTranscription(text: String, duration: Double, segments: [TranscriptionSegment], language: String?) {
+        modifiedAt = Date()
         self.text = text
         self.duration = duration
         self.language = language
@@ -123,6 +143,7 @@ class TranscriptionRecord: Identifiable {
     }
 
     func updateTags(_ tags: [String]) {
+        modifiedAt = Date()
         self.tagsJSON = Self.encodedTags(tags)
     }
 
@@ -132,6 +153,7 @@ class TranscriptionRecord: Identifiable {
             throw ChatHistoryEncodingError()
         }
         chatMessagesJSON = json
+        modifiedAt = Date()
     }
 
     func matchesSearchText(_ searchText: String) -> Bool {

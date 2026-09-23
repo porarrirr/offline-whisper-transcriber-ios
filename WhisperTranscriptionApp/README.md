@@ -8,6 +8,8 @@ iPhone内でAI音声文字起こしを行うアプリです。OpenAIのWhisper�
 - **ファイル選択対応**: 端末内の音声ファイル（m4a/wav/mp3）を文字起こし
 - **オフライン推論**: 初回のモデルダウンロード後はインターネット不要
 - **履歴保存**: SwiftDataで文字起こし結果を永続化、検索・お気に入り管理
+- **任意のiCloud履歴同期**: 初期状態はオフ。同じApple AccountのiPhone・iPad間で履歴と録音音声を同期
+- **端末容量の節約**: iCloudへの音声アップロード完了後、設定した保存日数を過ぎた端末内コピーを整理。履歴とiCloud上の音声は残す
 - **ダークモードUI**: 洗練されたダークテーマ、録音波形アニメーション
 - **モデル自動ダウンロード**: 初回起動時に自動でモデルを取得（約142MB）
 - **VAD対応**: 設定からVADモデルを追加ダウンロードすると、無音部分をスキップ可能
@@ -24,6 +26,7 @@ iPhone内でAI音声文字起こしを行うアプリです。OpenAIのWhisper�
 
 - `WhisperTranscriptionApp.xcodeproj` は `project.yml` から `xcodegen generate` で生成されます。Xcode 上でプロジェクトファイルを直接編集しないでください。
 - `project.yml` の変更、新規ソース追加、リソース追加を行った場合は、**必ず** `WhisperTranscriptionApp` 直下で `xcodegen generate` を実行してください。
+- iCloud履歴同期の配布には `iCloud.com.porarrirr.offlinewhispertranscriber` のCloudKitコンテナ権限と本番スキーマのデプロイが必要です。
 - `whisper.cpp` 内の変更、または `Frameworks/whisper.xcframework` が存在しない場合は、フレームワークを再生成してから署名する必要があります。
 
 ## プロジェクト構成

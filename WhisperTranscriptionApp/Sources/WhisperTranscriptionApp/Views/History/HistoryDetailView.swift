@@ -38,6 +38,9 @@ struct HistoryDetailView: View {
     @State private var showsTranscriptSearch = false
     @State private var transcriptSearchText = ""
     @State private var selectedSearchMatchIndex = 0
+    @State private var showCellularDownloadConfirmation = false
+    @State private var isDownloadingAudio = false
+    @State private var audioDownloadError: String?
 
     private var transcriptSearchMatches: [TranscriptSearchMatch] {
         TranscriptSearchMatcher.matches(
@@ -112,6 +115,7 @@ struct HistoryDetailView: View {
         }
         .onDisappear {
             audioPlayer.stop()
+            HistoryCloudSync.shared.setPlaying(false, record: record)
             undoDismissTask?.cancel()
             undoDismissTask = nil
             pendingUndo = nil
@@ -170,6 +174,20 @@ struct HistoryDetailView: View {
             Button("Save") {
                 viewModel.updateTitle(record, title: editableTitle)
             }
+        }
+        .confirmationDialog(
+            "Download \(ByteCountFormatter.string(fromByteCount: record.cloudAudioByteCount, countStyle: .file)) over cellular?",
+            isPresented: $showCellularDownloadConfirmation
+        ) {
+            Button("Download this recording") { downloadAudio(allowCellularOnce: true) }
+        }
+        .alert("Audio Download Failed", isPresented: Binding(
+            get: { audioDownloadError != nil },
+            set: { if !$0 { audioDownloadError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(audioDownloadError ?? "")
         }
     }
 
@@ -242,6 +260,28 @@ struct HistoryDetailView: View {
 
                         transcriptionProcessingStatus
 
+                        if let syncStatus = HistoryCloudSync.shared.syncStatus(for: record) {
+                            Text(syncStatus).font(.footnote).foregroundStyle(.secondary)
+                        }
+
+                        if record.cloudAudioID != nil && cachedAudioURL == nil {
+                            Button(isDownloadingAudio ? "Downloading audio…" : "Download audio from iCloud") {
+                                if !settings.allowCellularSync && HistoryCloudSync.shared.isUsingCellular {
+                                    showCellularDownloadConfirmation = true
+                                } else {
+                                    downloadAudio(allowCellularOnce: false)
+                                }
+                            }
+                            .disabled(isDownloadingAudio)
+                        }
+
+                        if cachedAudioURL != nil {
+                            Toggle("Keep audio on this device", isOn: Binding(
+                                get: { record.keepAudioOnDevice },
+                                set: { record.keepAudioOnDevice = $0; try? modelContext.save() }
+                            ))
+                        }
+
                         transcriptionToolbar
 
                         if record.hasTranscriptionText {
@@ -267,7 +307,7 @@ struct HistoryDetailView: View {
                         }
                     } header: {
                         if let audioURL = cachedAudioURL {
-                            AudioPlaybackPanel(audioURL: audioURL, player: audioPlayer)
+                            AudioPlaybackPanel(audioURL: audioURL, player: audioPlayer, record: record)
                                 .disabled(
                                     recordingService.isRecording
                                         || recordingService.isChangingRecordingState
@@ -762,6 +802,19 @@ struct HistoryDetailView: View {
         }
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
+
+    private func downloadAudio(allowCellularOnce: Bool) {
+        isDownloadingAudio = true
+        Task {
+            do {
+                try await HistoryCloudSync.shared.downloadAudio(for: record, allowCellularOnce: allowCellularOnce)
+                cachedAudioURL = Self.resolveAudioURL(for: record)
+            } catch {
+                audioDownloadError = error.localizedDescription
+            }
+            isDownloadingAudio = false
+        }
+    }
 }
 
 private func formatTime(_ time: TimeInterval) -> String {
@@ -779,6 +832,7 @@ private func formatTime(_ time: TimeInterval) -> String {
 private struct AudioPlaybackPanel: View {
     let audioURL: URL
     let player: AudioPlayer
+    let record: TranscriptionRecord
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -828,6 +882,9 @@ private struct AudioPlaybackPanel: View {
         }
         .onAppear {
             player.prepare(url: audioURL)
+        }
+        .onChange(of: player.isPlaying) { _, playing in
+            HistoryCloudSync.shared.setPlaying(playing, record: record)
         }
     }
 

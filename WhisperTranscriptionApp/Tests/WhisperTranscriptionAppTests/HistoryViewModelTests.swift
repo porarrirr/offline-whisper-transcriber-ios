@@ -308,7 +308,7 @@ final class HistoryViewModelTests: XCTestCase {
         XCTAssertEqual(persisted.segments[0].text, "正しい認識")
     }
 
-    func testDeleteRecordRemovesSwiftDataRecordAndAssociatedAudioFile() throws {
+    func testDeleteRecordKeepsAudioAndAllowsRestoreWithinThirtyDays() throws {
         let context = try makeModelContext()
         let directory = try makeTemporaryDirectory()
         let audioURL = directory.appendingPathComponent("recording.m4a")
@@ -326,13 +326,19 @@ final class HistoryViewModelTests: XCTestCase {
 
         viewModel.deleteRecord(record)
 
-        XCTAssertFalse(FileManager.default.fileExists(atPath: audioURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
         XCTAssertTrue(viewModel.records.isEmpty)
         let remainingRecords = try context.fetch(FetchDescriptor<TranscriptionRecord>())
-        XCTAssertTrue(remainingRecords.isEmpty)
+        XCTAssertEqual(remainingRecords.count, 1)
+        XCTAssertNotNil(remainingRecords[0].deletedAt)
+        XCTAssertEqual(viewModel.recentlyDeletedRecords.map(\.id), [record.id])
+
+        viewModel.restoreRecord(record)
+        XCTAssertNil(record.deletedAt)
+        XCTAssertEqual(viewModel.records.map(\.id), [record.id])
     }
 
-    func testDeleteRecordKeepsHistoryWhenAudioCannotBeStagedForDeletion() throws {
+    func testDeleteRecordDoesNotMoveAudio() throws {
         let context = try makeModelContext()
         let directory = try makeTemporaryDirectory()
         let audioURL = directory.appendingPathComponent("recording.m4a")
@@ -348,13 +354,56 @@ final class HistoryViewModelTests: XCTestCase {
         let viewModel = HistoryViewModel(fileManager: FailingMoveFileManager())
         viewModel.setModelContext(context)
 
-        XCTAssertFalse(viewModel.deleteRecord(record))
+        XCTAssertTrue(viewModel.deleteRecord(record))
 
         XCTAssertTrue(FileManager.default.fileExists(atPath: audioURL.path))
-        XCTAssertEqual(viewModel.records.map(\.id), [record.id])
-        XCTAssertNotNil(viewModel.errorMessage)
+        XCTAssertTrue(viewModel.records.isEmpty)
+        XCTAssertNil(viewModel.errorMessage)
         let remainingRecords = try context.fetch(FetchDescriptor<TranscriptionRecord>())
         XCTAssertEqual(remainingRecords.map(\.id), [record.id])
+    }
+
+    func testRestoreRejectsExpiredDeletion() throws {
+        let context = try makeModelContext()
+        let record = makeRecord(title: "Expired", text: "Body")
+        record.deletedAt = Date().addingTimeInterval(-31 * 24 * 60 * 60)
+        context.insert(record)
+        try context.save()
+        let viewModel = HistoryViewModel()
+        viewModel.setModelContext(context)
+
+        viewModel.restoreRecord(record)
+
+        XCTAssertNotNil(record.deletedAt)
+        XCTAssertTrue(viewModel.records.isEmpty)
+        XCTAssertNotNil(viewModel.errorMessage)
+    }
+
+    func testExpiredLocalOnlyHistoryIsPurgedWithoutDeletingCloudTombstones() throws {
+        let context = try makeModelContext()
+        let directory = try makeTemporaryDirectory()
+        let localAudio = directory.appendingPathComponent("local.m4a")
+        let cloudAudio = directory.appendingPathComponent("cloud.m4a")
+        try Data("local audio".utf8).write(to: localAudio)
+        try Data("cloud audio".utf8).write(to: cloudAudio)
+        let deletedAt = Date().addingTimeInterval(-31 * 24 * 60 * 60)
+
+        let local = makeRecord(title: "Local", text: "Local body", audioFilePath: localAudio.path)
+        local.deletedAt = deletedAt
+        let cloud = makeRecord(title: "Cloud", text: "Cloud body", audioFilePath: cloudAudio.path)
+        cloud.lastSyncedSnapshotJSON = CloudHistorySnapshot(cloud).json
+        cloud.deletedAt = deletedAt
+        [local, cloud].forEach(context.insert)
+        try context.save()
+
+        let viewModel = HistoryViewModel(recordingsDirectory: directory)
+        viewModel.setModelContext(context)
+        XCTAssertTrue(viewModel.purgeExpiredLocalOnlyRecords())
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: localAudio.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: cloudAudio.path))
+        XCTAssertEqual(try context.fetch(FetchDescriptor<TranscriptionRecord>()).map(\.id), [cloud.id])
+        XCTAssertEqual(viewModel.recentlyDeletedRecords.map(\.id), [cloud.id])
     }
 
     func testStartupRecoveryRestoresStagedAudioWhenHistoryStillReferencesOriginalPath() throws {

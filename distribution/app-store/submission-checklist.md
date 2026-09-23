@@ -8,6 +8,8 @@
 - [x] `ITSAppUsesNonExemptEncryption` = false
 - [x] バージョン: `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`
 - [x] 設定画面からプライバシーポリシー・サポート URL へリンク
+- [ ] CloudKitコンテナをDeveloper Portalで有効化し、配布用プロビジョニングプロファイルへ反映
+- [ ] CloudKitの本番スキーマをデプロイ
 
 ## GitHub Pages（手動）
 
@@ -42,3 +44,5 @@
 - [ ] マイク録音 → 文字起こし成功
 - [ ] ファイルインポート → 文字起こし成功
 - [ ] 設定からプライバシーポリシー・サポートが開ける
+- [ ] 同じApple AccountのiPhone・iPad間で既存履歴、編集、録音音声、削除、復元を確認
+- [ ] Wi-Fiのみ、モバイル通信の1件確認、長時間録音、中断、容量不足、アカウント変更を確認

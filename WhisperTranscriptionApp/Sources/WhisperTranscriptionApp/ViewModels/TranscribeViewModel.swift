@@ -170,7 +170,7 @@ class TranscribeViewModel: ObservableObject {
         modelContext: ModelContext
     ) async {
         // The user may delete a queued history item before its turn arrives.
-        guard !record.isDeleted else { return }
+        guard !record.isDeleted, record.deletedAt == nil else { return }
         let finalizedURL: URL
         do {
             AppLogger.info(
@@ -193,7 +193,7 @@ class TranscribeViewModel: ObservableObject {
             return
         }
 
-        guard !record.isDeleted else { return }
+        guard !record.isDeleted, record.deletedAt == nil else { return }
         await transcribeAudio(url: finalizedURL, sourceType: .recording, modelContext: modelContext, updating: record)
     }
     
@@ -371,6 +371,7 @@ class TranscribeViewModel: ObservableObject {
             do {
                 try modelContext.save()
                 TranscriptionSpotlightSync.index(record)
+                HistoryCloudSync.shared.scheduleSync()
                 shouldKeepPersistedImportedAudio = true
                 showResult = true
                 transcriptionWasSaved = true
@@ -403,11 +404,14 @@ class TranscribeViewModel: ObservableObject {
         guard record.title.isEmpty || record.title == defaultTitle else { return }
         do {
             let title = try await AppleIntelligenceService.shared.suggestedTitle(for: record.text)
-            guard !record.isDeleted, record.title.isEmpty || record.title == defaultTitle else { return }
+            guard !record.isDeleted, record.deletedAt == nil,
+                  record.title.isEmpty || record.title == defaultTitle else { return }
             record.title = title
+            record.modifiedAt = Date()
             try modelContext.save()
             transcriptionTitle = title
             TranscriptionSpotlightSync.index(record)
+            HistoryCloudSync.shared.scheduleSync()
         } catch {
             AppLogger.error("Apple Intelligence title generation failed", context: "TranscribeViewModel", error: error)
         }
@@ -596,6 +600,7 @@ class TranscribeViewModel: ObservableObject {
         do {
             try modelContext.save()
             TranscriptionSpotlightSync.index(record)
+            HistoryCloudSync.shared.scheduleSync()
         } catch {
             modelContext.delete(record)
             throw TranscriptionPipelineError.historySaveFailed(error.localizedDescription)
@@ -643,8 +648,10 @@ class TranscribeViewModel: ObservableObject {
             let previousDuration = record.duration
             record.audioFilePath = storedPath
             record.duration = duration
+            record.audioFinalizationPending = url.pathExtension.lowercased() == "caf"
             do {
                 try modelContext.save()
+                HistoryCloudSync.shared.scheduleSync()
                 return record
             } catch {
                 record.audioFilePath = previousPath
@@ -662,8 +669,10 @@ class TranscribeViewModel: ObservableObject {
             createdAt: createdAt
         )
         modelContext.insert(record)
+        record.audioFinalizationPending = url.pathExtension.lowercased() == "caf"
         do {
             try modelContext.save()
+            HistoryCloudSync.shared.scheduleSync()
             return record
         } catch {
             modelContext.delete(record)
@@ -681,8 +690,10 @@ class TranscribeViewModel: ObservableObject {
 
         let previousPath = record.audioFilePath
         record.audioFilePath = try RecordingFileReference.storedPath(for: finalizedURL)
+        record.audioFinalizationPending = false
         do {
             try modelContext.save()
+            HistoryCloudSync.shared.scheduleSync()
         } catch {
             record.audioFilePath = previousPath
             if FileManager.default.fileExists(atPath: finalizedURL.path) {

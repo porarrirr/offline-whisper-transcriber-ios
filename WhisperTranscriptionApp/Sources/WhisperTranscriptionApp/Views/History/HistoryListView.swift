@@ -4,12 +4,25 @@ import SwiftData
 
 struct HistoryListView: View {
     @StateObject private var viewModel = HistoryViewModel()
+    @StateObject private var cloudSync = HistoryCloudSync.shared
     @State private var selectedRecordID: UUID?
     @AppStorage(WhisperAppDestination.pendingTranscriptionIDKey) private var pendingTranscriptionID = ""
     @Environment(\.modelContext) private var modelContext
 
     var body: some View {
         List {
+            if !viewModel.recentlyDeletedRecords.isEmpty {
+                NavigationLink {
+                    RecentlyDeletedHistoryView(viewModel: viewModel)
+                } label: {
+                    Label("Recently Deleted (\(viewModel.recentlyDeletedRecords.count))", systemImage: "trash")
+                }
+            }
+            if AppSettings.shared.iCloudSyncEnabled || cloudSync.status != "iCloud sync is off" {
+                Text(cloudSync.status)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
             if let error = viewModel.errorMessage {
                 WarningStrip(message: error)
                     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
@@ -122,10 +135,14 @@ struct HistoryListView: View {
         }
         .onAppear {
             viewModel.setModelContext(modelContext)
+            viewModel.purgeExpiredLocalOnlyRecords()
             consumePendingTranscriptionRequest()
         }
         .onChange(of: pendingTranscriptionID) { _, _ in
             consumePendingTranscriptionRequest()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: HistoryCloudSync.historyChanged)) { _ in
+            viewModel.fetchRecords()
         }
     }
 
@@ -158,8 +175,39 @@ struct HistoryListView: View {
     }
 }
 
+private struct RecentlyDeletedHistoryView: View {
+    @ObservedObject var viewModel: HistoryViewModel
+    @ObservedObject private var cloudSync = HistoryCloudSync.shared
+
+    var body: some View {
+        List(viewModel.recentlyDeletedRecords) { record in
+            VStack(alignment: .leading, spacing: 6) {
+                Text(record.displayTitle)
+                if let deletedAt = record.deletedAt {
+                    Text("Deleted \(deletedAt.formatted(date: .abbreviated, time: .omitted))")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let status = cloudSync.syncStatus(for: record) {
+                    Text(status).font(.caption).foregroundStyle(.secondary)
+                }
+                if let deletedAt = record.deletedAt,
+                   deletedAt.addingTimeInterval(30 * 24 * 60 * 60) > Date() {
+                    Button("Restore") { viewModel.restoreRecord(record) }
+                } else {
+                    Text("Restore period expired")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .navigationTitle("Recently Deleted")
+    }
+}
+
 struct HistoryRow: View {
     let record: TranscriptionRecord
+    @ObservedObject private var cloudSync = HistoryCloudSync.shared
 
     var body: some View {
         let tags = record.tags
@@ -205,6 +253,12 @@ struct HistoryRow: View {
                     .foregroundColor(Theme.textSecondary)
                     .lineLimit(2)
                     .lineSpacing(3)
+            }
+
+            if let syncStatus = cloudSync.syncStatus(for: record) {
+                Text(syncStatus)
+                    .font(.caption2)
+                    .foregroundStyle(record.syncError == nil ? Theme.textSecondary : Theme.rec)
             }
 
             if !tags.isEmpty {

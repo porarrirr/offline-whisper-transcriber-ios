@@ -31,6 +31,7 @@ targets:
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
         CODE_SIGN_ENTITLEMENTS: WhisperTranscriptionApp.entitlements
+        CLOUDKIT_CONTAINER_IDENTIFIER: iCloud.com.porarrirr.offlinewhispertranscriber
         MARKETING_VERSION: "1.6"
         CURRENT_PROJECT_VERSION: "2"
         INFOPLIST_PREPROCESS: YES
@@ -50,6 +51,9 @@ targets:
         NSSupportsLiveActivities: true
         UIBackgroundModes:
           - audio
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.porarrirr.offlinewhispertranscriber.history-refresh
         UILaunchScreen: {}
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait

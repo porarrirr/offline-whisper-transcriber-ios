@@ -21,9 +21,12 @@ Whisper文字起こしは、OpenAI Whisper モデルを iPhone 上で動かす�
 - 音声・動画ファイル（m4a / wav / mp3 / mp4 / mov など）のインポート
 - 日本語を含む多言語対応
 - 履歴の保存・検索・エクスポート
+- 任意のiCloud履歴同期。文字起こし、チャット、録音音声を同じApple AccountのiPhone・iPad間で共有
+- 同期済み音声の端末内コピーを設定日数後に整理し、「書類とデータ」の使用量を節約
 
 **オフラインについて**
 初回起動時に Whisper モデル（約142MB、Base）をインターネットからダウンロードします。ダウンロード完了後は、文字起こし処理はすべて端末内で完結し、インターネット接続は不要です。
+履歴のiCloud同期は初期状態でオフです。同期をオンにすると履歴と録音音声をAppleのCloudKitへ送信します。
 
 **必要環境**
 - iOS 17.0 以降の実機（Simulator 非対応）
@@ -47,10 +50,11 @@ Hugging Face から Whisper モデル（約142MB）を取得してください�
 
 【オフライン動作】
 モデル取得後の文字起こしは端末内のみで処理します。音声・結果を開発者
-サーバーへ送信しません。
+サーバーへ送信しません。設定でiCloud同期をオンにした場合はAppleの
+CloudKitプライベートデータベースへ保存します。
 
 【テストアカウント】
-不要です。
+アプリ固有のテストアカウントは不要です。iCloud同期の確認にはApple Accountが必要です。
 
 【実機のみ】
 Metal / whisper.cpp のため iOS Simulator では動作しません。実機 iOS 17+ で
@@ -63,7 +67,7 @@ TranscribeAudioIntent は iOS 18 以降です。iOS 17 ではアプリ内 UI の
 ## 輸出コンプライアンス
 
 - Info.plist: `ITSAppUsesNonExemptEncryption` = `false`
-- Connect での回答: **標準的な暗号化のみ**（HTTPS によるモデルダウンロードのみ、独自暗号なし）
+- Connect での回答: **標準的な暗号化のみ**（HTTPS とCloudKit、独自暗号なし）
 
 ## スクリーンショット
 

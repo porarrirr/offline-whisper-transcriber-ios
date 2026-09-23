@@ -122,6 +122,21 @@ enum TranscriptionDefaultResolver {
 class AppSettings: ObservableObject {
     static let shared = AppSettings()
 
+    @Published var iCloudSyncEnabled: Bool {
+        didSet { UserDefaults.standard.set(iCloudSyncEnabled, forKey: "iCloudSyncEnabled") }
+    }
+
+    @Published var allowCellularSync: Bool {
+        didSet { UserDefaults.standard.set(allowCellularSync, forKey: "allowCellularSync") }
+    }
+
+    @Published var audioRetentionDays: Int {
+        didSet {
+            audioRetentionDays = min(365, max(1, audioRetentionDays))
+            UserDefaults.standard.set(audioRetentionDays, forKey: "audioRetentionDays")
+        }
+    }
+
     @Published var selectedTranscriptionModel: TranscriptionModel {
         didSet {
             UserDefaults.standard.set(selectedTranscriptionModel.storageKey, forKey: Self.selectedTranscriptionModelKey)
@@ -196,6 +211,9 @@ class AppSettings: ObservableObject {
         Self.migrateDefaultsIfNeeded()
 
         let defaults = UserDefaults.standard
+        self.iCloudSyncEnabled = defaults.bool(forKey: "iCloudSyncEnabled")
+        self.allowCellularSync = defaults.bool(forKey: "allowCellularSync")
+        self.audioRetentionDays = min(365, max(1, defaults.object(forKey: "audioRetentionDays") == nil ? 30 : defaults.integer(forKey: "audioRetentionDays")))
         self.isResolvingInitialTranscriptionModel = Self.hasPendingLocaleDefaultResolution(defaults: defaults)
         if let model = TranscriptionDefaultResolver.persistedModel(
             storageKey: defaults.string(forKey: Self.selectedTranscriptionModelKey)

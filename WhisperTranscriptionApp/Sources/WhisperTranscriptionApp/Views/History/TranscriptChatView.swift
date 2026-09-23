@@ -230,6 +230,7 @@ struct TranscriptChatView: View {
         do {
             try record.updateChatMessages(updatedMessages)
             try modelContext.save()
+            HistoryCloudSync.shared.scheduleSync()
             return true
         } catch {
             record.chatMessagesJSON = previousJSON

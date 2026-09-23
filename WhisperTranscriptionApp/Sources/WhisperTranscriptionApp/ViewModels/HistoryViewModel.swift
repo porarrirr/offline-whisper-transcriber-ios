@@ -16,6 +16,7 @@ class HistoryViewModel: ObservableObject {
     typealias TitleGenerator = (String) async throws -> String
 
     @Published var records: [TranscriptionRecord] = []
+    @Published private(set) var recentlyDeletedRecords: [TranscriptionRecord] = []
     @Published var searchText = ""
     @Published var filterFavorite = false
     @Published var selectedTagTokens: [HistoryTagToken] = []
@@ -71,6 +72,10 @@ class HistoryViewModel: ObservableObject {
         
         do {
             var allRecords = try modelContext.fetch(descriptor)
+            allRecords.removeAll { $0.deletedAt != nil }
+            recentlyDeletedRecords = try modelContext.fetch(FetchDescriptor<TranscriptionRecord>(
+                sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+            )).filter { $0.deletedAt != nil }
             refreshAvailableTagsIfNeeded(modelContext: modelContext)
             
             if !searchText.isEmpty {
@@ -105,7 +110,7 @@ class HistoryViewModel: ObservableObject {
                 record.id == id
             }
         )
-        return try? modelContext.fetch(descriptor).first
+        return try? modelContext.fetch(descriptor).first(where: { $0.deletedAt == nil })
     }
     
     @discardableResult
@@ -117,39 +122,98 @@ class HistoryViewModel: ObservableObject {
     func deleteRecords(_ recordsToDelete: [TranscriptionRecord]) -> Bool {
         guard let modelContext = modelContext else { return false }
         let deletedRecordIDs = recordsToDelete.map(\.id)
-        let audioFilePaths = Array(Set(recordsToDelete.compactMap(\.audioFilePath)))
-        let stagedFiles: [StagedRecordingDeletion]
-        do {
-            stagedFiles = try stageRecordingFilesForDeletion(at: audioFilePaths)
-        } catch {
-            setError(String(localized: "Failed to delete recording file") + ": \(error.localizedDescription)")
-            return false
-        }
-
-        recordsToDelete.forEach { modelContext.delete($0) }
+        let now = Date()
+        recordsToDelete.forEach { $0.deletedAt = now; $0.modifiedAt = now }
         do {
             try modelContext.save()
         } catch {
             modelContext.rollback()
-            if let restoreError = restoreStagedRecordingFiles(stagedFiles) {
-                setError(
-                    HistoryViewModelError.deletionRollbackFailed(
-                        databaseError: error.localizedDescription,
-                        restoreError: restoreError.localizedDescription
-                    ).localizedDescription
-                )
-            } else {
-                setError(String(localized: "Failed to delete history") + ": \(error.localizedDescription)")
-            }
+            setError(String(localized: "Failed to delete history") + ": \(error.localizedDescription)")
             fetchRecords()
             return false
         }
 
-        removeStagedRecordingFiles(stagedFiles)
         TranscriptionSpotlightSync.delete(identifiers: deletedRecordIDs)
         availableTagsNeedRefresh = true
         fetchRecords()
+        HistoryCloudSync.shared.scheduleSync()
         return true
+    }
+
+    func restoreRecord(_ record: TranscriptionRecord) {
+        guard let deletedAt = record.deletedAt,
+              deletedAt.addingTimeInterval(30 * 24 * 60 * 60) > Date() else {
+            setError("The 30-day restore period has expired.")
+            return
+        }
+        record.deletedAt = nil
+        record.modifiedAt = Date()
+        do {
+            guard let modelContext else { throw HistoryViewModelError.historyStoreUnavailable }
+            try modelContext.save()
+            TranscriptionSpotlightSync.index(record)
+            availableTagsNeedRefresh = true
+            fetchRecords()
+            HistoryCloudSync.shared.scheduleSync()
+        } catch {
+            modelContext?.rollback()
+            setError(error.localizedDescription)
+        }
+    }
+
+    @discardableResult
+    func purgeExpiredLocalOnlyRecords(asOf now: Date = Date()) -> Bool {
+        guard let modelContext else { return false }
+        do {
+            let allRecords = try modelContext.fetch(FetchDescriptor<TranscriptionRecord>())
+            let cutoff = now.addingTimeInterval(-30 * 24 * 60 * 60)
+            let expired = allRecords.filter { record in
+                guard let deletedAt = record.deletedAt, deletedAt <= cutoff else { return false }
+                return record.lastSyncedSnapshotJSON == nil
+                    && record.cloudRecordSystemFields == nil
+                    && record.cloudAudioID == nil
+                    && record.pendingAudioID == nil
+            }
+            guard !expired.isEmpty else { return false }
+
+            let expiredIDs = Set(expired.map(\.id))
+            let retainedURLs = try Set(allRecords.filter { !expiredIDs.contains($0.id) }
+                .compactMap { record -> URL? in
+                    guard let path = record.audioFilePath else { return nil }
+                    return try RecordingFileReference.fileURL(
+                        for: path, recordingsDirectory: recordingsDirectoryOverride)
+                })
+            var pathsToDelete: [String] = []
+            for path in Set(expired.compactMap(\.audioFilePath)) {
+                let url = try RecordingFileReference.fileURL(
+                    for: path, recordingsDirectory: recordingsDirectoryOverride)
+                if !retainedURLs.contains(url) { pathsToDelete.append(path) }
+            }
+            let stagedFiles = try stageRecordingFilesForDeletion(at: pathsToDelete)
+            expired.forEach(modelContext.delete)
+            do {
+                try modelContext.save()
+            } catch {
+                modelContext.rollback()
+                if let restoreError = restoreStagedRecordingFiles(stagedFiles) {
+                    setError(HistoryViewModelError.deletionRollbackFailed(
+                        databaseError: error.localizedDescription,
+                        restoreError: restoreError.localizedDescription
+                    ).localizedDescription)
+                } else {
+                    setError(String(localized: "Failed to delete expired history") + ": \(error.localizedDescription)")
+                }
+                return false
+            }
+            removeStagedRecordingFiles(stagedFiles)
+            availableTagsNeedRefresh = true
+            fetchRecords()
+            NotificationCenter.default.post(name: HistoryCloudSync.historyChanged, object: nil)
+            return true
+        } catch {
+            setError(String(localized: "Failed to delete expired history") + ": \(error.localizedDescription)")
+            return false
+        }
     }
 
     func updateTags(_ record: TranscriptionRecord, tagsInput: String) {
@@ -162,6 +226,7 @@ class HistoryViewModel: ObservableObject {
         do {
             try modelContext?.save()
             TranscriptionSpotlightSync.index(record)
+            HistoryCloudSync.shared.scheduleSync()
         } catch {
             record.tagsJSON = previousTagsJSON
             setError(String(localized: "Failed to update tags") + ": \(error.localizedDescription)")
@@ -194,9 +259,11 @@ class HistoryViewModel: ObservableObject {
     
     func toggleFavorite(_ record: TranscriptionRecord) {
         record.isFavorite.toggle()
+        record.modifiedAt = Date()
         do {
             try modelContext?.save()
             TranscriptionSpotlightSync.index(record)
+            HistoryCloudSync.shared.scheduleSync()
         } catch {
             record.isFavorite.toggle()
             setError(String(localized: "Failed to update favorite status") + ": \(error.localizedDescription)")
@@ -208,9 +275,11 @@ class HistoryViewModel: ObservableObject {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let previousTitle = record.title
         record.title = trimmedTitle.isEmpty ? TranscriptionRecord.defaultTitle(for: record.createdAt) : trimmedTitle
+        record.modifiedAt = Date()
         do {
             try modelContext?.save()
             TranscriptionSpotlightSync.index(record)
+            HistoryCloudSync.shared.scheduleSync()
         } catch {
             record.title = previousTitle
             setError(String(localized: "Failed to update title") + ": \(error.localizedDescription)")
@@ -269,8 +338,10 @@ class HistoryViewModel: ObservableObject {
             }
             record.segmentsJSON = encodedSegments
             record.text = TranscriptionSegment.plainText(from: updatedSegments, fallback: previousText)
+            record.modifiedAt = Date()
             try modelContext.save()
             TranscriptionSpotlightSync.index(record)
+            HistoryCloudSync.shared.scheduleSync()
             errorMessage = nil
             return true
         } catch {
@@ -308,6 +379,14 @@ class HistoryViewModel: ObservableObject {
                 in: records,
                 recordingsDirectory: recordingsDirectory
             )
+            for record in records where record.audioFinalizationPending {
+                guard let path = record.audioFilePath,
+                      let url = try? RecordingFileReference.fileURL(for: path,
+                          recordingsDirectory: recordingsDirectory),
+                      url.standardizedFileURL != activeRecordingURL?.standardizedFileURL else { continue }
+                record.audioFinalizationPending = false
+                recordsChanged = true
+            }
             if try repairMissingRecordingDurations(
                 in: records,
                 recordingsDirectory: recordingsDirectory
@@ -375,6 +454,7 @@ class HistoryViewModel: ObservableObject {
             try modelContext.save()
             availableTagsNeedRefresh = true
             fetchRecords()
+            HistoryCloudSync.shared.scheduleSync()
         } catch {
             setError(String(localized: "Failed to recover saved recordings") + ": \(error.localizedDescription)")
         }
@@ -394,7 +474,7 @@ class HistoryViewModel: ObservableObject {
                 sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
             )
             let allRecords = try modelContext.fetch(descriptor)
-            availableTags = Self.sortedUniqueTags(from: allRecords)
+            availableTags = Self.sortedUniqueTags(from: allRecords.filter { $0.deletedAt == nil })
             selectedTagTokens.removeAll { selectedTag in
                 !availableTags.contains(where: { Self.tagsAreEqual($0, selectedTag.name) })
             }
@@ -601,6 +681,7 @@ private struct StagedRecordingDeletion {
 
 private enum HistoryViewModelError: LocalizedError {
     case documentsDirectoryUnavailable
+    case historyStoreUnavailable
     case deletionRollbackFailed(databaseError: String, restoreError: String)
     case invalidStagedRecordingName(String)
     case segmentEncodingFailed
@@ -609,6 +690,8 @@ private enum HistoryViewModelError: LocalizedError {
         switch self {
         case .documentsDirectoryUnavailable:
             return String(localized: "Could not retrieve document directory for saved recordings.")
+        case .historyStoreUnavailable:
+            return String(localized: "History store is unavailable.")
         case .deletionRollbackFailed(let databaseError, let restoreError):
             return String(localized: "Failed to restore recording file")
                 + ": database=\(databaseError), file=\(restoreError)"

@@ -236,14 +236,15 @@ struct GetTranscriptionHistoryIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<String> {
         try HistoryIntentLimit.validate(limit)
 
-        let modelContainer = try ModelContainer(for: TranscriptionRecord.self)
+        let modelContainer = try ModelContainer(for: TranscriptionRecord.self,
+            configurations: ModelConfiguration(cloudKitDatabase: .none))
         let modelContext = ModelContext(modelContainer)
         
         let descriptor = FetchDescriptor<TranscriptionRecord>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         
-        let records = try modelContext.fetch(descriptor)
+        let records = try modelContext.fetch(descriptor).filter { $0.deletedAt == nil }
         let limitedRecords = Array(records.prefix(limit))
         
         let result = limitedRecords.map { record in

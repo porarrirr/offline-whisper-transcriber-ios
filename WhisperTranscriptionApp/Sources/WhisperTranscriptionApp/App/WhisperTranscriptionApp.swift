@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import BackgroundTasks
 
 @main
 struct WhisperTranscriptionApp: App {
@@ -17,12 +18,25 @@ struct WhisperTranscriptionApp: App {
 
     init() {
         AppLogger.shared.recordAppLaunch()
+        let backgroundSyncRegistered = BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: HistoryCloudSync.backgroundTaskID,
+            using: nil
+        ) { task in
+            guard let task = task as? BGAppRefreshTask else { return }
+            Task { @MainActor in
+                HistoryCloudSync.shared.performBackgroundRefresh(task)
+            }
+        }
+        if !backgroundSyncRegistered {
+            AppLogger.error("Could not register background history sync", context: "App")
+        }
         do {
             if ProcessInfo.processInfo.arguments.contains("--ui-test-long-transcription") {
-                let configuration = ModelConfiguration(isStoredInMemoryOnly: true)
+                let configuration = ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none)
                 modelContainer = try ModelContainer(for: TranscriptionRecord.self, configurations: configuration)
             } else {
-                modelContainer = try ModelContainer(for: TranscriptionRecord.self)
+                modelContainer = try ModelContainer(for: TranscriptionRecord.self,
+                    configurations: ModelConfiguration(cloudKitDatabase: .none))
             }
             modelContainerErrorMessage = nil
         } catch {
@@ -58,6 +72,8 @@ struct WhisperTranscriptionApp: App {
                                 recordingService.handleScenePhase(newPhase)
                                 if newPhase == .active {
                                     ModelManager.shared.handleBecameActive()
+                                    purgeExpiredLocalOnlyHistory(modelContainer: modelContainer)
+                                    HistoryCloudSync.shared.scheduleSync()
                                 }
                             }
                         }
@@ -75,8 +91,17 @@ struct WhisperTranscriptionApp: App {
         let viewModel = HistoryViewModel()
         viewModel.setModelContext(context)
         viewModel.importUntrackedRecordings(excluding: recordingService.currentRecordingURL)
+        viewModel.purgeExpiredLocalOnlyRecords()
+        HistoryCloudSync.shared.configure(container: modelContainer)
         TranscriptionSpotlightSync.indexAll(using: modelContainer)
         ModelManager.shared.scheduleWhisperSessionStartIfNeeded()
+    }
+
+    @MainActor
+    private func purgeExpiredLocalOnlyHistory(modelContainer: ModelContainer) {
+        let viewModel = HistoryViewModel()
+        viewModel.setModelContext(ModelContext(modelContainer))
+        viewModel.purgeExpiredLocalOnlyRecords()
     }
 }
 

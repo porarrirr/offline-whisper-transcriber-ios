@@ -6,6 +6,7 @@ struct SettingsView: View {
     @StateObject private var modelManager = ModelManager.shared
     @StateObject private var logger = AppLogger.shared
     @StateObject private var runtimeStatus = WhisperRuntimeStatus.shared
+    @StateObject private var cloudSync = HistoryCloudSync.shared
 
     @State private var showModelDownload = false
     @State private var showDeleteConfirmation = false
@@ -114,6 +115,29 @@ struct SettingsView: View {
                 Text("Recording & Storage")
             }
             .listRowBackground(Color(uiColor: .secondarySystemGroupedBackground))
+
+            Section {
+                Toggle("Sync History with iCloud", isOn: $settings.iCloudSyncEnabled)
+                    .onChange(of: settings.iCloudSyncEnabled) { _, _ in cloudSync.settingChanged() }
+                if settings.iCloudSyncEnabled {
+                    Picker("Network", selection: $settings.allowCellularSync) {
+                        Text("Wi-Fi Only").tag(false)
+                        Text("Wi-Fi and Cellular").tag(true)
+                    }
+                    .onChange(of: settings.allowCellularSync) { _, _ in cloudSync.settingChanged() }
+                    Stepper("Keep audio on device: \(settings.audioRetentionDays) days",
+                            value: $settings.audioRetentionDays, in: 1...365)
+                }
+                if settings.iCloudSyncEnabled || cloudSync.status != "iCloud sync is off" {
+                    Text(cloudSync.status)
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            } header: {
+                Text("iCloud History")
+            } footer: {
+                Text("Transcriptions remain readable on this device. Audio is removed only after upload finishes; iCloud copies remain available for manual download.")
+            }
 
             Section {
                 Picker("Theme", selection: $settings.appAppearance) {
