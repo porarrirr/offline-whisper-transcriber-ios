@@ -232,7 +232,7 @@ class AppSettings: ObservableObject {
             ? true
             : defaults.bool(forKey: "useAudioPreprocessing")
         self.keepScreenOn = defaults.object(forKey: "keepScreenOn") == nil
-            ? true
+            ? false
             : defaults.bool(forKey: "keepScreenOn")
         self.includeTimestamps = defaults.bool(forKey: "includeTimestamps")
         if let storedAppearance = defaults.string(forKey: Self.appAppearanceKey),
@@ -302,7 +302,7 @@ class AppSettings: ObservableObject {
 
     private static func migrateDefaultsToVersion1(defaults: UserDefaults) {
         if defaults.object(forKey: "keepScreenOn") == nil {
-            defaults.set(true, forKey: "keepScreenOn")
+            defaults.set(false, forKey: "keepScreenOn")
         }
     }
 

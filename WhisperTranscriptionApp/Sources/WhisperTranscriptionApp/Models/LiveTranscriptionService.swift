@@ -496,7 +496,7 @@ final class LiveTranscriptionService: RecordingLiveRecognizing {
         let decibels = 20 * log10(max(rms, 0.000_001))
 
         // 音声バッファごと(毎秒約45回)に呼ばれる。`audioLevel`はスナップショットに保持するだけで
-        // publishしない。0.1秒タイマーのpublishに載って十分な頻度でUIへ届く。
+        // publishしない。1秒タイマーのpublishに載せ、録音中のUI更新を抑える。
         mutateSnapshotWithoutPublishing { snapshot in
             snapshot.audioLevel = decibels
         }
@@ -524,12 +524,15 @@ final class LiveTranscriptionService: RecordingLiveRecognizing {
 
     private func startTimer() {
         timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             guard let self, let startedAt else { return }
             updateSnapshot { snapshot in
                 snapshot.elapsedTime = Date().timeIntervalSince(startedAt)
             }
         }
+        timer.tolerance = 0.2
+        RunLoop.main.add(timer, forMode: .common)
+        self.timer = timer
     }
 
     private func stopTimer() {
@@ -564,7 +567,7 @@ final class LiveTranscriptionService: RecordingLiveRecognizing {
         return snapshot
     }
 
-    /// スナップショットだけ更新してUIへは通知しない。次の`updateSnapshot`(0.1秒タイマー等)の
+    /// スナップショットだけ更新してUIへは通知しない。次の`updateSnapshot`(1秒タイマー等)の
     /// publishに相乗りできる高頻度の値に使う。
     private func mutateSnapshotWithoutPublishing(_ update: (inout LiveTranscriptionSnapshot) -> Void) {
         snapshotLock.lock()

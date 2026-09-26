@@ -105,7 +105,7 @@ struct SettingsView: View {
                 Toggle(isOn: $settings.keepScreenOn) {
                     VStack(alignment: .leading) {
                         Text("Keep Screen On")
-                        Text("Keep the screen on during transcription")
+                        Text("Keep the screen on during recording and transcription. Turning this off saves battery.")
                             .font(.subheadline)
                             .foregroundColor(Theme.textSecondary)
                     }
