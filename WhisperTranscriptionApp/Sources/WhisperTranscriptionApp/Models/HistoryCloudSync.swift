@@ -200,7 +200,13 @@ private final class CloudOperationResult<Value>: @unchecked Sendable {
 final class HistoryCloudSync: ObservableObject, CKSyncEngineDelegate {
     static let shared = HistoryCloudSync()
     static let historyChanged = Notification.Name("HistoryCloudSync.historyChanged")
-    static let containerID = "iCloud.com.porarrirr.offlinewhispertranscriber"
+    static let containerID: String = {
+        guard let identifier = Bundle.main.object(forInfoDictionaryKey: "HistoryCloudKitContainerIdentifier") as? String,
+              identifier.hasPrefix("iCloud.") else {
+            fatalError("HistoryCloudKitContainerIdentifier is missing from Info.plist")
+        }
+        return identifier
+    }()
     static let backgroundTaskID = "com.porarrirr.offlinewhispertranscriber.history-refresh"
     private static let zoneID = CKRecordZone.ID(zoneName: "History")
     private static let chunkSize = 8 * 1024 * 1024

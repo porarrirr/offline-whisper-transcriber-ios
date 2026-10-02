@@ -129,7 +129,7 @@ struct SettingsView: View {
                             value: $settings.audioRetentionDays, in: 1...365)
                 }
                 if settings.iCloudSyncEnabled || cloudSync.status != "iCloud sync is off" {
-                    Text(cloudSync.status)
+                    cloudSyncStatusLabel
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
@@ -239,6 +239,15 @@ struct SettingsView: View {
         .sheet(isPresented: $showLanguagePicker) {
             LanguagePickerView(selectedLanguage: $settings.selectedLanguage, isPresented: $showLanguagePicker)
         }
+    }
+
+    private var cloudSyncStatusLabel: Text {
+        let status = cloudSync.status
+        let uploadPrefix = "Uploading audio: "
+        if status.hasPrefix(uploadPrefix) {
+            return Text("Uploading audio: \(String(status.dropFirst(uploadPrefix.count)))")
+        }
+        return Text(LocalizedStringKey(status))
     }
 
     private var modelSettings: some View {

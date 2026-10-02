@@ -29,6 +29,25 @@ iPhone内でAI音声文字起こしを行うアプリです。OpenAIのWhisper�
 - iCloud履歴同期の配布には `iCloud.com.porarrirr.offlinewhispertranscriber` のCloudKitコンテナ権限と本番スキーマのデプロイが必要です。
 - `whisper.cpp` 内の変更、または `Frameworks/whisper.xcframework` が存在しない場合は、フレームワークを再生成してから署名する必要があります。
 
+### 実機で履歴の iCloud 移行を繰り返しテストする
+
+`HistoryMigrationTest` スキームは同じ Bundle ID のまま、専用コンテナ
+`iCloud.com.porarrirr.offlinewhispertranscriber.migrationtest` の **Development** 環境を使います。
+通常の `WhisperTranscriptionApp` スキームは従来のコンテナを使います。
+
+1. [CloudKit Console](https://icloud.developer.apple.com/dashboard/) で専用コンテナと **Dev** を選び、2回目以降はその環境だけを **Reset Environment** します。これは専用コンテナの Development 環境にあるデータと未デプロイのスキーマをすべて消します。
+2. アプリを起動する前に、保存した移行前のデータを実機に戻します。以下のスクリプトはテストアプリをビルドし、端末上の同じ Bundle ID のアプリを削除・再インストールしてから `Documents`、`Library/Application Support`、`Library/Preferences` を復元します。元データには書き込みません。
+
+   ```bash
+   Scripts/prepare-history-migration-device.sh \
+     00008140-001E393401DB801C \
+     /Users/porari/Desktop/com.porarrirr.offlinewhispertranscriber
+   ```
+
+3. 実機でアプリを開き、設定の「Sync History with iCloud」をオンにします。毎回同じ移行前データから始められます。
+
+スクリプトは実機上の既存アプリとそのローカルデータを削除します。保存済みのデータ一式が正常なことを確認してから実行してください。通常用コンテナや Production 環境で **Reset Environment** しないでください。
+
 ## プロジェクト構成
 
 ```

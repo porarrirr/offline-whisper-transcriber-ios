@@ -24,6 +24,8 @@
 	<string>WT_BUILD_DATE</string>
 	<key>CFBundleVersion</key>
 	<string>WT_BUILD_TIME</string>
+	<key>HistoryCloudKitContainerIdentifier</key>
+	<string>$(CLOUDKIT_CONTAINER_IDENTIFIER)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>NSMicrophoneUsageDescription</key>
