@@ -29,6 +29,29 @@ iPhone内でAI音声文字起こしを行うアプリです。OpenAIのWhisper�
 - iCloud履歴同期の配布には `iCloud.com.porarrirr.offlinewhispertranscriber` のCloudKitコンテナ権限と本番スキーマのデプロイが必要です。
 - `whisper.cpp` 内の変更、または `Frameworks/whisper.xcframework` が存在しない場合は、フレームワークを再生成してから署名する必要があります。
 
+### iCloud 同期形式 v2 の公開手順
+
+この版は既存の `History` ゾーンと履歴のレコードIDを維持します。旧形式の `snapshot` は読み取り可能です。v2 の履歴本文は、サイズと SHA-256 を添えた `snapshotAsset` に保存します。新しい録音は `HistoryAudio` ゾーンに保存し、旧録音は元の `History` ゾーンから手動ダウンロードできます。履歴の変更取得では音声の `file` フィールドを要求しません。
+
+配布前に専用 Development コンテナで以下のフィールドを作成・検証し、CloudKit Console から本番スキーマへデプロイしてください。既存のフィールドは削除しません。
+
+| レコード型 | 追加フィールド | 型 |
+| --- | --- | --- |
+| `HistoryItem` | `formatVersion`, `snapshotBytes` | Int64 |
+| `HistoryItem` | `snapshotAsset` | Asset |
+| `HistoryItem` | `snapshotSHA256`, `cleanup` | String |
+| `HistoryItem` | `purgedAt` | Date/Time |
+| `AudioManifest` | `allocatedChunks`, `ownerFormatVersion`, `uploadComplete`, `deleting` | Int64 |
+| `AudioManifest` | `owners` | List of String |
+
+v2 を有効にする前に、同期する全端末をこの版へ更新してください。旧版は v2 の履歴本文・音声参照・削除の競合制御を解釈できません。
+
+完全削除は履歴レコードの change tag を条件に、小さな `purgedAt` マーカーを保存して確定します。その際に本文のフィールドを消去し、参照元がなくなった音声だけを整理します。マーカーは古い端末からの再作成を防ぐため残ります。途中アップロードはチャンクの予約数を先に保存し、通信中断・アプリ終了後も整理を再開できます。
+
+ローカルDBへの保存が成功するまで変更取得トークンを進めません。チェックポイントは `Library/Application Support/HistoryCloudSync/<container ID>.json` に原子的に保存します。クラウドのゾーンが消えた場合は同期と端末音声の整理を停止します。ユーザーが設定で再び同期をオンにした場合に、残っているローカル履歴をアップロードします。
+
+公開前の実機検証では、2端末での同時編集・削除直前の復元、通信中断と再起動、iCloud容量不足、端末の容量不足、Apple Account切替、iCloud側のアプリデータ削除、および旧形式の履歴・音声の読み込みを確認してください。
+
 ### 実機で履歴の iCloud 移行を繰り返しテストする
 
 `HistoryMigrationTest` スキームは同じ Bundle ID のまま、専用コンテナ

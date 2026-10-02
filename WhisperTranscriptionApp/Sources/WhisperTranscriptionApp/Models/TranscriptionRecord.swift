@@ -20,6 +20,7 @@ class TranscriptionRecord: Identifiable {
     var modifiedAt: Date = Date()
     var deletedAt: Date?
     var cloudAudioID: String?
+    var cloudAudioZoneName: String?
     var cloudAudioByteCount: Int64 = 0
     var cloudAudioChunkCount: Int = 0
     var cloudAudioSHA256: String?
@@ -31,6 +32,7 @@ class TranscriptionRecord: Identifiable {
     var audioLastUsedAt: Date?
     var audioDownloadedAt: Date?
     var pendingAudioID: String?
+    var pendingAudioZoneName: String?
     var audioFinalizationPending: Bool = false
     var cloudDeletionConfirmed: Bool = false
     
