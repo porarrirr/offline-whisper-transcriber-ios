@@ -1,4 +1,7 @@
 import XCTest
+import SwiftData
+import CoreTransferable
+import UniformTypeIdentifiers
 @testable import WhisperTranscriptionApp
 
 @MainActor
@@ -161,4 +164,73 @@ final class WhisperAppIntentsTests: XCTestCase {
             }
         }
     }
+
+    @available(iOS 18.0, *)
+    func testSearchCombinesTextDatesFavoritesAndLimit() throws {
+        let records = [
+            TranscriptionRecord(title: "Meeting", text: "Budget", sourceType: .file, duration: 1,
+                                createdAt: Date(timeIntervalSince1970: 10), isFavorite: true),
+            TranscriptionRecord(title: "Other", text: "Budget", sourceType: .file, duration: 1,
+                                createdAt: Date(timeIntervalSince1970: 20)),
+            TranscriptionRecord(title: "Tagged", text: "Notes", sourceType: .file, duration: 1,
+                                createdAt: Date(timeIntervalSince1970: 30), isFavorite: true, tags: ["Budget"]),
+            TranscriptionRecord(title: "Budget", text: "Notes", sourceType: .file, duration: 1,
+                                createdAt: Date(timeIntervalSince1970: 40), isFavorite: true)
+        ]
+        let found = try TranscriptionEntityRecordStore.search(
+            records: records, query: "budget", createdAfter: Date(timeIntervalSince1970: 10),
+            createdBefore: Date(timeIntervalSince1970: 40), favoritesOnly: true, limit: 1
+        )
+        XCTAssertEqual(found.map(\.id), [records[2].id])
+        let all = try TranscriptionEntityRecordStore.search(
+            records: records, query: "", createdAfter: nil, createdBefore: nil,
+            favoritesOnly: false, limit: 100
+        )
+        XCTAssertEqual(all.map(\.id), records.reversed().map(\.id))
+    }
+
+    @available(iOS 18.0, *)
+    func testSearchRejectsInvalidBounds() {
+        XCTAssertThrowsError(try TranscriptionEntityRecordStore.search(
+            records: [], query: "", createdAfter: nil, createdBefore: nil, favoritesOnly: false, limit: 0
+        ))
+        XCTAssertThrowsError(try TranscriptionEntityRecordStore.search(
+            records: [], query: "", createdAfter: Date(timeIntervalSince1970: 20),
+            createdBefore: Date(timeIntervalSince1970: 10), favoritesOnly: false, limit: 5
+        )) { error in
+            guard case IntentError.invalidDateRange = error else {
+                return XCTFail("Expected invalidDateRange, got \(error)")
+            }
+        }
+    }
+
+    @available(iOS 18.0, *)
+    func testCurrentEntityReturnsEditedTextAndRejectsDeletedRecord() throws {
+        let container = try ModelContainer(
+            for: TranscriptionRecord.self, configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = ModelContext(container)
+        let record = TranscriptionRecord(title: "Meeting", text: "Original", sourceType: .file, duration: 1)
+        context.insert(record)
+        try context.save()
+        let stale = TranscriptionEntity(record: record)
+        record.text = "Edited"
+        try context.save()
+        XCTAssertEqual(try TranscriptionEntityRecordStore.currentEntity(id: stale.id, context: context).text, "Edited")
+        context.delete(record)
+        try context.save()
+        XCTAssertThrowsError(try TranscriptionEntityRecordStore.currentEntity(id: stale.id, context: context)) { error in
+            guard case IntentError.transcriptionNotFound = error else {
+                return XCTFail("Expected transcriptionNotFound, got \(error)")
+            }
+        }
+    }
+
+    @available(iOS 18.2, *)
+    func testTranscriptionTransfersFullTextAsPlainText() async throws {
+        let record = TranscriptionRecord(title: "Meeting", text: "日本語の本文\nSecond line", sourceType: .file, duration: 1)
+        let data = try await TranscriptionEntity(record: record).exported(as: .plainText)
+        XCTAssertEqual(String(data: data, encoding: .utf8), record.text)
+    }
+
 }

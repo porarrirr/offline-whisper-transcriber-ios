@@ -1,11 +1,15 @@
 import AppIntents
 import CoreSpotlight
+import CoreTransferable
 import Foundation
 import SwiftData
 import UniformTypeIdentifiers
 
 @available(iOS 18.0, *)
-struct TranscriptionEntity: IndexedEntity {
+struct TranscriptionEntity: IndexedEntity, Transferable {
+    static var transferRepresentation: some TransferRepresentation {
+        ProxyRepresentation(exporting: \.text)
+    }
     static var typeDisplayRepresentation = TypeDisplayRepresentation(
         name: "Transcription",
         numericFormat: "\(placeholder: .int) Transcriptions"
@@ -121,7 +125,7 @@ struct TranscriptionEntityQuery: EntityStringQuery {
     }
 
     @MainActor
-    private static func fetchRecords() throws -> [TranscriptionRecord] {
+    static func fetchRecords() throws -> [TranscriptionRecord] {
         let container = try ModelContainer(for: TranscriptionRecord.self)
         let context = ModelContext(container)
         return try context.fetch(FetchDescriptor<TranscriptionRecord>(
@@ -133,6 +137,30 @@ struct TranscriptionEntityQuery: EntityStringQuery {
 @available(iOS 18.0, *)
 @MainActor
 enum TranscriptionEntityRecordStore {
+    static func currentEntity(id: UUID, context: ModelContext? = nil) throws -> TranscriptionEntity {
+        let (record, _) = try recordAndContext(for: id, context: context)
+        return TranscriptionEntity(record: record)
+    }
+
+    static func search(
+        records: [TranscriptionRecord], query: String, createdAfter: Date?,
+        createdBefore: Date?, favoritesOnly: Bool, limit: Int
+    ) throws -> [TranscriptionEntity] {
+        try HistoryIntentLimit.validate(limit)
+        if let createdAfter, let createdBefore, createdAfter >= createdBefore {
+            throw IntentError.invalidDateRange
+        }
+        return records.filter { record in
+            record.matchesSearchText(query)
+                && (createdAfter.map { record.createdAt >= $0 } ?? true)
+                && (createdBefore.map { record.createdAt < $0 } ?? true)
+                && (!favoritesOnly || record.isFavorite)
+        }
+        .sorted { $0.createdAt > $1.createdAt }
+        .prefix(limit)
+        .map(TranscriptionEntity.init(record:))
+    }
+
     static func markAsFavorite(_ entity: TranscriptionEntity) throws -> TranscriptionEntity {
         let (record, context) = try recordAndContext(for: entity.id)
         record.isFavorite = true
@@ -161,9 +189,14 @@ enum TranscriptionEntityRecordStore {
         )
     }
 
-    private static func recordAndContext(for id: UUID) throws -> (TranscriptionRecord, ModelContext) {
-        let container = try ModelContainer(for: TranscriptionRecord.self)
-        let context = ModelContext(container)
+    private static func recordAndContext(for id: UUID, context suppliedContext: ModelContext? = nil) throws -> (TranscriptionRecord, ModelContext) {
+        let context: ModelContext
+        if let suppliedContext {
+            context = suppliedContext
+        } else {
+            let container = try ModelContainer(for: TranscriptionRecord.self)
+            context = ModelContext(container)
+        }
         let descriptor = FetchDescriptor<TranscriptionRecord>(
             predicate: #Predicate<TranscriptionRecord> { record in
                 record.id == id
@@ -306,5 +339,28 @@ enum TranscriptionSpotlightSync {
                 error: error
             )
         }
+    }
+}
+
+@available(iOS 27.0, *)
+extension TranscriptionEntityQuery: IndexedEntityQuery {
+    @MainActor
+    func reindexEntities(for identifiers: [UUID], indexDescription: CSSearchableIndexDescription) async throws {
+        let entities = try await entities(for: identifiers)
+        let index = CSSearchableIndex(name: "Transcriptions", protectionClass: indexDescription.protectionClass)
+        try await index.indexAppEntities(entities)
+        let existing = Set(entities.map(\.id))
+        let removed = identifiers.filter { !existing.contains($0) }
+        if !removed.isEmpty {
+            try await index.deleteAppEntities(identifiedBy: removed, ofType: TranscriptionEntity.self)
+        }
+    }
+
+    @MainActor
+    func reindexAllEntities(indexDescription: CSSearchableIndexDescription) async throws {
+        let entities = try Self.fetchRecords().map(TranscriptionEntity.init(record:))
+        let index = CSSearchableIndex(name: "Transcriptions", protectionClass: indexDescription.protectionClass)
+        try await index.deleteAllSearchableItems()
+        if !entities.isEmpty { try await index.indexAppEntities(entities) }
     }
 }

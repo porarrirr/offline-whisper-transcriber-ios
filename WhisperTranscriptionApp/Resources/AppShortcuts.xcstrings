@@ -1,0 +1,259 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "Search transcriptions in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で文字起こしを検索"
+          }
+        }
+      }
+    },
+    "Get text of ${transcription} in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で${transcription}の本文を取得"
+          }
+        }
+      }
+    },
+    "Start recording with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で録音を開始"
+          }
+        }
+      }
+    },
+    "Record audio with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で音声を録音"
+          }
+        }
+      }
+    },
+    "Begin recording with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で録音を始めて"
+          }
+        }
+      }
+    },
+    "Open live recorder with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}でライブ録音を開いて"
+          }
+        }
+      }
+    },
+    "Start live recording with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}でライブ録音を開始"
+          }
+        }
+      }
+    },
+    "Open live transcription with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}でライブ文字起こしを開いて"
+          }
+        }
+      }
+    },
+    "Stop recording with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で録音を停止"
+          }
+        }
+      }
+    },
+    "End recording with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で録音を終了"
+          }
+        }
+      }
+    },
+    "Favorite ${transcription} in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で${transcription}をお気に入りに追加"
+          }
+        }
+      }
+    },
+    "Tag ${transcription} in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で${transcription}にタグを追加"
+          }
+        }
+      }
+    },
+    "Open ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}を開いて"
+          }
+        }
+      }
+    },
+    "Start transcription with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で文字起こしを開始"
+          }
+        }
+      }
+    },
+    "Open recorder with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で録音画面を開いて"
+          }
+        }
+      }
+    },
+    "Open audio transcription with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で音声文字起こしを開いて"
+          }
+        }
+      }
+    },
+    "Transcribe with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で文字起こしして"
+          }
+        }
+      }
+    },
+    "Transcribe audio with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で音声を文字起こし"
+          }
+        }
+      }
+    },
+    "Transcribe media with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}でメディアを文字起こし"
+          }
+        }
+      }
+    },
+    "Transcribe file with ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}でファイルを文字起こし"
+          }
+        }
+      }
+    },
+    "Open history in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で履歴を開いて"
+          }
+        }
+      }
+    },
+    "Show transcription history in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で文字起こし履歴を表示"
+          }
+        }
+      }
+    },
+    "Find transcripts in ${applicationName}": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "${applicationName}で文字起こしを探して"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

@@ -82,6 +82,7 @@ struct OpenTranscriptionRecordIntent: OpenIntent {
 
     @MainActor
     func perform() async throws -> some IntentResult {
+        _ = try TranscriptionEntityRecordStore.currentEntity(id: target.id)
         WhisperAppDestination.history.requestOpen(transcriptionID: target.id)
         return .result()
     }
@@ -125,6 +126,55 @@ struct TagTranscriptionIntent: AppIntent {
     func perform() async throws -> some IntentResult & ReturnsValue<TranscriptionEntity> {
         let updated = try TranscriptionEntityRecordStore.addTag(tag, to: transcription)
         return .result(value: updated)
+    }
+}
+
+@available(iOS 18.0, *)
+struct FindTranscriptionsIntent: AppIntent {
+    static var title: LocalizedStringResource = "Find Transcriptions"
+    static var description = IntentDescription("Searches saved transcription titles, text, and tags")
+
+    @Parameter(title: "Search Text", default: "") var query: String
+    @Parameter(title: "Created After") var createdAfter: Date?
+    @Parameter(title: "Created Before") var createdBefore: Date?
+    @Parameter(title: "Favorites Only", default: false) var favoritesOnly: Bool
+    @Parameter(title: "Count", default: 5) var limit: Int
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Find transcriptions matching \(\.$query)") {
+            \.$createdAfter
+            \.$createdBefore
+            \.$favoritesOnly
+            \.$limit
+        }
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<[TranscriptionEntity]> {
+        let entities = try TranscriptionEntityRecordStore.search(
+            records: TranscriptionEntityQuery.fetchRecords(), query: query,
+            createdAfter: createdAfter, createdBefore: createdBefore,
+            favoritesOnly: favoritesOnly, limit: limit
+        )
+        return .result(value: entities)
+    }
+}
+
+@available(iOS 18.0, *)
+struct GetTranscriptionTextIntent: AppIntent {
+    static var title: LocalizedStringResource = "Get Transcription Text"
+    static var description = IntentDescription("Gets the complete current text of a saved transcription")
+
+    @Parameter(title: "Transcription") var transcription: TranscriptionEntity
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Get text of \(\.$transcription)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        let current = try TranscriptionEntityRecordStore.currentEntity(id: transcription.id)
+        return .result(value: current.text)
     }
 }
 
@@ -267,6 +317,18 @@ enum HistoryIntentLimit {
 @available(iOS 18.0, *)
 struct WhisperShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
+        AppShortcut(
+            intent: FindTranscriptionsIntent(),
+            phrases: ["Search transcriptions in \(.applicationName)"],
+            shortTitle: "Find Transcriptions",
+            systemImageName: "magnifyingglass"
+        )
+        AppShortcut(
+            intent: GetTranscriptionTextIntent(),
+            phrases: ["Get text of \(\.$transcription) in \(.applicationName)"],
+            shortTitle: "Get Transcription Text",
+            systemImageName: "text.quote"
+        )
         AppShortcut(
             intent: StartBackgroundRecordingIntent(),
             phrases: [
@@ -449,6 +511,7 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
     case noActiveRecording
     case transcriptionNotFound
     case emptyTag
+    case invalidDateRange
     
     var localizedStringResource: LocalizedStringResource {
         switch self {
@@ -486,6 +549,8 @@ enum IntentError: Error, CustomLocalizedStringResourceConvertible {
             return "No recording is currently active."
         case .transcriptionNotFound:
             return "The requested transcription could not be found."
+        case .invalidDateRange:
+            return "The end date must be after the start date."
         case .emptyTag:
             return "Enter at least one tag."
         }

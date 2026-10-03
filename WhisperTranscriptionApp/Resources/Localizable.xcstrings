@@ -1,6 +1,105 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "Find Transcriptions": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こしを検索"
+          }
+        }
+      }
+    },
+    "Get Transcription Text": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "文字起こし本文を取得"
+          }
+        }
+      }
+    },
+    "Search Text": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "検索テキスト"
+          }
+        }
+      }
+    },
+    "Created After": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "開始日時"
+          }
+        }
+      }
+    },
+    "Created Before": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了日時"
+          }
+        }
+      }
+    },
+    "Favorites Only": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "お気に入りのみ"
+          }
+        }
+      }
+    },
+    "The end date must be after the start date.": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "終了日時は開始日時より後にしてください。"
+          }
+        }
+      }
+    },
+    "Searches saved transcription titles, text, and tags": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存した文字起こしのタイトル・本文・タグを検索します"
+          }
+        }
+      }
+    },
+    "Gets the complete current text of a saved transcription": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保存した文字起こしの最新の本文全体を取得します"
+          }
+        }
+      }
+    },
     "" : {
 
     },
